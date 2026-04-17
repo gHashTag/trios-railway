@@ -27,6 +27,12 @@ Installing packages
 pip install flash_attn_3 --no-deps --find-links https://windreamer.github.io/flash-attention3-wheels/cu128_torch291/
   pip install brotli sentencepiece python-minifier numpy
 ```
+
+sp8192 Dataset Download:
+```
+MATCHED_FINEWEB_REPO_ID=kevclark/parameter-golf python3 data/cached_challenge_fineweb.py --variant sp8192
+```
+
 Run command
 ```bash
 SEED=<SEED> RUN_ID=<RUN_ID> \
