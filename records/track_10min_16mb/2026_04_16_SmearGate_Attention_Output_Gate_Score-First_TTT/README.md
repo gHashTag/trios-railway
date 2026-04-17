@@ -22,7 +22,12 @@ A lightweight per-head multiplicative gate on the attention output
 
 
 ## Training Configuration
-
+Installing packages
+```bash
+pip install flash_attn_3 --no-deps --find-links https://windreamer.github.io/flash-attention3-wheels/cu128_torch291/
+  pip install brotli sentencepiece python-minifier numpy
+```
+Run command
 ```bash
 SEED=<SEED> RUN_ID=<RUN_ID> \
   SMEAR_GATE=1 SMEAR_GATE_WIDTH=12 \
@@ -31,6 +36,10 @@ SEED=<SEED> RUN_ID=<RUN_ID> \
   TTT_ENABLED=1 \
   torchrun --standalone --nproc_per_node=8 train_gpt.py
 ```
+
+> [!NOTE]
+> Note on code size: train_gpt.py is shipped as raw source to increase readability (125 KB), but _compressed_code_size() reports the theoretical on-disk size of the same source
+> after pyminify + LZMA + base85 wrapping (~30 KB).
 
 Training completes in ~587s (wallclock-capped), reaching 4836-4843 steps depending on seed. The gate overhead is ~1.5% of step throughput (from ~8,200 tok/s to ~8,080 tok/s at step 1000, widening slightly with layer looping after step ~2141).
 
