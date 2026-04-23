@@ -45,6 +45,29 @@ All three seeds clear both 600s budgets (train + TTT eval) and the 16,000,000-by
 
 **Implementation note — TTT path mirroring:** `_block_with_lora` and `_parallel_block_with_lora` manually unroll attention composition (bypassing `CausalSelfAttention.forward`) to thread in LoRA adapters, so any new attention-forward gate must be mirrored in both helpers or TTT silently skips it. We caught this during validation — training applied the sparse gate while TTT didn't, producing post-TTT BPB of 1.908. All three forward paths now have matching conditional branches.
 
+## Run command (3-seed reproduction)
+
+```bash
+for SEED in 42 0 1234; do
+  NCCL_NET=Socket \
+  DATA_DIR=./data \
+  CASEOPS_ENABLED=1 \
+  PHASED_TTT_ENABLED=1 PHASED_TTT_PREFIX_DOCS=2000 PHASED_TTT_NUM_PHASES=3 \
+  MLP_CLIP_SIGMAS=12.0 ATTN_CLIP_SIGMAS=13.0 \
+  EMBED_BITS=7 EMBED_CLIP_SIGMAS=15.0 \
+  MATRIX_LR=0.026 \
+  GPTQ_RESERVE_SECONDS=0.5 GPTQ_CALIBRATION_BATCHES=16 \
+  VAL_LOSS_EVERY=0 \
+  MIN_LR=0.10 \
+  FUSED_CE_ENABLED=1 \
+  SPARSE_ATTN_GATE_ENABLED=1 SPARSE_ATTN_GATE_INIT_STD=0.0 SPARSE_ATTN_GATE_SCALE=1.0 \
+  GATED_ATTN_ENABLED=0 ATTN_OUT_GATE_ENABLED=0 GATED_ATTN_QUANT_GATE=1 \
+  SEED=$SEED \
+  torchrun --standalone --nproc_per_node=8 train_gpt.py \
+      > train_seed${SEED}.log 2>&1
+done
+```
+
 ## Rule compliance
 
 - **Artifact ≤ 16,000,000 bytes DECIMAL**: all 3 seeds ≤ 15,940,380 bytes (~60 KB headroom).
