@@ -7,6 +7,9 @@ name: IGLA Fleet Snapshot (hourly DR backup)
 # the fleet from a clean account.
 #
 # Anchor: phi^2 + phi^-2 = 3.
+#
+# L1 (Rust-only): the snapshot is produced by the
+# `tri-railway snapshot fleet` subcommand, not by a shell script.
 
 on:
   schedule:
@@ -28,7 +31,7 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       RAILWAY_TOKEN_ACC1:        ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       RAILWAY_TOKEN_ACC2:        ${{ secrets.RAILWAY_TOKEN_ACC2 }}
@@ -43,10 +46,28 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build tri-railway
+        run: cargo build --release --bin tri-railway --locked
+
       - name: Run snapshot
         run: |
-          chmod +x scripts/snapshot-fleet.sh
-          scripts/snapshot-fleet.sh
+          ./target/release/tri-railway snapshot fleet \
+            --out disaster-recovery/fleet-snapshot.json \
+            --account 'alias=acc1,token_env=RAILWAY_TOKEN_ACC1,project_env=RAILWAY_PROJECT_ACC1_IGLA,label=IGLA' \
+            --account 'alias=acc1,token_env=RAILWAY_TOKEN_ACC1,project_env=RAILWAY_PROJECT_ACC1_AB,label=artistic-beauty' \
+            --account 'alias=acc2,token_env=RAILWAY_TOKEN_ACC2,project_env=RAILWAY_PROJECT_ACC2_TE,label=thriving-eagerness (IGLA-MIRROR-2)' \
+            --account 'alias=acc2,token_env=RAILWAY_TOKEN_ACC2,project_env=RAILWAY_PROJECT_ACC2_RP,label=reasonable-perception' \
+            --email 'acc1=rumbodzalaclhdv0@hotmail.com' \
+            --email 'acc2=brabbtjubindt5cug@hotmail.com'
 
       - name: Commit if changed
         run: |
