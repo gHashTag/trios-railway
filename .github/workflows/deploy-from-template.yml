@@ -118,8 +118,10 @@ jobs:
               echo "  reusing $SVC_ID"
             fi
 
-            # Default values for variables (only those with .default)
-            echo "$svc" | jq -r '.variables | to_entries[] | select(.value.default) | "\(.key)=\(.value.default)"' | while IFS= read -r kv; do
+            # Upsert all variables that have a default value.
+            # Required variables without defaults must be set via
+            # Railway dashboard or CLI before this workflow runs.
+            echo "$svc" | jq -r '.variables | to_entries[] | select(.value.default != null) | "\(.key)=\(.value.default)"' | while IFS= read -r kv; do
               K="${kv%%=*}"; V="${kv#*=}"
               curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                   -H "Content-Type: application/json" \

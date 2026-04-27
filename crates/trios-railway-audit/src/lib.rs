@@ -38,7 +38,7 @@ pub enum DriftCode {
     D3BpbMismatch,
     /// Logs include the canonical fallback-data marker AND BPB ~ 0.
     D4FallbackData,
-    /// BPB > 1e30 (`f32::MAX` overflow).
+    /// BPB exceeds sanity threshold of 1e30 (implies trainer numeric blow-up).
     D5Overflow,
     /// `igla_agents_heartbeat.last_seen` is older than 1 hour.
     D6NoHeartbeat,
