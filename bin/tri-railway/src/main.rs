@@ -63,6 +63,22 @@ enum Cmd {
         sub: ExperienceCmd,
     },
 
+    /// Analyze fleet snapshot locally: rank seeds, find the needle.
+    Analyze {
+        /// Path to fleet snapshot JSON.
+        #[arg(long, default_value = "disaster-recovery/fleet-snapshot.json")]
+        snapshot: PathBuf,
+        /// Show detailed per-service breakdown.
+        #[arg(long)]
+        verbose: bool,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+        /// BPB target for Gate-2.
+        #[arg(long, default_value_t = 1.85)]
+        target: f64,
+    },
+
     /// Service operations against Railway (RW-02 + RW-03).
     ///
     /// Requires `RAILWAY_TOKEN` in the environment. UUID-shaped tokens
@@ -410,6 +426,14 @@ async fn main() -> Result<()> {
         }
         Cmd::Experience { sub } => {
             cmd_experience(sub).await?;
+        }
+        Cmd::Analyze {
+            snapshot,
+            verbose,
+            json,
+            target,
+        } => {
+            run_analyze(&snapshot, verbose, json, target)?;
         }
     }
 
@@ -1287,6 +1311,203 @@ async fn run_audit_batch(target: f64, json_out: bool, _root: PathBuf) -> Result<
     Ok(worst_exit)
 }
 
+#[allow(clippy::too_many_lines)]
+#[derive(serde::Serialize)]
+struct SeedInfo {
+    name: String,
+    account: String,
+    service_id: String,
+    seed_number: u32,
+    lane: String,
+    created_at: String,
+}
+
+#[allow(clippy::too_many_lines)]
+fn run_analyze(path: &PathBuf, verbose: bool, json_out: bool, target: f64) -> Result<()> {
+    let data = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?;
+    let snap: serde_json::Value = serde_json::from_str(&data)?;
+
+    let accounts = snap["accounts"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("missing accounts[] in snapshot"))?;
+
+    let mut training_seeds: Vec<SeedInfo> = Vec::new();
+    let mut infra_services: Vec<SeedInfo> = Vec::new();
+    let mut total = 0usize;
+
+    for acc in accounts {
+        let alias = acc["alias"].as_str().unwrap_or("?");
+        let project = acc["project_label"].as_str().unwrap_or("?");
+        let empty_services: Vec<serde_json::Value> = Vec::new();
+        let services = acc["services"].as_array().unwrap_or(&empty_services);
+
+        for svc in services {
+            total += 1;
+            let name = svc["name"].as_str().unwrap_or("?").to_string();
+            let id = svc["id"].as_str().unwrap_or("?").to_string();
+            let created = svc["createdAt"].as_str().unwrap_or("?").to_string();
+
+            let info = SeedInfo {
+                name: name.clone(),
+                account: format!("{alias}/{project}"),
+                service_id: id,
+                seed_number: 0,
+                lane: String::new(),
+                created_at: created,
+            };
+
+            if name.contains("seed") {
+                let mut seed = info;
+                if let Some(num) = extract_seed_number(&name) {
+                    seed.seed_number = num;
+                }
+                seed.lane = classify_lane(&name);
+                training_seeds.push(seed);
+            } else {
+                infra_services.push(info);
+            }
+        }
+    }
+
+    training_seeds.sort_by(|a, b| {
+        a.lane
+            .cmp(&b.lane)
+            .then_with(|| a.seed_number.cmp(&b.seed_number))
+    });
+
+    let known_bpb = [
+        (43, 2.18, "V4 h=828 AdamW 81K"),
+        (42, 2.22, "V3 h=384 AdamW 81K"),
+        (44, 2.22, "V3 h=384 AdamW 81K"),
+        (100, 2.30, "tjepa_train Railway"),
+        (101, 2.35, "tjepa_train Railway"),
+        (102, 2.50, "tjepa_train Railway"),
+    ];
+
+    let mut ranked: Vec<(u32, f64, &str)> = known_bpb.to_vec();
+    ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+    if json_out {
+        let summary = serde_json::json!({
+            "total_services": total,
+            "training_seeds": training_seeds.len(),
+            "infra_services": infra_services.len(),
+            "target_bpb": target,
+            "champion": { "seed": 43, "bpb": 2.18, "gap": 2.18 - target },
+            "known_results": ranked,
+            "lanes": training_seeds.iter().map(|s| serde_json::json!({
+                "name": s.name,
+                "lane": s.lane,
+                "seed": s.seed_number,
+                "account": s.account,
+            })).collect::<Vec<_>>(),
+        });
+        println!("{summary}");
+        return Ok(());
+    }
+
+    println!("=== IGLA FLEET ANALYSIS ===");
+    println!("Snapshot: {}", path.display());
+    println!("Total services: {total}");
+    println!("Training seeds: {}", training_seeds.len());
+    println!("Infrastructure: {}", infra_services.len());
+    println!();
+    println!("--- Seed Ranking (known BPB) ---");
+    println!("{:<6} {:<8} {:<10} {:<30}", "Rank", "Seed", "BPB", "Config");
+    for (i, (seed, bpb, config)) in ranked.iter().enumerate() {
+        let marker = if *bpb < target {
+            " <<< GATE-2 PASS"
+        } else {
+            ""
+        };
+        let gap = *bpb - target;
+        println!(
+            "{:<6} {:<8} {:<10.4} {:<30} (gap: {gap:+.2}){marker}",
+            i + 1,
+            seed,
+            bpb,
+            config
+        );
+    }
+
+    println!();
+    println!("--- Deployed Seeds by Lane ---");
+    let mut current_lane = String::new();
+    for s in &training_seeds {
+        if s.lane != current_lane {
+            current_lane.clone_from(&s.lane);
+            println!("\n  Lane: {current_lane}");
+        }
+        if verbose {
+            println!(
+                "    {} (#{}) [{}] {} created={}",
+                s.name, s.seed_number, s.service_id, s.account, s.created_at
+            );
+        } else {
+            println!("    {} (#{}) [{}]", s.name, s.seed_number, s.account);
+        }
+    }
+
+    println!();
+    println!("--- Gap Analysis ---");
+    let champion_bpb = 2.18;
+    let gap = champion_bpb - target;
+    println!("Champion: seed 43, BPB={champion_bpb:.2}");
+    println!("Gate-2 target: {target:.2}");
+    println!("Gap: {gap:+.2} BPB");
+    println!();
+    println!("Promising lanes to harvest:");
+    println!("  L2 (JEPA-T grad-flow fix): seeds 220/221/222");
+    println!("  L4 (h=2000 capacity): seeds 240/241/242");
+    println!("  L4lite (h=768): seeds 250/251/252");
+    println!("  L1 (attn bandwidth): seeds 210/211/212");
+    println!();
+    println!("Infrastructure services:");
+    for s in &infra_services {
+        if verbose {
+            println!("  {} [{}] {}", s.name, s.service_id, s.account);
+        } else {
+            println!("  {} ({})", s.name, s.account);
+        }
+    }
+
+    Ok(())
+}
+
+fn extract_seed_number(name: &str) -> Option<u32> {
+    let lower = name.to_ascii_lowercase();
+    let needle = "seed";
+    let start = lower.find(needle)?;
+    let after = &lower[start + needle.len()..];
+    let digits: String = after
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '_')
+        .filter(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok()
+}
+
+fn classify_lane(name: &str) -> String {
+    if name.contains("L2-jepat") {
+        "L2-JEPA-T".into()
+    } else if name.contains("L4-h2000") {
+        "L4-h2000".into()
+    } else if name.contains("L4lite") {
+        "L4lite-h768".into()
+    } else if name.contains("L1-attnbw") {
+        "L1-attnbw".into()
+    } else if name.contains("final-seed") {
+        "A-GF16".into()
+    } else if name.starts_with("iglaB-") {
+        "B-muP".into()
+    } else if name.starts_with("igla-trainer-") || name.starts_with("trios-train-seed-") {
+        "baseline".into()
+    } else {
+        "other".into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1431,5 +1652,30 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(exit, 9);
+    }
+
+    #[test]
+    fn extract_seed_number_from_name() {
+        assert_eq!(extract_seed_number("trios-train-seed-43"), Some(43));
+        assert_eq!(extract_seed_number("igla-final-seed-42"), Some(42));
+        assert_eq!(
+            extract_seed_number("trios-train-seed-220-L2-jepat"),
+            Some(220)
+        );
+        assert_eq!(extract_seed_number("no-number"), None);
+    }
+
+    #[test]
+    fn classify_lane_correct() {
+        assert_eq!(classify_lane("trios-train-seed-220-L2-jepat"), "L2-JEPA-T");
+        assert_eq!(classify_lane("trios-train-seed-240-L4-h2000"), "L4-h2000");
+        assert_eq!(
+            classify_lane("trios-train-seed-250-L4lite-h768"),
+            "L4lite-h768"
+        );
+        assert_eq!(classify_lane("igla-final-seed-43"), "A-GF16");
+        assert_eq!(classify_lane("iglaB-seed-42"), "B-muP");
+        assert_eq!(classify_lane("trios-train-seed-100"), "baseline");
+        assert_eq!(classify_lane("trios-mcp"), "other");
     }
 }
