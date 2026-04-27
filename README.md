@@ -126,3 +126,15 @@ cargo test --all
 ## License
 
 Apache-2.0
+
+---
+
+## Repo boundary
+
+This is the **control plane** of the IGLA marathon. The trainer (model code,
+Dockerfile producing `ghcr.io/ghashtag/trios-trainer-igla`, BPB telemetry
+emitters) lives in [`gHashTag/trios-trainer-igla`](https://github.com/gHashTag/trios-trainer-igla).
+See [`docs/adr/0001-repo-boundaries.md`](docs/adr/0001-repo-boundaries.md) for
+the binding contract.
+
+`phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP`
