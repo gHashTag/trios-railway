@@ -1,6 +1,6 @@
 {
   "anchor": "phi^2 + phi^-2 = 3",
-  "generated_at": "2026-04-27T18:43:31Z",
+  "generated_at": "2026-04-27T19:47:29Z",
   "generator": "tri-railway snapshot fleet",
   "version": "1.0.0",
   "accounts": [
@@ -162,6 +162,11 @@
           "name": "guacamole-railway"
         },
         {
+          "createdAt": "2026-04-27T19:41:42.693Z",
+          "id": "5e2785ff-037d-43f1-91c5-c739c2535ad3",
+          "name": "trios-train-seed-251-L4lite-h768"
+        },
+        {
           "createdAt": "2026-04-27T14:34:23.001Z",
           "id": "63a8a01d-59db-47ea-bb1b-f4f2c450865b",
           "name": "iglaB-seed-43"
@@ -177,9 +182,19 @@
           "name": "guacd"
         },
         {
+          "createdAt": "2026-04-27T19:42:10.075Z",
+          "id": "9c7f2026-b032-4f8b-9ab8-2e04835e9985",
+          "name": "trios-train-seed-252-L4lite-h768"
+        },
+        {
           "createdAt": "2026-04-27T14:34:06.840Z",
           "id": "c6675e56-64c6-4629-bf65-c4da77cda6e0",
           "name": "iglaB-seed-42"
+        },
+        {
+          "createdAt": "2026-04-27T19:41:06.916Z",
+          "id": "f1c6afd6-f1a1-42ed-89da-25a01de85834",
+          "name": "trios-train-seed-250-L4lite-h768"
         },
         {
           "createdAt": "2026-04-27T14:34:43.989Z",
@@ -187,7 +202,7 @@
           "name": "iglaB-seed-44"
         }
       ],
-      "service_count": 6
+      "service_count": 9
     },
     {
       "alias": "acc2",
@@ -225,6 +240,6 @@
   "totals": {
     "accounts": 2,
     "projects": 4,
-    "services": 34
+    "services": 37
   }
 }
