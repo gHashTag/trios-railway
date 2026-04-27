@@ -45,9 +45,12 @@ jobs:
           IMG="ghcr.io/${OWNER}/trios-railway-mcp"
           SHA='${{ github.sha }}'
           SHORT="${SHA:0:7}"
+          REF='${{ github.ref_name }}'
+          REF_SAFE=$(echo "${REF}" | tr '/' '-')
           {
             echo "image=${IMG}"
             echo "sha=${SHORT}"
+            echo "ref=${REF_SAFE}"
           } >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
@@ -58,6 +61,6 @@ jobs:
           tags: |
             ${{ steps.tags.outputs.image }}:latest
             ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.sha }}
-            ${{ steps.tags.outputs.image }}:${{ github.ref_name }}
+            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
