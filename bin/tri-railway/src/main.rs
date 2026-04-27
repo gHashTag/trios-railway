@@ -320,7 +320,8 @@ async fn load_ledger(path: &std::path::Path) -> Result<Vec<LedgerRow>> {
 /// Best-effort seed extraction from a service name like `trios-train-seed-43`
 /// or `igla-final-seed-44`.
 fn seed_from_name(name: &str) -> Option<i32> {
-    name.rsplit_once("seed-").and_then(|(_, tail)| tail.parse::<i32>().ok())
+    name.rsplit_once("seed-")
+        .and_then(|(_, tail)| tail.parse::<i32>().ok())
 }
 
 async fn run_audit(
@@ -330,8 +331,8 @@ async fn run_audit(
     json_out: bool,
     root: PathBuf,
 ) -> Result<i32> {
-    let client = Client::from_env()
-        .map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?;
+    let client =
+        Client::from_env().map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?;
     let token_fp = client.token_fingerprint();
 
     let pid = ProjectId::from(project);
