@@ -8,9 +8,12 @@
 
 use anyhow::Result;
 
+use crate::actuate::{apply_decision_batch, KillSwitch, RailwayActuator};
 use crate::decide::decide;
+use crate::ledger::{build_row, LedgerRow, LedgerSink, Outcome};
 use crate::neon;
 use crate::state::{Context, Decision};
+use trios_railway_core::{EnvironmentId, ProjectId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
@@ -42,21 +45,70 @@ pub async fn loop_once(ctx: &Context, mode: RunMode) -> Result<Vec<Decision>> {
             }
         }
         RunMode::Live => {
-            // Wired in PR-2: dispatch each Decision variant to the
-            // corresponding tri-railway-core mutation.
+            // PR-2 wiring: dispatch each Decision via the actuator.
+            // The orchestrator-level entry point that supplies the
+            // actuator + ledger + project/env context is
+            // `loop_once_live` below; `loop_once` keeps the PR-1
+            // signature for backwards-compatible callers (tests).
             for d in &decisions {
                 let (action, lane, seed) = neon::projection(d);
-                tracing::warn!(
+                tracing::info!(
                     %action,
                     ?lane,
                     ?seed,
-                    "gardener[Live]: apply path not yet implemented; recording dry-run only"
+                    "gardener[Live]: invoke loop_once_live() for actuation"
                 );
             }
         }
     }
 
     Ok(decisions)
+}
+
+/// Live-mode entry point. Call from the binary main loop with a real
+/// actuator + ledger; tests pass mocks. Honors the kill switch and
+/// records every (decision, outcome) pair to the ledger.
+pub async fn loop_once_live(
+    ctx: &Context,
+    actuator: &dyn RailwayActuator,
+    ledger: &dyn LedgerSink,
+    kill: &KillSwitch,
+    project: &ProjectId,
+    env: &EnvironmentId,
+    image: &str,
+) -> Result<Vec<(Decision, Outcome)>> {
+    let decisions = decide(ctx);
+
+    // Hard kill: no actuation, log decision intents only.
+    if kill.is_disabled() || ctx.disabled {
+        let rows: Vec<LedgerRow> = decisions
+            .iter()
+            .map(|d| {
+                build_row(
+                    ctx.now,
+                    d,
+                    Outcome::Skipped {
+                        reason: "GARDENER_DISABLED".into(),
+                    },
+                )
+            })
+            .collect();
+        ledger.write_tick(&rows).await?;
+        return Ok(decisions
+            .into_iter()
+            .map(|d| (d, Outcome::Skipped { reason: "GARDENER_DISABLED".into() }))
+            .collect());
+    }
+
+    let pairs = apply_decision_batch(actuator, project, env, image, kill, &decisions).await;
+
+    let rows: Vec<LedgerRow> = pairs
+        .iter()
+        .map(|(d, o)| build_row(ctx.now, d, o.clone()))
+        .collect();
+    ledger.write_tick(&rows).await?;
+
+    Ok(pairs)
 }
 
 #[cfg(test)]
