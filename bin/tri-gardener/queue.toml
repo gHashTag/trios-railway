@@ -1,0 +1,15 @@
+[[queue]]
+priority      = 1
+lane          = "L7_h1024_6L"
+account       = "acc1"
+seeds         = [600, 601, 602]
+expected_delta_bpb = -0.30
+blocked_on    = ["trainer-igla:l1_attention_backward", "trainer-igla:l2_jepat_gradflow"]
+
+[[queue]]
+priority      = 2
+lane          = "L8_lr_bracket_sweep"
+account       = "acc1"
+seeds         = [700, 701, 702]
+expected_delta_bpb = -0.10
+blocked_on    = []

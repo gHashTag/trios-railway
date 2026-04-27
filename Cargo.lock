@@ -2208,6 +2208,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tri-gardener"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "trios-railway-audit",
+ "trios-railway-core",
+ "trios-railway-experience",
+]
+
+[[package]]
 name = "tri-railway"
 version = "0.0.1"
 dependencies = [
