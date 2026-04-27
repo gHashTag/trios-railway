@@ -179,6 +179,46 @@ enum ServiceCmd {
         #[arg(long)]
         yes: bool,
     },
+    /// Set environment variables on a service.
+    SetVars {
+        #[arg(long, env = "TRIOS_RAILWAY_PROJECT", default_value = IGLA_PROJECT_ID)]
+        project: String,
+        #[arg(long, env = "TRIOS_RAILWAY_ENV", default_value = IGLA_PROD_ENV_ID)]
+        environment: String,
+        #[arg(long)]
+        service: String,
+        /// `KEY=VALUE` env pairs to upsert. Repeatable.
+        #[arg(long = "var", value_name = "KEY=VALUE")]
+        vars: Vec<String>,
+        /// Repo root for the experience log.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
+    /// Fetch recent log lines from a service.
+    Logs {
+        #[arg(long, env = "TRIOS_RAILWAY_ENV", default_value = IGLA_PROD_ENV_ID)]
+        environment: String,
+        #[arg(long)]
+        service: String,
+        /// Number of lines to fetch.
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+    },
+    /// Stop (delete) a service with a confirmation gate.
+    Stop {
+        #[arg(long, env = "TRIOS_RAILWAY_PROJECT", default_value = IGLA_PROJECT_ID)]
+        project: String,
+        #[arg(long, env = "TRIOS_RAILWAY_ENV", default_value = IGLA_PROD_ENV_ID)]
+        environment: String,
+        #[arg(long)]
+        service: String,
+        /// Confirm with --yes.
+        #[arg(long)]
+        yes: bool,
+        /// Repo root for the experience log.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -580,6 +620,7 @@ fn parse_var(s: &str) -> Result<(String, String)> {
     Ok((k.to_string(), v.to_string()))
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_service(cmd: ServiceCmd) -> Result<()> {
     let client =
         Client::from_env().map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?;
@@ -673,6 +714,75 @@ async fn run_service(cmd: ServiceCmd) -> Result<()> {
             let sid = ServiceId::from(service);
             M::service_delete(&client, &sid).await?;
             println!("deleted: {sid}");
+        }
+        ServiceCmd::SetVars {
+            project,
+            environment,
+            service,
+            vars,
+            root,
+        } => {
+            let pid = ProjectId::from(project);
+            let eid = EnvironmentId::from(environment);
+            let sid = ServiceId::from(service);
+            let mut parsed = Vec::with_capacity(vars.len());
+            for v in &vars {
+                parsed.push(parse_var(v)?);
+            }
+            let hash = client.set_vars(&pid, &eid, &sid, &parsed).await?;
+            for (k, _) in &parsed {
+                println!("  var: {k}=<set>");
+            }
+            let line = ExperienceLine::from_hash(
+                "GENERAL",
+                "VarSetter",
+                "#56",
+                &format!("set-vars {} vars={}", sid.short(), parsed.len()),
+                "OK",
+                "PUSH",
+                &hash,
+            )?;
+            let path = append_line(&root.join(".trinity"), &line).await?;
+            println!("experience: {}", path.display());
+        }
+        ServiceCmd::Logs {
+            environment,
+            service,
+            limit,
+        } => {
+            let eid = EnvironmentId::from(environment);
+            let sid = ServiceId::from(service);
+            let logs = Q::service_logs(&client, &sid, &eid, Some(limit)).await?;
+            for line in &logs {
+                println!("{line}");
+            }
+        }
+        ServiceCmd::Stop {
+            project,
+            environment,
+            service,
+            yes,
+            root,
+        } => {
+            if !yes {
+                anyhow::bail!("refusing to stop service `{service}` without --yes");
+            }
+            let pid = ProjectId::from(project);
+            let eid = EnvironmentId::from(environment);
+            let sid = ServiceId::from(service);
+            let hash = client.stop(&pid, &sid, &eid).await?;
+            println!("stopped: {}", sid.short());
+            let line = ExperienceLine::from_hash(
+                "GENERAL",
+                "ServiceStopper",
+                "#56",
+                &format!("stop {}", sid.short()),
+                "OK",
+                "PUSH",
+                &hash,
+            )?;
+            let path = append_line(&root.join(".trinity"), &line).await?;
+            println!("experience: {}", path.display());
         }
     }
     Ok(())
@@ -779,6 +889,13 @@ async fn run_restore(
     let manifest: FleetManifest = serde_json::from_str(&raw)?;
     if manifest.version != 1 {
         anyhow::bail!("unsupported manifest version: {}", manifest.version);
+    }
+
+    let mut seen_names = std::collections::HashSet::new();
+    for svc in &manifest.services {
+        if !seen_names.insert(&svc.name) {
+            anyhow::bail!("duplicate service name `{}` in manifest", svc.name);
+        }
     }
 
     let _ = project_name;

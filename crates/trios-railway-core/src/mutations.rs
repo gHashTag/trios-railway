@@ -202,12 +202,7 @@ impl Client {
         _env: &EnvironmentId,
     ) -> Result<RailwayHash, ClientError> {
         service_delete(self, service).await?;
-        let hash = RailwayHash::seal(
-            "stop",
-            project,
-            Some(service),
-            &self.token_fingerprint(),
-        );
+        let hash = RailwayHash::seal("stop", project, Some(service), &self.token_fingerprint());
         Ok(hash)
     }
 }
