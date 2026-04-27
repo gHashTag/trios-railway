@@ -2179,17 +2179,20 @@ name = "tri-gardener"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "clap",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-postgres",
  "toml",
  "tracing",
  "tracing-subscriber",
  "trios-railway-audit",
  "trios-railway-core",
  "trios-railway-experience",
+ "uuid",
 ]
 
 [[package]]
