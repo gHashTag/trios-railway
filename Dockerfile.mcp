@@ -52,6 +52,7 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
+        curl \
         libssl3 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -r -u 10001 -m -s /usr/sbin/nologin trios
@@ -59,7 +60,10 @@ RUN apt-get update \
 USER trios
 WORKDIR /home/trios
 
-COPY --from=builder /build/target/release/trios-railway-mcp /usr/local/bin/trios-railway-mcp
+COPY --from=builder --chown=trios:trios /build/target/release/trios-railway-mcp /usr/local/bin/trios-railway-mcp
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -sf http://localhost:${PORT:-8080}/healthz || exit 1
 
 ENV RUST_LOG=info \
     PORT=8080

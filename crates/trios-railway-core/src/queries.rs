@@ -91,6 +91,10 @@ pub const QUERY_VARIABLES: &str = "query Q($pid: String!, $eid: String!, $sid: S
   variables(projectId: $pid, environmentId: $eid, serviceId: $sid)
 }";
 
+pub const QUERY_SERVICE_LOGS: &str = "query Q($sid: String!, $eid: String!, $n: Int) {
+  serviceLogs(serviceId: $sid, environmentId: $eid, filter: {limit: $n})
+}";
+
 /// Fetch a project by id, including its services list.
 pub async fn project_view(
     client: &Client,
@@ -165,6 +169,27 @@ pub async fn latest_deploy_id(
     Ok(deploys.into_iter().next().map(|d| DeployId::new(d.id)))
 }
 
+/// Latest N log lines for a service (returns raw string array).
+pub async fn service_logs(
+    client: &Client,
+    service: &ServiceId,
+    env: &EnvironmentId,
+    limit: Option<u32>,
+) -> Result<Vec<String>, ClientError> {
+    #[derive(Debug, Deserialize)]
+    struct R {
+        #[serde(rename = "serviceLogs")]
+        service_logs: Vec<String>,
+    }
+    let vars = json!({
+        "sid": service.as_str(),
+        "eid": env.as_str(),
+        "n": limit.unwrap_or(50),
+    });
+    let r: R = client.query(QUERY_SERVICE_LOGS, Some(vars)).await?;
+    Ok(r.service_logs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +213,7 @@ mod tests {
         assert!(QUERY_PROJECT.contains("services"));
         assert!(QUERY_DEPLOYMENTS.contains("imageDigest") || QUERY_DEPLOYMENTS.contains("meta"));
         assert!(QUERY_VARIABLES.contains("variables"));
+        assert!(QUERY_SERVICE_LOGS.contains("serviceLogs"));
     }
 
     #[test]
