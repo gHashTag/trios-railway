@@ -364,17 +364,17 @@ mod tests {
 
     #[test]
     fn cull_threshold_schedule() {
-        assert_eq!(cull_threshold(5.0), f64::INFINITY);
-        assert_eq!(cull_threshold(15.0), 2.30);
-        assert_eq!(cull_threshold(25.0), 2.20);
-        assert_eq!(cull_threshold(40.0), 2.05);
-        assert_eq!(cull_threshold(60.0), f64::INFINITY);
+        assert!(!cull_threshold(5.0).is_finite());
+        assert!((cull_threshold(15.0) - 2.30).abs() < f64::EPSILON);
+        assert!((cull_threshold(25.0) - 2.20).abs() < f64::EPSILON);
+        assert!((cull_threshold(40.0) - 2.05).abs() < f64::EPSILON);
+        assert!(!cull_threshold(60.0).is_finite());
     }
 
     #[test]
     fn plateau_detected_when_stable() {
         let samples: Vec<BpbSample> = (0..5)
-            .map(|i| sample(43, "baseline", 2.18 + i as f64 * 0.0005, 60_000))
+            .map(|i| sample(43, "baseline", 2.18 + f64::from(i) * 0.0005, 60_000))
             .collect();
         assert!(is_plateau(&samples.iter().collect::<Vec<_>>()));
     }
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn no_plateau_when_still_improving() {
         let samples: Vec<BpbSample> = (0..5)
-            .map(|i| sample(43, "baseline", 2.50 - i as f64 * 0.05, 60_000))
+            .map(|i| sample(43, "baseline", 2.50 - f64::from(i) * 0.05, 60_000))
             .collect();
         assert!(!is_plateau(&samples.iter().collect::<Vec<_>>()));
     }
