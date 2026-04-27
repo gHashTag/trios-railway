@@ -268,7 +268,7 @@ mod tests {
             Some(0.0),
             Some("Failed to load data/tiny_shakespeare.txt"),
         )];
-        let events = detect(&real, &events);
+        let events = detect(&real, &[]);
         assert_eq!(verdict(&real, &events, 1.85), AuditVerdict::Drift);
     }
 }

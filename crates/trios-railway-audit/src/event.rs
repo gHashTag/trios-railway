@@ -1,4 +1,4 @@
-//! AU-02 — Neon audit_event writer.
+//! AU-02 — Neon `audit_event` writer.
 //!
 //! Writes one row to `igla_race_trials` and returns the inserted `row_id`.
 //! The DDL is owned by `migrations.rs` (issue #6, already in main).
