@@ -94,8 +94,16 @@ pub fn detect(real: &[RealService], ledger: &[LedgerRow]) -> Vec<DriftEvent> {
     let mut out = Vec::new();
 
     for svc in real {
-        // D5: overflow
+        // D5: overflow or NaN — NaN silently bypasses all f64 comparisons
         if let Some(b) = svc.last_bpb {
+            if !b.is_finite() {
+                out.push(event(
+                    svc,
+                    DriftCode::D5Overflow,
+                    &format!("bpb={b} (non-finite)"),
+                ));
+                continue;
+            }
             if b > 1e30 {
                 out.push(event(svc, DriftCode::D5Overflow, &format!("bpb={b}")));
                 continue;
@@ -330,5 +338,50 @@ mod tests {
             .find(|e| e.code == DriftCode::D6NoHeartbeat)
             .unwrap();
         assert_eq!(d6.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn detects_d5_nan_bpb() {
+        let real = vec![svc(50, Some(f64::NAN), None)];
+        let events = detect(&real, &[]);
+        assert!(
+            events.iter().any(|e| e.code == DriftCode::D5Overflow),
+            "NaN BPB must trigger D5"
+        );
+    }
+
+    #[test]
+    fn detects_d5_infinity_bpb() {
+        let real = vec![svc(51, Some(f64::INFINITY), None)];
+        let events = detect(&real, &[]);
+        assert!(
+            events.iter().any(|e| e.code == DriftCode::D5Overflow),
+            "Infinity BPB must trigger D5"
+        );
+    }
+
+    #[test]
+    fn detects_d5_neg_infinity_bpb() {
+        let real = vec![svc(52, Some(f64::NEG_INFINITY), None)];
+        let events = detect(&real, &[]);
+        assert!(
+            events.iter().any(|e| e.code == DriftCode::D5Overflow),
+            "NegInfinity BPB must trigger D5"
+        );
+    }
+
+    #[test]
+    fn nan_bpb_does_not_bypass_d3() {
+        let real = vec![svc(100, Some(f64::NAN), None)];
+        let ledger = vec![LedgerRow {
+            seed: 100,
+            bpb: 1.5,
+            canonical_image_digest: None,
+        }];
+        let events = detect(&real, &ledger);
+        assert!(
+            events.iter().any(|e| e.code == DriftCode::D5Overflow),
+            "NaN must be caught as D5, not silently pass to D3"
+        );
     }
 }

@@ -8,9 +8,6 @@ authors.workspace      = true
 repository.workspace   = true
 rust-version.workspace = true
 
-[lints]
-workspace = true
-
 [dependencies]
 anyhow    = { workspace = true }
 thiserror = { workspace = true }
@@ -23,3 +20,9 @@ reqwest   = { workspace = true }
 tokio     = { workspace = true }
 tracing   = { workspace = true }
 uuid      = { workspace = true }
+
+[dev-dependencies]
+mockito = { workspace = true }
+
+[lints]
+workspace = true
