@@ -13,6 +13,7 @@
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::hash::RailwayHash;
 use crate::ids::{DeployId, EnvironmentId, ProjectId, ServiceId};
 use crate::transport::{Client, ClientError};
 
@@ -139,6 +140,78 @@ pub async fn service_delete(client: &Client, service: &ServiceId) -> Result<(), 
     Ok(())
 }
 
+impl Client {
+    pub async fn deploy_service(
+        &self,
+        project: &ProjectId,
+        env: &EnvironmentId,
+        name: &str,
+        image: &str,
+    ) -> Result<(ServiceId, RailwayHash), ClientError> {
+        let cs = service_create(self, project, name).await?;
+        let sid = ServiceId::new(cs.id);
+        service_instance_set_image(self, &sid, env, image).await?;
+        let hash = RailwayHash::seal(
+            "deploy_service",
+            project,
+            Some(&sid),
+            &self.token_fingerprint(),
+        );
+        Ok((sid, hash))
+    }
+
+    pub async fn set_vars(
+        &self,
+        project: &ProjectId,
+        env: &EnvironmentId,
+        service: &ServiceId,
+        vars: &[(String, String)],
+    ) -> Result<RailwayHash, ClientError> {
+        for (k, v) in vars {
+            variable_upsert(self, project, env, service, k, v).await?;
+        }
+        let hash = RailwayHash::seal(
+            "set_vars",
+            project,
+            Some(service),
+            &self.token_fingerprint(),
+        );
+        Ok(hash)
+    }
+
+    pub async fn redeploy(
+        &self,
+        project: &ProjectId,
+        service: &ServiceId,
+        env: &EnvironmentId,
+    ) -> Result<(DeployId, RailwayHash), ClientError> {
+        let did = service_redeploy(self, service, env).await?;
+        let hash = RailwayHash::seal(
+            "redeploy",
+            project,
+            Some(service),
+            &self.token_fingerprint(),
+        );
+        Ok((did, hash))
+    }
+
+    pub async fn stop(
+        &self,
+        project: &ProjectId,
+        service: &ServiceId,
+        _env: &EnvironmentId,
+    ) -> Result<RailwayHash, ClientError> {
+        service_delete(self, service).await?;
+        let hash = RailwayHash::seal(
+            "stop",
+            project,
+            Some(service),
+            &self.token_fingerprint(),
+        );
+        Ok(hash)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +234,167 @@ mod tests {
         let raw = serde_json::json!({"id":"s1","name":"trios-train-seed-43","projectId":"p"});
         let cs: CreatedService = serde_json::from_value(raw).unwrap();
         assert_eq!(cs.name, "trios-train-seed-43");
+    }
+
+    #[tokio::test]
+    async fn deploy_service_returns_id_and_triplet() {
+        use crate::transport::AuthMode;
+
+        let mut server = mockito::Server::new_async().await;
+        let url = format!("{}/graphql/v2", server.url());
+
+        server
+            .mock("POST", "/graphql/v2")
+            .match_header("Authorization", "Bearer test-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "data": {
+                        "serviceCreate": {"id":"svc-1","name":"test-svc","projectId":"proj-1"},
+                        "serviceInstanceUpdate": true
+                    },
+                    "errors": []
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        let client = Client::with_token_and_mode("test-token", AuthMode::Team)
+            .unwrap()
+            .with_endpoint(url);
+
+        let (sid, hash) = client
+            .deploy_service(
+                &ProjectId::new("proj-1"),
+                &EnvironmentId::new("env-1"),
+                "test-svc",
+                "ghcr.io/test:latest",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(sid.as_str(), "svc-1");
+        assert!(hash.triplet().starts_with("RAIL=deploy_service @"));
+        assert!(hash.triplet().contains("project=proj-1"));
+    }
+
+    #[tokio::test]
+    async fn set_vars_seals_triplet() {
+        use crate::transport::AuthMode;
+
+        let mut server = mockito::Server::new_async().await;
+        let url = format!("{}/graphql/v2", server.url());
+
+        server
+            .mock("POST", "/graphql/v2")
+            .match_header("Authorization", "Bearer tok")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "data": { "variableUpsert": true },
+                    "errors": []
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        let client = Client::with_token_and_mode("tok", AuthMode::Team)
+            .unwrap()
+            .with_endpoint(url);
+
+        let hash = client
+            .set_vars(
+                &ProjectId::new("p1"),
+                &EnvironmentId::new("e1"),
+                &ServiceId::new("s1"),
+                &[("K1".into(), "V1".into()), ("K2".into(), "V2".into())],
+            )
+            .await
+            .unwrap();
+
+        assert!(hash.triplet().starts_with("RAIL=set_vars @"));
+    }
+
+    #[tokio::test]
+    async fn redeploy_returns_deploy_id() {
+        use crate::transport::AuthMode;
+
+        let mut server = mockito::Server::new_async().await;
+        let url = format!("{}/graphql/v2", server.url());
+
+        server
+            .mock("POST", "/graphql/v2")
+            .match_header("Authorization", "Bearer tok")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "data": { "serviceInstanceRedeploy": "deploy-abc" },
+                    "errors": []
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let client = Client::with_token_and_mode("tok", AuthMode::Team)
+            .unwrap()
+            .with_endpoint(url);
+
+        let (did, hash) = client
+            .redeploy(
+                &ProjectId::new("p1"),
+                &ServiceId::new("s1"),
+                &EnvironmentId::new("e1"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(did.as_str(), "deploy-abc");
+        assert!(hash.triplet().contains("RAIL=redeploy"));
+    }
+
+    #[tokio::test]
+    async fn stop_seals_triplet() {
+        use crate::transport::AuthMode;
+
+        let mut server = mockito::Server::new_async().await;
+        let url = format!("{}/graphql/v2", server.url());
+
+        server
+            .mock("POST", "/graphql/v2")
+            .match_header("Authorization", "Bearer tok")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "data": { "serviceDelete": true },
+                    "errors": []
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let client = Client::with_token_and_mode("tok", AuthMode::Team)
+            .unwrap()
+            .with_endpoint(url);
+
+        let hash = client
+            .stop(
+                &ProjectId::new("p1"),
+                &ServiceId::new("s1"),
+                &EnvironmentId::new("e1"),
+            )
+            .await
+            .unwrap();
+
+        assert!(hash.triplet().starts_with("RAIL=stop @"));
     }
 }

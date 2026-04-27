@@ -146,6 +146,10 @@ impl Client {
         crate::hash::token_fingerprint(&self.token)
     }
 
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     /// Issue a raw GraphQL request.
     pub async fn query<V, T>(&self, query: &str, variables: Option<V>) -> Result<T, ClientError>
     where
