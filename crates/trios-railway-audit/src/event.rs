@@ -68,7 +68,14 @@ pub struct AuditArtifact {
 impl AuditArtifact {
     /// Build an artifact from writer output.
     #[must_use]
-    pub fn new(seed: i32, bpb: f64, step: i32, image_sha: &str, row_id: RowId, target_bpb: f64) -> Self {
+    pub fn new(
+        seed: i32,
+        bpb: f64,
+        step: i32,
+        image_sha: &str,
+        row_id: RowId,
+        target_bpb: f64,
+    ) -> Self {
         Self {
             ts: Utc::now().timestamp(),
             seed,
