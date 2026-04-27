@@ -32,6 +32,9 @@ pub struct ListServicesRequest {
     /// Project UUID. Defaults to the IGLA project.
     #[serde(default)]
     pub project: Option<String>,
+    /// Account alias (e.g. `acc1`, `acc2`). Defaults to `RAILWAY_TOKEN`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -56,6 +59,9 @@ pub struct DeployRequest {
     /// Repo root for the L7 experience log. Defaults to `.`.
     #[serde(default)]
     pub experience_root: Option<String>,
+    /// Account alias (e.g. `acc1`, `acc2`). Defaults to `RAILWAY_TOKEN`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -71,6 +77,9 @@ pub struct RedeployRequest {
     /// Environment UUID. Defaults to IGLA `production`.
     #[serde(default)]
     pub environment: Option<String>,
+    /// Account alias (e.g. `acc1`, `acc2`). Defaults to `RAILWAY_TOKEN`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -79,6 +88,9 @@ pub struct DeleteRequest {
     pub service: String,
     /// Must be `true` (R9 safety): the call refuses to proceed otherwise.
     pub confirm: bool,
+    /// Account alias (e.g. `acc1`, `acc2`). Defaults to `RAILWAY_TOKEN`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -133,7 +145,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<ListServicesRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = client_for_account(req.account.as_deref())?;
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
         let pid = ProjectId::from(project.clone());
         let pv = Q::project_view(&client, &pid).await.map_err(internal_err)?;
@@ -155,7 +167,7 @@ impl TriosRailwayMcp {
             "count": services.len(),
         });
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&body).unwrap(),
+            serde_json::to_string_pretty(&body).map_err(internal_err)?,
         )]))
     }
 
@@ -166,7 +178,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<DeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = client_for_account(req.account.as_deref())?;
         let token_fp = client.token_fingerprint();
 
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
@@ -230,7 +242,7 @@ impl TriosRailwayMcp {
             "triplet": hash.triplet(),
         });
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&body).unwrap(),
+            serde_json::to_string_pretty(&body).map_err(internal_err)?,
         )]))
     }
 
@@ -239,7 +251,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<RedeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = client_for_account(req.account.as_deref())?;
         let env = req
             .environment
             .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
@@ -253,7 +265,7 @@ impl TriosRailwayMcp {
             "deploy_id": deploy_id.as_str(),
         });
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&body).unwrap(),
+            serde_json::to_string_pretty(&body).map_err(internal_err)?,
         )]))
     }
 
@@ -270,7 +282,7 @@ impl TriosRailwayMcp {
                 None,
             ));
         }
-        let client = build_client()?;
+        let client = client_for_account(req.account.as_deref())?;
         let sid = ServiceId::from(req.service);
         M::service_delete(&client, &sid)
             .await
@@ -279,7 +291,7 @@ impl TriosRailwayMcp {
             "deleted_service_id": sid.as_str(),
         });
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&body).unwrap(),
+            serde_json::to_string_pretty(&body).map_err(internal_err)?,
         )]))
     }
 
@@ -323,7 +335,7 @@ impl TriosRailwayMcp {
             "triplet": hash.triplet(),
         });
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&body).unwrap(),
+            serde_json::to_string_pretty(&body).map_err(internal_err)?,
         )]))
     }
 
@@ -378,6 +390,107 @@ fn build_client() -> Result<Client, McpError> {
     })
 }
 
+fn client_for_account(alias: Option<&str>) -> Result<Client, McpError> {
+    match alias {
+        None | Some("default") => build_client(),
+        Some(name) => {
+            let env_var = format!("RAILWAY_TOKEN_{}", name.to_uppercase());
+            let token = std::env::var(&env_var).map_err(|_| {
+                McpError::internal_error(
+                    format!("account alias `{name}`: env var `{env_var}` not set"),
+                    None,
+                )
+            })?;
+            Client::with_token(&token).map_err(|e| {
+                McpError::internal_error(format!("account `{name}` token invalid: {e}"), None)
+            })
+        }
+    }
+}
+
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
     McpError::internal_error(e.to_string(), None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_project_used_when_missing() {
+        let req: ListServicesRequest = serde_json::from_str("{}").unwrap();
+        assert!(req.project.is_none());
+    }
+
+    #[test]
+    fn deploy_request_parses() {
+        let req: DeployRequest = serde_json::from_str(r#"{"name":"test-svc","vars":[]}"#).unwrap();
+        assert_eq!(req.name, "test-svc");
+        assert!(req.image.is_none());
+        assert!(req.existing_service_id.is_none());
+    }
+
+    #[test]
+    fn delete_request_requires_confirm() {
+        let req: DeleteRequest =
+            serde_json::from_str(r#"{"service":"svc-123","confirm":true}"#).unwrap();
+        assert!(req.confirm);
+    }
+
+    #[test]
+    fn delete_request_refuses_without_confirm() {
+        let req: DeleteRequest =
+            serde_json::from_str(r#"{"service":"svc-123","confirm":false}"#).unwrap();
+        assert!(!req.confirm);
+    }
+
+    #[test]
+    fn redeploy_request_parses() {
+        let req: RedeployRequest =
+            serde_json::from_str(r#"{"service":"svc-456","environment":"env-789"}"#).unwrap();
+        assert_eq!(req.service, "svc-456");
+    }
+
+    #[test]
+    fn experience_append_defaults() {
+        let req: ExperienceAppendRequest =
+            serde_json::from_str(r##"{"issue":"#1","phi_step":"VERDICT","task":"test task"}"##)
+                .unwrap();
+        assert_eq!(req.issue, "#1");
+        assert!(req.status.is_none());
+        assert!(req.soul_name.is_none());
+    }
+
+    #[test]
+    fn key_value_parses() {
+        let kv: KeyValue = serde_json::from_str(r#"{"key":"FOO","value":"bar"}"#).unwrap();
+        assert_eq!(kv.key, "FOO");
+        assert_eq!(kv.value, "bar");
+    }
+
+    #[test]
+    fn list_services_accepts_account() {
+        let req: ListServicesRequest = serde_json::from_str(r#"{"account":"acc2"}"#).unwrap();
+        assert_eq!(req.account.as_deref(), Some("acc2"));
+    }
+
+    #[test]
+    fn deploy_request_accepts_account() {
+        let req: DeployRequest =
+            serde_json::from_str(r#"{"name":"test","account":"acc1","vars":[]}"#).unwrap();
+        assert_eq!(req.account.as_deref(), Some("acc1"));
+    }
+
+    #[test]
+    fn account_env_var_format() {
+        let alias = "acc3";
+        let env_var = format!("RAILWAY_TOKEN_{}", alias.to_uppercase());
+        assert_eq!(env_var, "RAILWAY_TOKEN_ACC3");
+    }
+
+    #[test]
+    fn client_for_default_returns_env_client() {
+        assert!(client_for_account(None).is_err());
+        assert!(client_for_account(Some("default")).is_err());
+    }
 }

@@ -20,7 +20,8 @@ use trios_railway_audit::{
     detect, migrations, verdict as compute_verdict, AuditVerdict, LedgerRow, RealService,
 };
 use trios_railway_core::{
-    mutations as M, queries as Q, Client, EnvironmentId, ProjectId, RailwayHash, ServiceId,
+    mutations as M, queries as Q, transport::AuthMode, Client, EnvironmentId, ProjectId,
+    RailwayHash, ServiceId,
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
@@ -77,6 +78,31 @@ enum Cmd {
     Snapshot {
         #[command(subcommand)]
         sub: SnapshotCmd,
+    },
+
+    /// Disaster-recovery: restore the full IGLA fleet from a manifest.
+    Restore {
+        /// Path to the fleet manifest (e.g. `restore-fleet.json`).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// Override `RAILWAY_TOKEN` env (post-ban scenario).
+        #[arg(long)]
+        new_token: Option<String>,
+        /// Project name for the new/upserted project.
+        #[arg(long, default_value = "IGLA")]
+        project_name: String,
+        /// Override image pin (SHA digest).
+        #[arg(long)]
+        champion_sha: Option<String>,
+        /// Where to write the lock file.
+        #[arg(long, default_value = "restore-fleet.lock.json")]
+        lock_out: PathBuf,
+        /// R9 safety gate: must be the string "PHI".
+        #[arg(long)]
+        confirm: Option<String>,
+        /// Repo root for the experience log.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
     },
 }
 
@@ -191,6 +217,12 @@ enum AuditCmd {
         #[arg(long, default_value_t = 1.85_f64)]
         target: f64,
     },
+    /// Verify the Railway fleet health: list services and check for drift.
+    Verify {
+        /// Project to verify.
+        #[arg(long, env = "TRIOS_RAILWAY_PROJECT", default_value = IGLA_PROJECT_ID)]
+        project: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -238,6 +270,7 @@ enum ExperienceCmd {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -280,6 +313,12 @@ async fn main() -> Result<()> {
             let exit = cmd_audit_verdict(ledger, target).await?;
             std::process::exit(exit);
         }
+        Cmd::Audit {
+            sub: AuditCmd::Verify { project },
+        } => {
+            let exit = run_audit(project, 1.85, None, false, PathBuf::from(".")).await?;
+            std::process::exit(exit);
+        }
         Cmd::Service { sub } => run_service(sub).await?,
         Cmd::Snapshot {
             sub:
@@ -289,32 +328,60 @@ async fn main() -> Result<()> {
                     emails,
                 },
         } => run_snapshot_fleet(out, accounts, emails).await?,
-        Cmd::Experience { sub } => match sub {
-            ExperienceCmd::Append {
+        Cmd::Restore {
+            manifest,
+            new_token,
+            project_name,
+            champion_sha,
+            lock_out,
+            confirm,
+            root,
+        } => {
+            let exit = run_restore(
+                manifest,
+                new_token,
+                project_name,
+                champion_sha,
+                lock_out,
+                confirm,
                 root,
-                issue,
-                phi_step,
-                task,
-                status,
-                soul_name,
-                agent,
-                verb,
-                project,
-                service,
-                token_fp,
-            } => {
-                let project_id = ProjectId::from(project);
-                let service_id = service.map(ServiceId::from);
-                let hash = RailwayHash::seal(&verb, &project_id, service_id.as_ref(), &token_fp);
-                let line = ExperienceLine::from_hash(
-                    &agent, &soul_name, &issue, &task, &status, &phi_step, &hash,
-                )?;
-                let path = append_line(&root.join(".trinity"), &line).await?;
-                println!("appended: {}", path.display());
-            }
-        },
+            )
+            .await?;
+            std::process::exit(exit);
+        }
+        Cmd::Experience { sub } => {
+            cmd_experience(sub).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn cmd_experience(sub: ExperienceCmd) -> Result<()> {
+    match sub {
+        ExperienceCmd::Append {
+            root,
+            issue,
+            phi_step,
+            task,
+            status,
+            soul_name,
+            agent,
+            verb,
+            project,
+            service,
+            token_fp,
+        } => {
+            let project_id = ProjectId::from(project);
+            let service_id = service.map(ServiceId::from);
+            let hash = RailwayHash::seal(&verb, &project_id, service_id.as_ref(), &token_fp);
+            let line = ExperienceLine::from_hash(
+                &agent, &soul_name, &issue, &task, &status, &phi_step, &hash,
+            )?;
+            let path = append_line(&root.join(".trinity"), &line).await?;
+            println!("appended: {}", path.display());
+        }
+    }
     Ok(())
 }
 
@@ -388,6 +455,7 @@ async fn run_audit(
             last_log_excerpt: None,
             last_bpb: None,
             image_digest: None,
+            last_heartbeat: None,
         })
         .collect();
 
@@ -465,6 +533,7 @@ async fn cmd_audit_verdict(ledger_path: PathBuf, target: f64) -> Result<i32> {
             last_log_excerpt: None,
             last_bpb: Some(r.bpb),
             image_digest: None,
+            last_heartbeat: None,
         })
         .collect();
     let events = detect(&real, &ledger);
@@ -590,6 +659,237 @@ async fn run_service(cmd: ServiceCmd) -> Result<()> {
     Ok(())
 }
 
+#[derive(serde::Deserialize)]
+struct FleetManifest {
+    version: u32,
+    #[allow(dead_code)]
+    project: FleetProject,
+    image: String,
+    shared_vars: Vec<FleetVar>,
+    services: Vec<FleetService>,
+}
+
+#[derive(serde::Deserialize)]
+struct FleetProject {
+    #[allow(dead_code)]
+    name: String,
+    #[allow(dead_code)]
+    description: String,
+    #[allow(dead_code)]
+    default_environment: String,
+}
+
+#[derive(serde::Deserialize, Clone)]
+struct FleetVar {
+    key: String,
+    value: String,
+}
+
+#[derive(serde::Deserialize)]
+struct FleetService {
+    name: String,
+    #[allow(dead_code)]
+    kind: Option<String>,
+    image_override: Option<String>,
+    #[serde(default)]
+    vars: Vec<FleetVar>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct LockEntry {
+    name: String,
+    service_id: String,
+    image: String,
+    status: String,
+}
+
+#[derive(serde::Serialize)]
+struct LockFile {
+    anchor: String,
+    restored_at: String,
+    project_id: String,
+    services: Vec<LockEntry>,
+    experience_triplet: String,
+}
+
+fn interpolate_secret(value: &str) -> String {
+    let mut result = value.to_string();
+    while let Some(start) = result.find("${secret:") {
+        if let Some(end) = result[start..].find('}') {
+            let var_name = &result[start + 9..start + end];
+            let resolved =
+                std::env::var(var_name).unwrap_or_else(|_| format!("MISSING_SECRET:{var_name}"));
+            result.replace_range(start..=start + end, &resolved);
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_restore(
+    manifest_path: PathBuf,
+    new_token: Option<String>,
+    project_name: String,
+    champion_sha: Option<String>,
+    lock_out: PathBuf,
+    confirm: Option<String>,
+    root: PathBuf,
+) -> Result<i32> {
+    if confirm.as_deref() != Some("PHI") {
+        eprintln!("R9 safety gate: pass --confirm PHI to proceed");
+        return Ok(9);
+    }
+
+    let raw = tokio::fs::read_to_string(&manifest_path).await?;
+    let manifest: FleetManifest = serde_json::from_str(&raw)?;
+    if manifest.version != 1 {
+        anyhow::bail!("unsupported manifest version: {}", manifest.version);
+    }
+
+    let _ = project_name;
+
+    let client = if let Some(ref token) = new_token {
+        Client::with_token_and_mode(token, AuthMode::Team)
+            .map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?
+    } else {
+        Client::from_env().map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?
+    };
+    let token_fp = client.token_fingerprint();
+
+    let pid = ProjectId::from(
+        std::env::var("TRIOS_RAILWAY_PROJECT").unwrap_or_else(|_| IGLA_PROJECT_ID.to_string()),
+    );
+    let eid = EnvironmentId::from(
+        std::env::var("TRIOS_RAILWAY_ENV").unwrap_or_else(|_| IGLA_PROD_ENV_ID.to_string()),
+    );
+
+    let image = champion_sha.as_deref().unwrap_or(&manifest.image);
+
+    let mut lock_entries: Vec<LockEntry> = Vec::new();
+    let mut failures: usize = 0;
+
+    for svc in &manifest.services {
+        let svc_image = svc.image_override.as_deref().unwrap_or(image);
+
+        tracing::info!(service = %svc.name, image = %svc_image, "restoring service");
+
+        let service_id = match M::service_create(&client, &pid, &svc.name).await {
+            Ok(created) => {
+                tracing::info!(service = %svc.name, id = %created.id, "created service");
+                ServiceId::from(created.id)
+            }
+            Err(e) => {
+                tracing::error!(service = %svc.name, error = %e, "failed to create service");
+                failures += 1;
+                lock_entries.push(LockEntry {
+                    name: svc.name.clone(),
+                    service_id: String::new(),
+                    image: svc_image.to_string(),
+                    status: "FAILED".to_string(),
+                });
+                continue;
+            }
+        };
+
+        if let Err(e) = M::service_instance_set_image(&client, &service_id, &eid, svc_image).await {
+            tracing::error!(service = %svc.name, error = %e, "failed to set image");
+            failures += 1;
+            lock_entries.push(LockEntry {
+                name: svc.name.clone(),
+                service_id: service_id.as_str().to_string(),
+                image: svc_image.to_string(),
+                status: "FAILED_IMAGE".to_string(),
+            });
+            continue;
+        }
+
+        let mut all_vars = manifest.shared_vars.clone();
+        all_vars.extend(svc.vars.iter().cloned());
+        for v in &all_vars {
+            let interpolated = interpolate_secret(&v.value);
+            if let Err(e) =
+                M::variable_upsert(&client, &pid, &eid, &service_id, &v.key, &interpolated).await
+            {
+                tracing::warn!(service = %svc.name, key = %v.key, error = %e, "failed to upsert var");
+            }
+        }
+
+        match M::service_redeploy(&client, &service_id, &eid).await {
+            Ok(deploy_id) => {
+                tracing::info!(service = %svc.name, deploy = %deploy_id, "redeploy triggered");
+            }
+            Err(e) => {
+                tracing::error!(service = %svc.name, error = %e, "failed to redeploy");
+                failures += 1;
+                lock_entries.push(LockEntry {
+                    name: svc.name.clone(),
+                    service_id: service_id.as_str().to_string(),
+                    image: svc_image.to_string(),
+                    status: "FAILED_REDEPLOY".to_string(),
+                });
+                continue;
+            }
+        }
+
+        lock_entries.push(LockEntry {
+            name: svc.name.clone(),
+            service_id: service_id.as_str().to_string(),
+            image: svc_image.to_string(),
+            status: "OK".to_string(),
+        });
+    }
+
+    let ts = chrono::Utc::now().to_rfc3339();
+    let triplet = format!(
+        "RAIL=restore @ project={} service=ALL sha={} ts={ts}",
+        pid.short(),
+        &image[..8.min(image.len())],
+    );
+
+    let lock = LockFile {
+        anchor: "phi^2 + phi^-2 = 3".to_string(),
+        restored_at: ts.clone(),
+        project_id: pid.as_str().to_string(),
+        services: lock_entries.clone(),
+        experience_triplet: triplet.clone(),
+    };
+
+    let lock_body = serde_json::to_string_pretty(&lock)? + "\n";
+    tokio::fs::write(&lock_out, &lock_body).await?;
+    tracing::info!(path = %lock_out.display(), "lock file written");
+
+    let hash = RailwayHash::seal("restore", &pid, None, &token_fp);
+    let line = ExperienceLine::from_hash(
+        "GENERAL",
+        "FleetPhoenix",
+        "#25",
+        &format!(
+            "restore {} services failures={failures}",
+            manifest.services.len()
+        ),
+        if failures == 0 { "OK" } else { "PARTIAL" },
+        "EXPERIENCE",
+        &hash,
+    )?;
+    let path = append_line(&root.join(".trinity"), &line).await?;
+    tracing::info!(experience = %path.display(), "restore triplet sealed");
+
+    let ok_count = lock_entries.iter().filter(|e| e.status == "OK").count();
+    println!(
+        "RESTORE {} — {ok_count}/{} services OK, {failures} failures",
+        if failures == 0 { "OK" } else { "PARTIAL" },
+        manifest.services.len(),
+    );
+
+    match failures {
+        0 => Ok(0),
+        _ if failures < manifest.services.len() => Ok(3),
+        _ => Ok(1),
+    }
+}
+
 /// Parse `key=value,key=value` style flag values.
 fn parse_kv_list(spec: &str) -> std::collections::HashMap<String, String> {
     spec.split(',')
@@ -653,9 +953,8 @@ async fn run_snapshot_fleet(
         let (project_id, project_name, environments, services) = if let (Some(tok), Some(proj)) =
             (token, project)
         {
-            std::env::set_var("RAILWAY_TOKEN", &tok);
-            std::env::set_var("RAILWAY_TOKEN_AUTH", "team");
-            let client = Client::from_env().map_err(|e| anyhow::anyhow!("from_env: {e}"))?;
+            let client = Client::with_token_and_mode(&tok, AuthMode::Team)
+                .map_err(|e| anyhow::anyhow!("with_token_and_mode: {e}"))?;
             let pid = ProjectId::from(proj);
             match Q::project_view(&client, &pid).await {
                 Ok(pv) => {
@@ -733,4 +1032,137 @@ async fn run_snapshot_fleet(
         total_services
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_parses_v1() {
+        let json = r#"{
+            "version": 1,
+            "anchor": "phi^2 + phi^-2 = 3",
+            "project": { "name": "IGLA", "description": "test", "default_environment": "production" },
+            "image": "ghcr.io/ghashtag/trios-trainer-igla:latest",
+            "shared_vars": [{ "key": "RUST_LOG", "value": "info" }],
+            "services": [
+                { "name": "igla-final-seed-42", "kind": "trainer", "vars": [{ "key": "TRIOS_SEED", "value": "42" }] },
+                { "name": "trios-mcp-public", "kind": "mcp", "image_override": "ghcr.io/ghashtag/trios-railway-mcp:latest", "vars": [] }
+            ]
+        }"#;
+        let m: FleetManifest = serde_json::from_str(json).expect("parse manifest");
+        assert_eq!(m.version, 1);
+        assert_eq!(m.services.len(), 2);
+        assert_eq!(m.project.name, "IGLA");
+        assert_eq!(
+            m.services[1].image_override.as_deref(),
+            Some("ghcr.io/ghashtag/trios-railway-mcp:latest")
+        );
+    }
+
+    #[test]
+    fn secret_interpolation_resolves() {
+        std::env::set_var("TEST_SECRET_HELLO", "world");
+        let result = interpolate_secret("${secret:TEST_SECRET_HELLO}");
+        assert_eq!(result, "world");
+    }
+
+    #[test]
+    fn secret_interpolation_missing() {
+        let result = interpolate_secret("${secret:NONEXISTENT_VAR_XYZ}");
+        assert!(result.contains("MISSING_SECRET"));
+    }
+
+    #[test]
+    fn secret_interpolation_no_secrets() {
+        let result = interpolate_secret("plain-value");
+        assert_eq!(result, "plain-value");
+    }
+
+    #[test]
+    fn secret_interpolation_mixed() {
+        std::env::set_var("TEST_MIX_A", "aaa");
+        let result = interpolate_secret("prefix-${secret:TEST_MIX_A}-suffix");
+        assert_eq!(result, "prefix-aaa-suffix");
+    }
+
+    #[test]
+    fn parse_var_key_value() {
+        let (k, v) = parse_var("FOO=bar").unwrap();
+        assert_eq!(k, "FOO");
+        assert_eq!(v, "bar");
+    }
+
+    #[test]
+    fn parse_var_rejects_no_equals() {
+        assert!(parse_var("NOEQUALS").is_err());
+    }
+
+    #[test]
+    fn manifest_parses_v1_single_service() {
+        let json = r#"{
+            "version": 1,
+            "anchor": "phi^2 + phi^-2 = 3",
+            "project": { "name": "IGLA", "description": "test", "default_environment": "production" },
+            "image": "ghcr.io/ghashtag/trios-trainer-igla:latest",
+            "shared_vars": [{ "key": "RUST_LOG", "value": "info" }],
+            "services": [
+                { "name": "trios-train-seed-42", "kind": "trainer", "vars": [{ "key": "TRIOS_SEED", "value": "42" }] }
+            ]
+        }"#;
+        let manifest: FleetManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(manifest.version, 1);
+        assert_eq!(manifest.services.len(), 1);
+        assert_eq!(manifest.services[0].name, "trios-train-seed-42");
+        assert_eq!(manifest.shared_vars.len(), 1);
+    }
+
+    #[test]
+    fn manifest_rejects_bad_version() {
+        let json = r#"{
+            "version": 2,
+            "anchor": "x",
+            "project": { "name": "X", "description": "x", "default_environment": "prod" },
+            "image": "img",
+            "shared_vars": [],
+            "services": []
+        }"#;
+        let manifest: FleetManifest = serde_json::from_str(json).unwrap();
+        assert_ne!(manifest.version, 1);
+    }
+
+    #[test]
+    fn r9_refuses_without_confirm() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let exit = rt
+            .block_on(run_restore(
+                PathBuf::from("restore-fleet.json"),
+                None,
+                "IGLA".to_string(),
+                None,
+                PathBuf::from("test.lock"),
+                None,
+                PathBuf::from("."),
+            ))
+            .unwrap();
+        assert_eq!(exit, 9);
+    }
+
+    #[test]
+    fn r9_refuses_wrong_confirm() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let exit = rt
+            .block_on(run_restore(
+                PathBuf::from("restore-fleet.json"),
+                None,
+                "IGLA".to_string(),
+                None,
+                PathBuf::from("test.lock"),
+                Some("NOPE".to_string()),
+                PathBuf::from("."),
+            ))
+            .unwrap();
+        assert_eq!(exit, 9);
+    }
 }

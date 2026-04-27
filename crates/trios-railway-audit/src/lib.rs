@@ -15,6 +15,7 @@
 pub mod event;
 pub mod migrations;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use trios_railway_core::ServiceId;
 
@@ -75,6 +76,8 @@ pub struct RealService {
     pub last_log_excerpt: Option<String>,
     pub last_bpb: Option<f64>,
     pub image_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_heartbeat: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +159,25 @@ pub fn detect(real: &[RealService], ledger: &[LedgerRow]) -> Vec<DriftEvent> {
         }
     }
 
+    // D6: no heartbeat (last_seen older than 1 hour)
+    let now = Utc::now();
+    for svc in real {
+        if let Some(hb) = svc.last_heartbeat {
+            let elapsed = now.signed_duration_since(hb);
+            if elapsed.num_hours() >= 1 {
+                out.push(event(
+                    svc,
+                    DriftCode::D6NoHeartbeat,
+                    &format!(
+                        "last_heartbeat={} age_hours={}",
+                        hb.to_rfc3339(),
+                        elapsed.num_hours()
+                    ),
+                ));
+            }
+        }
+    }
+
     out
 }
 
@@ -218,6 +240,19 @@ mod tests {
             last_log_excerpt: log.map(str::to_string),
             last_bpb: bpb,
             image_digest: None,
+            last_heartbeat: None,
+        }
+    }
+
+    fn svc_with_heartbeat(seed: i32, bpb: Option<f64>, hours_ago: i64) -> RealService {
+        RealService {
+            service_id: ServiceId::from(format!("svc-{seed}")),
+            name: format!("trios-train-seed-{seed}"),
+            seed: Some(seed),
+            last_log_excerpt: None,
+            last_bpb: bpb,
+            image_digest: None,
+            last_heartbeat: Some(Utc::now() - chrono::Duration::hours(hours_ago)),
         }
     }
 
@@ -270,5 +305,30 @@ mod tests {
         )];
         let events = detect(&real, &[]);
         assert_eq!(verdict(&real, &events, 1.85), AuditVerdict::Drift);
+    }
+
+    #[test]
+    fn detects_d6_no_heartbeat_stale() {
+        let real = vec![svc_with_heartbeat(200, Some(1.5), 2)];
+        let events = detect(&real, &[]);
+        assert!(events.iter().any(|e| e.code == DriftCode::D6NoHeartbeat));
+    }
+
+    #[test]
+    fn no_d6_when_heartbeat_fresh() {
+        let real = vec![svc_with_heartbeat(201, Some(1.5), 0)];
+        let events = detect(&real, &[]);
+        assert!(!events.iter().any(|e| e.code == DriftCode::D6NoHeartbeat));
+    }
+
+    #[test]
+    fn d6_severity_is_warn() {
+        let real = vec![svc_with_heartbeat(202, Some(1.5), 3)];
+        let events = detect(&real, &[]);
+        let d6 = events
+            .iter()
+            .find(|e| e.code == DriftCode::D6NoHeartbeat)
+            .unwrap();
+        assert_eq!(d6.severity, Severity::Warn);
     }
 }
