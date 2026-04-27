@@ -16,6 +16,27 @@ use crate::state::Decision;
 /// Race start anchor (T+0). Mirrors `state::RungWindow::from_now`.
 const RACE_START: &str = "2026-04-27T18:00:00Z";
 
+/// Architectural BPB floor for the trainer as currently shipped.
+///
+/// Champion record: `2.1919` (h=828, 2L hybrid attn, ReLU², 81K, σ²=0.0006).
+/// Cross-validated against the CPU N-gram floor (~2.54) reported in
+/// [trios#237](https://github.com/gHashTag/trios/issues/237) and the live
+/// GPU champion tracked in [trios#143](https://github.com/gHashTag/trios/issues/143).
+///
+/// **Anti-cull guard:** the gardener MUST NOT issue `Decision::CullSeed`
+/// for a seed whose BPB is above this floor unless plateau is
+/// independently confirmed (≥5 ticks in a 0.005 band AND step ≥ 50_000).
+/// Without that guard, a healthy seed sitting at the architectural floor
+/// would be culled merely for not crossing the 1.85 Gate-2 target —
+/// which is impossible without ALPHA's L1 / L2 / h=1024 patches landing
+/// first. Gardener decision policy must read this constant rather than
+/// hardcoding `2.19` at the call site.
+///
+/// Refs:
+/// - <https://github.com/gHashTag/trios/issues/237> (CPU N-gram floor)
+/// - <https://github.com/gHashTag/trios/issues/143> (GPU champion)
+pub const ARCHITECTURAL_FLOOR_BPB: f64 = 2.19;
+
 /// Single ledger row about to be written.
 #[derive(Debug, Clone)]
 pub struct LedgerRow {
@@ -231,6 +252,21 @@ mod tests {
             row.decision_json["error"].as_str(),
             Some("graphql: rate-limited")
         );
+    }
+
+    #[test]
+    fn architectural_floor_bpb_is_2_19() {
+        // Tripwire: if a future patch tries to lower this without an
+        // ALPHA architecture change, this test forces the conversation.
+        assert_eq!(ARCHITECTURAL_FLOOR_BPB, 2.19_f64);
+    }
+
+    #[test]
+    fn architectural_floor_below_gate2_target() {
+        // Sanity: floor must sit *above* the Gate-2 target. Otherwise
+        // "do not cull above the floor" would be a no-op below 1.85.
+        const GATE2_TARGET: f64 = 1.85;
+        assert!(ARCHITECTURAL_FLOOR_BPB > GATE2_TARGET);
     }
 
     #[tokio::test]
