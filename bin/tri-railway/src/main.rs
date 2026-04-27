@@ -16,6 +16,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod plan9;
+
 use trios_railway_audit::{
     detect, migrations, verdict as compute_verdict, AuditVerdict, LedgerRow, RealService,
 };
@@ -77,6 +79,47 @@ enum Cmd {
     Snapshot {
         #[command(subcommand)]
         sub: SnapshotCmd,
+    },
+
+    /// Plan-21 manifest-driven multi-account deploy.
+    ///
+    /// Reads `bin/tri-railway/plan21-manifest.toml` (or `--manifest`),
+    /// resolves the per-account triplet from the following env vars:
+    /// `RAILWAY_API_TOKEN_<ACCx>`, `RAILWAY_PROJECT_ID_<ACCx>`,
+    /// `RAILWAY_ENVIRONMENT_ID_<ACCx>`, `RAILWAY_TOKEN_KIND_<ACCx>`.
+    /// Builds a deploy plan for the chosen lane and, unless
+    /// `--dry-run`, executes it against the live Railway API via
+    /// `trios-railway-core`.
+    Plan9 {
+        #[command(subcommand)]
+        sub: Plan9Cmd,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum Plan9Cmd {
+    /// Deploy a lane from the manifest.
+    Deploy {
+        /// Lane id from the manifest (e.g. `L5_wsd`, `L4lite_h768_3L`).
+        #[arg(long)]
+        lane: String,
+        /// Comma-separated subset of seeds to deploy. Defaults to every
+        /// seed in the lane.
+        #[arg(long, value_delimiter = ',')]
+        seeds: Option<Vec<u32>>,
+        /// Image SHA tag (overrides the env-var resolution for the
+        /// lane's `image` slot, e.g. `WSD_IMAGE_SHA`).
+        #[arg(long)]
+        image_sha: Option<String>,
+        /// Manifest path. Defaults to the in-tree `plan21-manifest.toml`.
+        #[arg(long, default_value = "bin/tri-railway/plan21-manifest.toml")]
+        manifest: PathBuf,
+        /// Print plan only.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip `blocked_on` enforcement.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -281,6 +324,26 @@ async fn main() -> Result<()> {
             std::process::exit(exit);
         }
         Cmd::Service { sub } => run_service(sub).await?,
+        Cmd::Plan9 { sub } => match sub {
+            Plan9Cmd::Deploy {
+                lane,
+                seeds,
+                image_sha,
+                manifest,
+                dry_run,
+                force,
+            } => {
+                run_plan9_deploy(
+                    &manifest,
+                    &lane,
+                    seeds.as_deref(),
+                    image_sha,
+                    dry_run,
+                    force,
+                )
+                .await?;
+            }
+        },
         Cmd::Snapshot {
             sub:
                 SnapshotCmd::Fleet {
@@ -732,5 +795,48 @@ async fn run_snapshot_fleet(
         total_projects,
         total_services
     );
+    Ok(())
+}
+
+async fn run_plan9_deploy(
+    manifest_path: &std::path::Path,
+    lane_id: &str,
+    seeds_filter: Option<&[u32]>,
+    image_sha_override: Option<String>,
+    dry_run: bool,
+    force: bool,
+) -> Result<()> {
+    let manifest = plan9::load_manifest(manifest_path)?;
+    let lane = plan9::select_lane(&manifest, lane_id)?;
+
+    if !force && !lane.blocked_on.is_empty() {
+        anyhow::bail!(
+            "lane `{}` is blocked_on {:?}; pass --force to deploy anyway",
+            lane.lane,
+            lane.blocked_on
+        );
+    }
+
+    let image_sha = match image_sha_override {
+        Some(s) => s,
+        None => std::env::var(lane.image.env_var()).map_err(|_| {
+            anyhow::anyhow!(
+                "image SHA not provided and env var `{}` is unset for lane image slot `{:?}`",
+                lane.image.env_var(),
+                lane.image
+            )
+        })?,
+    };
+
+    let plan = plan9::build_plan(lane, seeds_filter, &image_sha)?;
+    let triplet = plan9::AccountTriplet::from_env(lane.account)?;
+    triplet.matches_lane(lane)?;
+
+    if dry_run {
+        print!("{}", plan9::render_dry_run(&plan, &triplet));
+        return Ok(());
+    }
+
+    plan9::execute_plan(&plan, &triplet).await?;
     Ok(())
 }
