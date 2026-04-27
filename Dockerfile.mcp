@@ -4,7 +4,7 @@
 # debian-slim runtime. Listens on $PORT (Railway convention).
 
 # ---------- builder ----------
-FROM rust:1.85-slim-bookworm AS builder
+FROM rust:1.90-slim-bookworm AS builder
 
 ENV CARGO_TERM_COLOR=always \
     DEBIAN_FRONTEND=noninteractive
