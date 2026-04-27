@@ -333,12 +333,7 @@ async fn main() -> Result<()> {
             std::process::exit(exit);
         }
         Cmd::Audit {
-            sub:
-                AuditCmd::Batch {
-                    target,
-                    json,
-                    root,
-                },
+            sub: AuditCmd::Batch { target, json, root },
         } => {
             let exit = run_audit_batch(target, json, root).await?;
             std::process::exit(exit);
