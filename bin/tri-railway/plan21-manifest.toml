@@ -1,0 +1,154 @@
+# plan-21 minimum-viable manifest for `tri railway plan9 deploy`.
+#
+# Parent tracker: https://github.com/gHashTag/trios-railway/issues/43
+# Race:           https://github.com/gHashTag/trios/issues/143
+# Anchor:         phi^2 + phi^-2 = 3
+
+version = "plan-21 / 2026-04-27T19:25Z"
+anchor  = "phi^2 + phi^-2 = 3"
+
+# Hard drift rules consumed by the watchdog (sibling readers).
+[drift_rules]
+missing_seed                 = "warn"
+extra_seed                   = "info"
+wrong_account                = "error"
+ledger_zero_after_t_plus_18h = "error"
+
+# ----------------------------------------------------------------------------
+# LANES
+#
+# Each lane: a cohort of trainer services that share one config. Seeds are
+# rendered into service names via `name_template` (handlebars-style `{{seed}}`).
+# `env` is applied verbatim; `TRIOS_SEED` is added by the deployer.
+#
+# `image` = one of { "champion", "wsd_merged", "jepat_merged", "nca_merged" }.
+# Resolved at deploy time from --image-sha or the corresponding env var,
+# so the manifest does not hard-code SHAs.
+#
+# `blocked_on` lists string tags the operator uses to gate deployment; if any
+# are present, `tri railway plan9 deploy --lane=<L>` refuses unless --force.
+# ----------------------------------------------------------------------------
+
+[[lanes]]
+lane          = "L1_attn_backward"
+account       = "acc1"
+project_id    = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b"
+env_id        = "54e293b9-00a9-4102-814d-db151636d96e"
+seeds         = [210, 211, 212]
+name_template = "trios-train-seed-{{seed}}-L1-attnbw"
+image         = "champion"
+state         = "running"       # deployed at 2026-04-27T18:01Z
+[lanes.env]
+STEPS            = "81000"
+HIDDEN           = "828"
+ATTN_LAYERS      = "2"
+LR               = "0.003"
+OPTIMIZER        = "adamw"
+CONFIG_LANE      = "L1_attn_backward"
+LANE_KICK_TARGET = "-0.20_BPB"
+
+[[lanes]]
+lane          = "L2_jepat_gradflow"
+account       = "acc1"
+project_id    = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b"
+env_id        = "54e293b9-00a9-4102-814d-db151636d96e"
+seeds         = [220, 221, 222]
+name_template = "trios-train-seed-{{seed}}-L2-jepat"
+image         = "jepat_merged"
+state         = "queued"
+blocked_on    = ["trainer-igla:jepat_patch", "mcp:pr-b+c"]
+[lanes.env]
+STEPS            = "81000"
+HIDDEN           = "828"
+ATTN_LAYERS      = "2"
+LR               = "0.003"
+OPTIMIZER        = "adamw"
+JEPA_GRAD_RETAIN = "true"
+JEPA_LOSS_SCALE  = "0.5"
+MASK_RATIO       = "0.30"
+EMA_DECAY        = "0.998"
+CONFIG_LANE      = "L2_jepat_gradflow"
+LANE_KICK_TARGET = "-0.15_BPB"
+
+[[lanes]]
+lane          = "L4_capacity_h2000"
+account       = "acc1"
+project_id    = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b"
+env_id        = "54e293b9-00a9-4102-814d-db151636d96e"
+seeds         = [240, 241, 242]
+name_template = "trios-train-seed-{{seed}}-L4-h2000"
+image         = "champion"
+state         = "running"       # deployed 2026-04-27T18:02Z
+[lanes.env]
+STEPS            = "81000"
+HIDDEN           = "2000"
+ATTN_LAYERS      = "3"
+SEQ_LEN          = "256"
+LR               = "0.003"
+OPTIMIZER        = "adamw"
+CONFIG_LANE      = "L4_capacity_h2000"
+LANE_KICK_TARGET = "-0.25_BPB"
+
+[[lanes]]
+lane          = "L5_wsd"
+# Rerouted Acc1 -> Acc2 because Acc1 sits at 24/25 daily-deploy quota.
+account       = "acc2"
+project_id    = "39d833c1-4cb6-4af9-b61b-c204b6733a98"
+env_id        = "bce42949-d4ab-43d9-89d1-a6fcc576f45a"
+seeds         = [200, 201, 202]
+name_template = "trios-train-seed-{{seed}}-L5-wsd"
+image         = "wsd_merged"
+state         = "queued"
+blocked_on    = ["trainer-igla:wsd_scheduler", "mcp:pr-b+c"]
+[lanes.env]
+STEPS         = "81000"
+HIDDEN        = "828"
+ATTN_LAYERS   = "2"
+LR            = "0.003"
+OPTIMIZER     = "adamw"
+SCHEDULE      = "wsd"
+WARMUP_STEPS  = "1000"
+STABLE_STEPS  = "70000"
+DECAY_STEPS   = "10000"
+CONFIG_LANE   = "L5_wsd"
+LANE_KICK_TARGET = "-0.10_BPB"
+
+[[lanes]]
+lane          = "L4lite_h768_3L"
+account       = "acc2"
+project_id    = "39d833c1-4cb6-4af9-b61b-c204b6733a98"
+env_id        = "bce42949-d4ab-43d9-89d1-a6fcc576f45a"
+seeds         = [250, 251, 252]
+name_template = "trios-train-seed-{{seed}}-L4lite-h768"
+image         = "champion"
+state         = "queued"
+blocked_on    = ["mcp:pr-b+c"]
+[lanes.env]
+STEPS         = "81000"
+HIDDEN        = "768"
+ATTN_LAYERS   = "3"
+SEQ_LEN       = "192"
+LR            = "0.003"
+OPTIMIZER     = "adamw"
+CONFIG_LANE   = "L4lite_h768_3L"
+LANE_KICK_TARGET = "-0.10_BPB"
+
+[[lanes]]
+lane          = "phase3_backup_replicas"
+account       = "acc2"
+project_id    = "39d833c1-4cb6-4af9-b61b-c204b6733a98"
+env_id        = "bce42949-d4ab-43d9-89d1-a6fcc576f45a"
+seeds         = [300, 301, 302]
+name_template = "trios-train-seed-{{seed}}-phase3-replica"
+image         = "champion"
+state         = "queued"
+# Trigger: T+24h ASHA rung-3 triage produced 3 surviving champion configs.
+blocked_on    = ["phase2:rung3_triage"]
+[lanes.env]
+STEPS         = "81000"
+HIDDEN        = "828"
+ATTN_LAYERS   = "2"
+LR            = "0.003"
+OPTIMIZER     = "adamw"
+CONFIG_LANE   = "phase3_replica"
+LANE_KICK_TARGET = "variance_reduction_only"

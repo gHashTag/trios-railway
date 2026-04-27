@@ -28,6 +28,7 @@ tracing     = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum        = "0.8"
 schemars    = "1.0"
+toml        = "0.8"
 rmcp        = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server"] }
 uuid        = { version = "1.10", features = ["v4", "serde"] }
 chrono      = { version = "0.4", features = ["serde"] }
