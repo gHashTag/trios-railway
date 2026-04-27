@@ -152,3 +152,43 @@ LR            = "0.003"
 OPTIMIZER     = "adamw"
 CONFIG_LANE   = "phase3_replica"
 LANE_KICK_TARGET = "variance_reduction_only"
+
+[[lanes]]
+lane          = "L4_ema_n10"
+account       = "acc0"
+project_id    = "265301ce-0bf2-4187-a36f-348b0eb9942f"
+env_id        = "f3517e98-c11a-49d8-b5fd-4cbb82d04384"
+seeds         = [240, 241, 242]
+name_template = "trios-train-seed-{{seed}}-L4-ema-n10"
+image         = "champion"
+state         = "queued"
+[lanes.env]
+STEPS            = "81000"
+HIDDEN           = "828"
+ATTN_LAYERS      = "2"
+LR               = "0.003"
+OPTIMIZER        = "adamw"
+EMA_DECAY        = "0.998"
+EMA_N            = "10"
+EMA_ENABLED      = "true"
+CONFIG_LANE      = "L4_ema_n10"
+LANE_KICK_TARGET = "-0.07_BPB"
+
+[[lanes]]
+lane          = "L6_batch8_ab"
+account       = "acc0"
+project_id    = "265301ce-0bf2-4187-a36f-348b0eb9942f"
+env_id        = "f3517e98-c11a-49d8-b5fd-4cbb82d04384"
+seeds         = [210, 211, 212]
+name_template = "trios-train-seed-{{seed}}-L6-batch8"
+image         = "champion"
+state         = "queued"
+[lanes.env]
+STEPS            = "81000"
+HIDDEN           = "828"
+ATTN_LAYERS      = "2"
+LR               = "0.003"
+OPTIMIZER        = "adamw"
+BATCH_SIZE       = "8"
+CONFIG_LANE      = "L6_batch8_ab"
+LANE_KICK_TARGET = "ab_control"
