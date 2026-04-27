@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       new_token:
-        description: "Set ONLY when restoring after a ban. Leave empty for a regular re-sync."
+        description: "Name of a repo secret containing the replacement token (e.g. RAILWAY_TOKEN_ACC3). Leave empty for default."
         required: false
         type: string
       project_name:
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      RAILWAY_TOKEN:    ${{ inputs.new_token != '' && inputs.new_token || secrets.RAILWAY_TOKEN }}
+      RAILWAY_TOKEN:    ${{ inputs.new_token != '' && secrets[inputs.new_token] || secrets.RAILWAY_TOKEN }}
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       GHCR_PAT:         ${{ secrets.GHCR_PAT }}
       RUST_LOG:         info
@@ -53,11 +53,11 @@ jobs:
             --manifest restore-fleet.json \
             --project-name "${{ inputs.project_name }}" \
             ${{ inputs.champion_sha != '' && format('--champion-sha {0}', inputs.champion_sha) || '' }} \
-            --confirm
+            --confirm "${{ inputs.confirm }}"
 
       - name: Apply Neon audit DDL
         if: env.NEON_DATABASE_URL != ''
-        run: ./target/release/tri-railway audit migrate-sql | psql "$NEON_DATABASE_URL"
+        run: set -o pipefail && ./target/release/tri-railway audit migrate-sql | psql "$NEON_DATABASE_URL"
 
       - name: Append L7 experience line
         run: |

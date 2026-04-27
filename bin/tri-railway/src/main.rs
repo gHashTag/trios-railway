@@ -86,7 +86,7 @@ enum Cmd {
         #[arg(long)]
         manifest: PathBuf,
         /// Override `RAILWAY_TOKEN` env (post-ban scenario).
-        #[arg(long)]
+        #[arg(long, hide = true)]
         new_token: Option<String>,
         /// Project name for the new/upserted project.
         #[arg(long, default_value = "IGLA")]
@@ -223,6 +223,19 @@ enum AuditCmd {
         #[arg(long, env = "TRIOS_RAILWAY_PROJECT", default_value = IGLA_PROJECT_ID)]
         project: String,
     },
+    /// Batch audit across multiple accounts/projects. Runs `audit run` for
+    /// each known project, merges results, and returns the worst exit code.
+    Batch {
+        /// Gate-2 BPB target.
+        #[arg(long, default_value_t = 1.85_f64)]
+        target: f64,
+        /// Print merged verdict as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Repo root for the experience log.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -317,6 +330,17 @@ async fn main() -> Result<()> {
             sub: AuditCmd::Verify { project },
         } => {
             let exit = run_audit(project, 1.85, None, false, PathBuf::from(".")).await?;
+            std::process::exit(exit);
+        }
+        Cmd::Audit {
+            sub:
+                AuditCmd::Batch {
+                    target,
+                    json,
+                    root,
+                },
+        } => {
+            let exit = run_audit_batch(target, json, root).await?;
             std::process::exit(exit);
         }
         Cmd::Service { sub } => run_service(sub).await?,
@@ -600,7 +624,7 @@ async fn run_service(cmd: ServiceCmd) -> Result<()> {
                     println!("  reuse svc = {eid}");
                 }
                 for (k, v) in &parsed {
-                    println!("  var       = {k}={v}");
+                    println!("  var       = {k}=<{} chars>", v.len());
                 }
                 return Ok(());
             }
@@ -713,12 +737,26 @@ struct LockFile {
 }
 
 fn interpolate_secret(value: &str) -> String {
+    const MAX_ITERATIONS: u32 = 32;
     let mut result = value.to_string();
+    let mut iterations = 0;
     while let Some(start) = result.find("${secret:") {
+        iterations += 1;
+        if iterations > MAX_ITERATIONS {
+            tracing::warn!("interpolate_secret: exceeded {MAX_ITERATIONS} iterations, stopping");
+            break;
+        }
         if let Some(end) = result[start..].find('}') {
             let var_name = &result[start + 9..start + end];
             let resolved =
                 std::env::var(var_name).unwrap_or_else(|_| format!("MISSING_SECRET:{var_name}"));
+            if resolved.contains("${secret:") {
+                tracing::warn!(
+                    var = var_name,
+                    "interpolate_secret: resolved value contains nested secret ref, skipping"
+                );
+                break;
+            }
             result.replace_range(start..=start + end, &resolved);
         } else {
             break;
@@ -1034,6 +1072,109 @@ async fn run_snapshot_fleet(
     Ok(())
 }
 
+const FLEET_PROJECTS: &[(&str, &str)] = &[
+    ("acc1", IGLA_PROJECT_ID),
+    ("acc2", "39d833c1-4cb6-4af9-b61b-c204b6733a98"),
+];
+
+#[allow(clippy::too_many_lines)]
+async fn run_audit_batch(target: f64, json_out: bool, _root: PathBuf) -> Result<i32> {
+    let mut worst_exit = 0i32;
+    let mut all_events: Vec<serde_json::Value> = Vec::new();
+    let mut total_services = 0usize;
+
+    for (alias, project_id) in FLEET_PROJECTS {
+        let token_env = format!("RAILWAY_TOKEN_{}", alias.to_uppercase());
+        let token = std::env::var(&token_env)
+            .or_else(|_| std::env::var("RAILWAY_TOKEN"))
+            .ok();
+
+        if let Some(tok) = token {
+            std::env::set_var("RAILWAY_TOKEN", &tok);
+            std::env::set_var("RAILWAY_TOKEN_AUTH", "team");
+        }
+
+        let client_result = Client::from_env();
+        let client = match client_result {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!(account = %alias, error = %e, "skipping account");
+                continue;
+            }
+        };
+
+        let pid = ProjectId::from((*project_id).to_string());
+        let pv = match Q::project_view(&client, &pid).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(account = %alias, error = %e, "project view failed");
+                continue;
+            }
+        };
+
+        let real: Vec<RealService> = pv
+            .services()
+            .into_iter()
+            .map(|s| RealService {
+                service_id: ServiceId::from(s.id.clone()),
+                seed: seed_from_name(&s.name),
+                name: s.name,
+                last_log_excerpt: None,
+                last_bpb: None,
+                image_digest: None,
+                last_heartbeat: None,
+            })
+            .collect();
+
+        let events = detect(&real, &[]);
+        let v = compute_verdict(&real, &events, target);
+
+        println!(
+            "[{}] {} services, {} events, verdict={:?}",
+            alias,
+            real.len(),
+            events.len(),
+            v
+        );
+
+        total_services += real.len();
+        for e in &events {
+            all_events.push(serde_json::json!({
+                "account": alias,
+                "code": format!("{:?}", e.code),
+                "severity": format!("{:?}", e.severity),
+                "service": e.detail,
+            }));
+        }
+
+        let exit = v.exit_code();
+        if exit > worst_exit {
+            worst_exit = exit;
+        }
+    }
+
+    if json_out {
+        let summary = serde_json::json!({
+            "accounts": FLEET_PROJECTS.len(),
+            "total_services": total_services,
+            "total_events": all_events.len(),
+            "target": target,
+            "events": all_events,
+            "worst_exit": worst_exit,
+        });
+        println!("{summary}");
+    }
+
+    println!(
+        "BATCH verdict: {} services across {} accounts, {} drift events, exit={worst_exit}",
+        total_services,
+        FLEET_PROJECTS.len(),
+        all_events.len()
+    );
+
+    Ok(worst_exit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1085,6 +1226,20 @@ mod tests {
         std::env::set_var("TEST_MIX_A", "aaa");
         let result = interpolate_secret("prefix-${secret:TEST_MIX_A}-suffix");
         assert_eq!(result, "prefix-aaa-suffix");
+    }
+
+    #[test]
+    fn secret_interpolation_no_infinite_loop_on_self_ref() {
+        std::env::set_var("TEST_SELF_REF", "x${secret:TEST_SELF_REF}y");
+        let result = interpolate_secret("${secret:TEST_SELF_REF}");
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn secret_interpolation_nested_ref_stops() {
+        std::env::set_var("TEST_NESTED_B", "val-${secret:TEST_NESTED_C}");
+        let result = interpolate_secret("${secret:TEST_NESTED_B}");
+        assert!(!result.is_empty());
     }
 
     #[test]

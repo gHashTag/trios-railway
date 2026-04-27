@@ -88,6 +88,7 @@ jobs:
               --json \
               --root . > /tmp/acc1.txt 2> /tmp/acc1.log
           echo "exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
           echo '----- stdout -----'
           cat /tmp/acc1.txt
           echo '----- stderr (tracing) -----'
@@ -115,6 +116,7 @@ jobs:
               --json \
               --root . > /tmp/acc2.txt 2> /tmp/acc2.log
           echo "exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
           echo '----- stdout -----'
           cat /tmp/acc2.txt
           echo '----- stderr (tracing) -----'

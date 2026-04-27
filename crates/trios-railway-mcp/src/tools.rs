@@ -16,8 +16,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use trios_railway_core::{
-    mutations as M, queries as Q, transport::Client, EnvironmentId, ProjectId, RailwayHash,
-    ServiceId,
+    mutations as M, queries as Q,
+    transport::{AuthMode, Client},
+    EnvironmentId, ProjectId, RailwayHash, ServiceId,
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
@@ -229,7 +230,8 @@ impl TriosRailwayMcp {
         .map_err(internal_err)?;
         let root: PathBuf = req
             .experience_root
-            .map_or_else(|| PathBuf::from("."), PathBuf::from);
+            .map_or_else(|| Ok(PathBuf::from(".")), |r| safe_root(&r))
+            .map_err(internal_err)?;
         let path = append_line(&root.join(".trinity"), &line)
             .await
             .map_err(internal_err)?;
@@ -325,7 +327,10 @@ impl TriosRailwayMcp {
             &hash,
         )
         .map_err(internal_err)?;
-        let root: PathBuf = req.root.map_or_else(|| PathBuf::from("."), PathBuf::from);
+        let root: PathBuf = req
+            .root
+            .map_or_else(|| Ok(PathBuf::from(".")), |r| safe_root(&r))
+            .map_err(internal_err)?;
         let path = append_line(&root.join(".trinity"), &line)
             .await
             .map_err(internal_err)?;
@@ -390,6 +395,25 @@ fn build_client() -> Result<Client, McpError> {
     })
 }
 
+fn safe_root(raw: &str) -> Result<PathBuf, McpError> {
+    let p = PathBuf::from(raw);
+    if p.is_absolute() {
+        return Err(McpError::invalid_params(
+            "root/experience_root must be a relative path".to_string(),
+            None,
+        ));
+    }
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(McpError::invalid_params(
+            "root/experience_root must not contain '..'".to_string(),
+            None,
+        ));
+    }
+    Ok(p)
+}
+
 fn client_for_account(alias: Option<&str>) -> Result<Client, McpError> {
     match alias {
         None | Some("default") => build_client(),
@@ -401,7 +425,12 @@ fn client_for_account(alias: Option<&str>) -> Result<Client, McpError> {
                     None,
                 )
             })?;
-            Client::with_token(&token).map_err(|e| {
+            let auth = if trios_railway_core::transport::is_uuid_like(&token) {
+                AuthMode::Project
+            } else {
+                AuthMode::Team
+            };
+            Client::with_token_and_mode(&token, auth).map_err(|e| {
                 McpError::internal_error(format!("account `{name}` token invalid: {e}"), None)
             })
         }
@@ -492,5 +521,24 @@ mod tests {
     fn client_for_default_returns_env_client() {
         assert!(client_for_account(None).is_err());
         assert!(client_for_account(Some("default")).is_err());
+    }
+
+    #[test]
+    fn safe_root_rejects_absolute() {
+        assert!(safe_root("/etc").is_err());
+        assert!(safe_root("/tmp/foo").is_err());
+    }
+
+    #[test]
+    fn safe_root_rejects_parent_dir() {
+        assert!(safe_root("../etc").is_err());
+        assert!(safe_root("foo/../../bar").is_err());
+    }
+
+    #[test]
+    fn safe_root_accepts_relative() {
+        assert!(safe_root(".").is_ok());
+        assert!(safe_root("subdir").is_ok());
+        assert!(safe_root("a/b/c").is_ok());
     }
 }

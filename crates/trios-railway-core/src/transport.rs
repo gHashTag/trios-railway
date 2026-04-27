@@ -13,7 +13,7 @@ use thiserror::Error;
 const ENDPOINT: &str = "https://backboard.railway.com/graphql/v2";
 
 /// True if `s` matches the canonical 8-4-4-4-12 hex UUID shape.
-fn is_uuid_like(s: &str) -> bool {
+pub fn is_uuid_like(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.len() != 36 {
         return false;
@@ -57,12 +57,22 @@ pub enum ClientError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Client {
     http: reqwest::Client,
     endpoint: String,
     token: String,
     auth: AuthMode,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("endpoint", &self.endpoint)
+            .field("auth", &self.auth)
+            .field("token", &"[REDACTED]")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Serialize)]
