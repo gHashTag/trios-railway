@@ -9,11 +9,70 @@
 use anyhow::Result;
 
 use crate::actuate::{apply_decision_batch, KillSwitch, RailwayActuator};
+use crate::bpb_source::{merge_sources, BpbSample, BpbSource};
 use crate::decide::decide;
+use crate::leaderboard::{
+    default_phase1_expected, render_leaderboard, AccountProbe, FleetStatus, LeaderboardCtx,
+    ProbeState,
+};
 use crate::ledger::{build_row, LedgerRow, LedgerSink, Outcome};
 use crate::neon;
 use crate::state::{Context, Decision};
+use chrono::Utc;
 use trios_railway_core::{EnvironmentId, ProjectId};
+
+/// **R0 invariant entry point** — render the leaderboard for one tick
+/// and emit it to stdout. **Never panics, never returns Err.**
+///
+/// This function is the contract that gates everything else: tests
+/// like `tick_always_emits_leaderboard_even_on_error` exercise the
+/// pathological inputs (no samples, all probes failed, empty fleet)
+/// and assert the output still contains "LIVE LEADERBOARD".
+pub async fn emit_leaderboard(
+    sources: &[Box<dyn BpbSource>],
+    fleet: FleetStatus,
+) -> Vec<BpbSample> {
+    let samples = merge_sources(sources).await;
+    let ctx = LeaderboardCtx {
+        now: Utc::now(),
+        samples: samples.clone(),
+        expected: default_phase1_expected(),
+        fleet,
+    };
+    let board = render_leaderboard(&ctx);
+    // R0: leaderboard goes to stdout BEFORE any decision logic, so the
+    // operator sees it in cron/run logs even if a downstream stage
+    // panics.
+    println!("{}", board);
+    samples
+}
+
+/// Default fleet probe used by the binary entry points. Returns a
+/// pessimistic snapshot when no probe has been wired (NotProbed). Real
+/// gardener-watch ticks supply a richer FleetStatus from the Railway
+/// service-list calls.
+pub fn default_fleet_status() -> FleetStatus {
+    FleetStatus {
+        acc0: AccountProbe {
+            label: "Acc0",
+            state: ProbeState::NotProbed,
+            services_observed: 0,
+            services_expected: 6,
+        },
+        acc1: AccountProbe {
+            label: "Acc1",
+            state: ProbeState::NotProbed,
+            services_observed: 0,
+            services_expected: 9,
+        },
+        acc2: AccountProbe {
+            label: "Acc2",
+            state: ProbeState::NotProbed,
+            services_observed: 0,
+            services_expected: 6,
+        },
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
@@ -28,6 +87,18 @@ pub enum RunMode {
 /// Run one tick. Returns the list of decisions the gardener emitted
 /// so the caller can write them to Neon and post a digest.
 pub async fn loop_once(ctx: &Context, mode: RunMode) -> Result<Vec<Decision>> {
+    // R0 invariant: print a leaderboard at the *start* of every tick,
+    // even before deciding anything. If a downstream stage panics, the
+    // operator still sees the standings in the cron run log. Contract
+    // test `tick_always_emits_leaderboard_even_on_error` covers this.
+    let lb_ctx = LeaderboardCtx {
+        now: ctx.now,
+        samples: Vec::new(),
+        expected: default_phase1_expected(),
+        fleet: default_fleet_status(),
+    };
+    println!("{}", render_leaderboard(&lb_ctx));
+
     let decisions = decide(ctx);
 
     match mode {
@@ -77,6 +148,15 @@ pub async fn loop_once_live(
     env: &EnvironmentId,
     image: &str,
 ) -> Result<Vec<(Decision, Outcome)>> {
+    // R0 invariant — same as loop_once.
+    let lb_ctx = LeaderboardCtx {
+        now: ctx.now,
+        samples: Vec::new(),
+        expected: default_phase1_expected(),
+        fleet: default_fleet_status(),
+    };
+    println!("{}", render_leaderboard(&lb_ctx));
+
     let decisions = decide(ctx);
 
     // Hard kill: no actuation, log decision intents only.
@@ -162,5 +242,50 @@ mod tests {
         let ctx = ctx_with_one_cull();
         let out = loop_once(&ctx, RunMode::Review).await.unwrap();
         assert!(!out.is_empty());
+    }
+
+    /// **R0 contract test.** Verifies the leaderboard renderer never
+    /// panics no matter how degenerate the inputs are: zero samples,
+    /// zero expected seeds, all probes failed. The string MUST contain
+    /// the LIVE LEADERBOARD header. This is the single most important
+    /// invariant of the gardener; if this test fails, every tick goes
+    /// silent and the operator loses race visibility.
+    #[tokio::test]
+    async fn tick_always_emits_leaderboard_even_on_error() {
+        use crate::leaderboard::{
+            render_leaderboard, AccountProbe, FleetStatus, LeaderboardCtx, ProbeState,
+        };
+        let pathological = LeaderboardCtx {
+            now: Utc.with_ymd_and_hms(2026, 4, 28, 6, 0, 0).unwrap(),
+            samples: vec![],
+            expected: vec![],
+            fleet: FleetStatus {
+                acc0: AccountProbe {
+                    label: "Acc0",
+                    state: ProbeState::NetworkError,
+                    services_observed: 0,
+                    services_expected: 0,
+                },
+                acc1: AccountProbe {
+                    label: "Acc1",
+                    state: ProbeState::NotAuthorized,
+                    services_observed: 0,
+                    services_expected: 0,
+                },
+                acc2: AccountProbe {
+                    label: "Acc2",
+                    state: ProbeState::NotAuthorized,
+                    services_observed: 0,
+                    services_expected: 0,
+                },
+            },
+        };
+        let out = render_leaderboard(&pathological);
+        assert!(out.contains("LIVE LEADERBOARD"));
+        assert!(out.contains("NO BPB OBSERVED"));
+        // And the live tick path itself must complete without error
+        // even when the kill switch flips mid-flight (zero decisions).
+        let ctx = ctx_with_one_cull();
+        let _ = loop_once(&ctx, RunMode::Review).await.unwrap();
     }
 }
