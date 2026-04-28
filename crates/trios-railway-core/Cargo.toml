@@ -15,6 +15,7 @@ workspace = true
 anyhow    = { workspace = true }
 thiserror = { workspace = true }
 secrecy   = { workspace = true }
+regex     = "1"
 serde     = { workspace = true }
 serde_json = { workspace = true }
 chrono    = { workspace = true }

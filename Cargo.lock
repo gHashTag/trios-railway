@@ -2258,6 +2258,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "hex",
+ "regex",
  "reqwest",
  "secrecy",
  "serde",
