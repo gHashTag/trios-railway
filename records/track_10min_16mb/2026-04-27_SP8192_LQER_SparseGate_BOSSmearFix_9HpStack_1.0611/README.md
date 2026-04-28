@@ -70,7 +70,7 @@ The PR #1797 base only ships `lzma` / `brotli` compressors. This submission adds
 
 Net effect on this stack: ~280 KB smaller artifact than `COMPRESSOR=brotli`, at the cost of ~75 s of additional serialize time (lrzip ZPAQ is slow). Decompression is fast enough to fit comfortably in the eval budget.
 
-`apt-get install lrzip` is required at runtime — the Python `subprocess.run` wrapper shells out to the binary.
+The `lrzip` binary must be present on the system before the training script runs (e.g. install with `apt-get install lrzip` during instance setup). The script itself does not run `apt-get`; the Python `subprocess.run` wrapper just shells out to the already-installed `lrzip` binary.
 
 ## Hyperparameter stack
 
