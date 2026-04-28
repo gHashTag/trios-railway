@@ -99,4 +99,44 @@ const triosClient = new MCPClient({
   url: "http://localhost:9005/mcp",
   name: "trios-git",
 })
+
+## Railway MCP Server
+
+Separate MCP server for Railway service management.
+
+**Repository**: [gHashTag/trios-railway-mcp](https://github.com/gHashTag/trios-railway-mcp)
+**npm**: `@ghashtag/trios-railway-mcp` (published as `trios-railway-mcp` for now)
+**URL**: https://trios-railway-mcp-production.up.railway.app/mcp
+
+### MCP Tools (6)
+
+| Tool | Description |
+|------|-------------|
+| `railway_service_list` | List all Railway services in a project |
+| `railway_service_deploy` | Create/deploy services with image and env vars |
+| `railway_service_redeploy` | Redeploy existing services |
+| `railway_service_delete` | Delete services (requires `confirm: true`) |
+| `railway_experience_append` | Append to L7 experience log |
+| `railway_audit_migrate_sql` | Get Neon DDL for audit tables |
+
+### Installation
+
+```bash
+npm install -g trios-railway-mcp
+trios-railway-mcp
+```
+
+### Usage
+
+```typescript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const transport = new StreamableHTTPClientTransport(
+  new URL("https://trios-railway-mcp-production.up.railway.app/mcp")
+);
+
+const client = new Client({ name: "client", version: "1.0.0" });
+await client.connect(transport);
+```
 ```
