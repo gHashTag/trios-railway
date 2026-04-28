@@ -8,7 +8,7 @@ pub fn main() !void {
     const seed: u32 = 0xF17;
     var counter: u32 = seed;
     for (0..test_count) |i| {
-        counter = ((counter *% 1103515245) + 1);
+        counter = ((counter * 1103515245) + 1) % 2147483648;
         const temp_u = counter & 0xFFFFFF;
         const x = @as(f32, @floatFromInt(temp_u)) / 16777216.0;
         weights[i] = (x - 0.5) * 0.2;

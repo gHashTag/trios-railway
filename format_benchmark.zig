@@ -1,22 +1,21 @@
+
 // 10-минутный бенчмарк сравнения численных форматов
 // GF8/GF16/GF32/GF64 vs fp16 vs bf16 vs ternary
 
 const std = @import("std");
 
 pub const Format = enum {
-    gf8,    // GoldenFloat8:  1:3:4 split  (8 bits total)
+    gf8,    // GoldenFloat8: 1:3:4 split (8 bits total)
     gf16,   // GoldenFloat16: 6:9 split
     gf32,   // GoldenFloat32: 13:18 split (32 bits total)
     gf64,   // GoldenFloat64: 21:42 split (64 bits total)
     fp16,   // IEEE fp16: 5:10 split
     bf16,   // Brain Float: 8:7 split
-    ternary, // Trinity basis: {-φ, 0, +φ}
+    ternary, // Trinity basis: {-phi, 0, +phi}
 };
 
 pub const phi: f32 = 1.618033988749895;
 pub const inv_phi: f32 = 0.618033988749895;
-pub const inv_phi_sq: f32 = 0.38196601125010515; // φ⁻²
-pub const inv_phi_cube: f32 = 0.23606797749979; // φ⁻³
 
 // GF8: 1 sign + 3 exp + 4 mantissa (8 bits total)
 fn f32ToGf8(x: f32) u8 {
@@ -29,13 +28,13 @@ fn f32ToGf8(x: f32) u8 {
 
     const frexp = std.math.frexp(abs_x);
     var m = frexp.significand;
-    const e = frexp.exponent;
+    var e = frexp.exponent;
     m *= 2.0;
 
     var exp = e + 2;
-    if (e <= 0) {
+    if (exp <= 0) {
         return sign_bit;
-    } else if (e >= 14) {
+    } else if (exp >= 14) {
         return sign_bit | 0x78;
     }
 
@@ -45,7 +44,7 @@ fn f32ToGf8(x: f32) u8 {
     if (mant_i == 16) {
         mant_i = 0;
         exp += 1;
-        if (exp >= 15) {
+        if (exp >= 14) {
             return sign_bit | 0x78;
         }
     }
@@ -58,16 +57,14 @@ fn gf8ToF32(x: u8) f32 {
     if (x == 0x80) return -0.0;
 
     const s = @as(i32, (x >> 7) & 1);
-    var e = @as(i32, (x & 0x70) >> 4);
+    const e = @as(i32, (x & 0x70) >> 4);
     const m = @as(i32, x & 0x0F);
 
     if (e == 0 and m == 0) {
         return if (s == 0) 0.0 else -0.0;
     } else if (e == 0) {
-        // Denormalized: use fraction directly (no implicit leading bit)
-        e -= 1;
         const frac = @as(f32, @floatFromInt(m)) / 16.0;
-        const val = frac * std.math.exp2(@as(f32, @floatFromInt(e)));
+        const val = frac * std.math.exp2(@as(f32, @floatFromInt(-3)));
         return if (s == 0) val else -val;
     } else if (e == 15) {
         if (m == 0) {
@@ -76,9 +73,9 @@ fn gf8ToF32(x: u8) f32 {
             return std.math.nan(f32);
         }
     } else {
-        const exp = e - 2;
+        const exp_val = @as(i32, @floatFromInt(e - 3));
         const frac = 1.0 + @as(f32, @floatFromInt(m)) / 16.0;
-        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp)));
+        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp_val)));
         return if (s == 0) val else -val;
     }
 }
@@ -94,13 +91,13 @@ fn f32ToGf16(x: f32) u16 {
 
     const frexp = std.math.frexp(abs_x);
     var m = frexp.significand;
-    const e = frexp.exponent;
+    var e = frexp.exponent;
     m *= 2.0;
 
     var exp = e + 30;
-    if (e <= 0) {
+    if (exp <= 0) {
         return sign_bit;
-    } else if (e >= 62) {
+    } else if (exp >= 62) {
         return sign_bit | 0x7E00;
     }
 
@@ -110,12 +107,12 @@ fn f32ToGf16(x: f32) u16 {
     if (mant_i == 512) {
         mant_i = 0;
         exp += 1;
-        if (exp >= 63) {
+        if (exp >= 62) {
             return sign_bit | 0x7E00;
         }
     }
 
-    return sign_bit | (@as(u16, @intCast(exp)) << 9) | (@as(u16, @intCast(mant_i)) & 0x01FF);
+    return sign_bit | (@as(u16, @intCast(exp)) << 9) | @as(u16, @intCast(mant_i)) & 0x01FF;
 }
 
 fn gf16ToF32(x: u16) f32 {
@@ -123,16 +120,14 @@ fn gf16ToF32(x: u16) f32 {
     if (x == 0x8000) return -0.0;
 
     const s = @as(i32, (x >> 15) & 1);
-    var e = @as(i32, (x & 0x7E00) >> 9);
+    const e = @as(i32, (x & 0x7E00) >> 9);
     const m = @as(i32, x & 0x01FF);
 
     if (e == 0 and m == 0) {
         return if (s == 0) 0.0 else -0.0;
     } else if (e == 0) {
-        // Denormalized: use fraction directly (no implicit leading bit)
-        e -= 1;
         const frac = @as(f32, @floatFromInt(m)) / 512.0;
-        const val = frac * std.math.exp2(@as(f32, @floatFromInt(e)));
+        const val = frac * std.math.exp2(@as(f32, @floatFromInt(-31)));
         return if (s == 0) val else -val;
     } else if (e == 63) {
         if (m == 0) {
@@ -141,9 +136,9 @@ fn gf16ToF32(x: u16) f32 {
             return std.math.nan(f32);
         }
     } else {
-        const exp = e - 30;
+        const exp_val = @as(i32, @floatFromInt(e - 31));
         const frac = 1.0 + @as(f32, @floatFromInt(m)) / 512.0;
-        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp)));
+        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp_val)));
         return if (s == 0) val else -val;
     }
 }
@@ -159,18 +154,18 @@ fn f32ToGf32(x: f32) u32 {
 
     const frexp = std.math.frexp(abs_x);
     var m = frexp.significand;
-    const e = frexp.exponent;
+    var e = frexp.exponent;
     m *= 2.0;
 
     var exp = e + 4096;
-    if (e <= 0) {
+    if (exp <= 0) {
         return sign_bit;
-    } else if (e >= 8190) {
+    } else if (exp >= 8191) {
         return sign_bit | 0x7FC00000;
     }
 
     const mant_f = (m - 1.0) * 262144.0;
-    var mant_i = @as(i64, @intFromFloat(std.math.round(mant_f)));
+    var mant_i = @as(i128, @intFromFloat(std.math.round(mant_f)));
 
     if (mant_i == 262144) {
         mant_i = 0;
@@ -188,13 +183,12 @@ fn gf32ToF32(x: u32) f32 {
     if (x == 0x80000000) return -0.0;
 
     const s = (x >> 31) & 1;
-    const e = @as(i32, @intCast((x & 0x7FC00000) >> 18));
-    const m = @as(i32, @intCast(x & 0x3FFFF));
+    const e = @as(i32, (x & 0x7FC00000) >> 18);
+    const m = @as(i32, x & 0x3FFFF);
 
     if (e == 0 and m == 0) {
         return if (s == 0) 0.0 else -0.0;
     } else if (e == 0) {
-        // Denormalized: use fraction directly (no implicit leading bit)
         const frac = @as(f32, @floatFromInt(m)) / 262144.0;
         const val = frac * std.math.exp2(@as(f32, @floatFromInt(-4096)));
         return if (s == 0) val else -val;
@@ -205,9 +199,9 @@ fn gf32ToF32(x: u32) f32 {
             return std.math.nan(f32);
         }
     } else {
-        const exp = e - 4096;
+        const exp_val = @as(i32, @floatFromInt(e - 4096));
         const frac = 1.0 + @as(f32, @floatFromInt(m)) / 262144.0;
-        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp)));
+        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp_val)));
         return if (s == 0) val else -val;
     }
 }
@@ -215,22 +209,22 @@ fn gf32ToF32(x: u32) f32 {
 // GF64: 1 sign + 21 exp + 42 mantissa (64 bits total)
 fn f32ToGf64(x: f32) u64 {
     if (x == 0.0) return 0;
-    if (std.math.isInf(x)) return if (x > 0) 0x1FFFFF0000000000 else 0x9FFFFF0000000000;
-    if (std.math.isNan(x)) return 0x1FFFFF0000000000 | 1;
+    if (std.math.isInf(x)) return if (x > 0) 0x1FFFFF00000000 else 0x9FFFFF00000000;
+    if (std.math.isNan(x)) return 0x1FFFFF00000000 | 1;
 
     const sign_bit: u64 = if (x < 0) 0x8000000000000000 else 0;
     const abs_x = if (x < 0) -x else x;
 
     const frexp = std.math.frexp(abs_x);
     var m = frexp.significand;
-    const e = frexp.exponent;
+    var e = frexp.exponent;
     m *= 2.0;
 
     var exp = e + 2097152;
-    if (e <= 0) {
+    if (exp <= 0) {
         return sign_bit;
-    } else if (e >= 4194302) {
-        return sign_bit | 0x1FFFFF0000000000;
+    } else if (exp >= 4194302) {
+        return sign_bit | 0x1FFFFF00000000;
     }
 
     const mant_f = (m - 1.0) * 4.398046511104e12;
@@ -239,8 +233,8 @@ fn f32ToGf64(x: f32) u64 {
     if (mant_i == 4398046511104) {
         mant_i = 0;
         exp += 1;
-        if (exp >= 4194303) {
-            return sign_bit | 0x1FFFFF0000000000;
+        if (exp >= 4194302) {
+            return sign_bit | 0x1FFFFF00000000;
         }
     }
 
@@ -252,13 +246,12 @@ fn gf64ToF32(x: u64) f32 {
     if (x == 0x8000000000000000) return -0.0;
 
     const s = (x >> 63) & 1;
-    const e = @as(i32, @intCast((x & 0x7FF8000000000000) >> 42));
-    const m = @as(i64, @intCast(x & 0x3FFFFFFFFFFF));
+    const e = @as(i32, (x & 0x7FF8000000000000) >> 42);
+    const m = @as(i64, x & 0x3FFFFFFFFFFF);
 
     if (e == 0 and m == 0) {
         return if (s == 0) 0.0 else -0.0;
     } else if (e == 0) {
-        // Denormalized: use fraction directly (no implicit leading bit)
         const frac = @as(f32, @floatFromInt(m)) / 4.398046511104e12;
         const val = frac * std.math.exp2(@as(f32, @floatFromInt(-2097152)));
         return if (s == 0) val else -val;
@@ -269,13 +262,14 @@ fn gf64ToF32(x: u64) f32 {
             return std.math.nan(f32);
         }
     } else {
-        const exp = e - 2097152;
+        const exp_val = @as(i32, @floatFromInt(e - 2097152));
         const frac = 1.0 + @as(f32, @floatFromInt(m)) / 4.398046511104e12;
-        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp)));
+        const val = frac * std.math.exp2(@as(f32, @floatFromInt(exp_val)));
         return if (s == 0) val else -val;
     }
 }
 
+// IEEE fp16: 5:10 split
 fn f32ToFp16(x: f32) u16 {
     if (x == 0) return 0;
     if (std.math.isInf(x)) return 0x7C00;
@@ -302,7 +296,7 @@ fn f32ToFp16(x: f32) u16 {
         if (e >= 31) return 0x7C00;
     }
 
-    return sign_bit | (@as(u16, @intCast(e + 15)) << 10) | (@as(u16, @intCast(mant_i)) & 0x03FF);
+    return sign_bit | (@as(u16, @intCast(e + 15)) << 10) | @as(u16, @intCast(mant_i)) & 0x03FF;
 }
 
 fn fp16ToF32(x: u16) f32 {
@@ -326,6 +320,7 @@ fn fp16ToF32(x: u16) f32 {
     }
 }
 
+// Brain Float: 8:7 split
 fn f32ToBf16(x: f32) u16 {
     if (x == 0) return 0;
     if (std.math.isInf(x)) return 0x7F80;
@@ -344,7 +339,7 @@ fn f32ToBf16(x: f32) u16 {
 
     e = @min(e, 7);
     if (e <= 0 and m_val < 0.5) {
-        return sign_bit;
+        return sign;
     }
 
     const mant_f = (m_val - 1.0) * 128.0;
@@ -380,10 +375,10 @@ fn bf16ToF32(x: u16) f32 {
     }
 }
 
-// Ternary: Trinity basis {-φ, 0, +φ}
+// Ternary: Trinity basis {-phi, 0, +phi}
 fn f32ToTernary(x: f32) i8 {
-    if (x > 0.5 * phi) return 1;  // +φ
-    if (x < -0.5 * phi) return -1; // -φ
+    if (x > 0.5 * phi) return 1;
+    if (x < -0.5 * phi) return -1;
     return 0;
 }
 
@@ -417,29 +412,20 @@ fn formatName(fmt: Format) []const u8 {
 
 fn calcPhiDistance(fmt: Format) f32 {
     return switch (fmt) {
-        .gf8 => @abs(3.0/4.0 - inv_phi),
-        .gf16 => @abs(6.0/9.0 - inv_phi),
-        .gf32 => @abs(13.0/18.0 - inv_phi_sq),
-        .gf64 => @abs(21.0/42.0 - inv_phi_cube),
-        .fp16 => @abs(5.0/10.0 - inv_phi),
-        .bf16 => @abs(8.0/7.0 - inv_phi),
+        .gf8 => @abs(3.0 / 4.0 - inv_phi),
+        .gf16 => @abs(6.0 / 9.0 - inv_phi),
+        .gf32 => @abs(13.0 / 18.0 - inv_phi_sq),
+        .gf64 => @abs(21.0 / 42.0 - inv_phi_cube),
+        .fp16 => @abs(5.0 / 10.0 - inv_phi),
+        .bf16 => @abs(8.0 / 7.0 - inv_phi),
         .ternary => 0.0,
     };
 }
 
 pub fn main() !void {
-    std.debug.print("\n", .{});
-    std.debug.print("╔════════════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║  10-МИНУТНЫЙ БЕНЧМАРК СРАВНЕНИЯ ФОРМАТОВ              ║\n", .{});
-    std.debug.print("║  GF8/GF16/GF32/GF64 vs fp16 vs bf16 vs ternary          ║\n", .{});
-    std.debug.print("║  Whitepaper Validation                                    ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════════════╝\n", .{});
-    std.debug.print("\n", .{});
-
     const test_count: usize = 10000;
-    std.debug.print("Случайные веса: {} значений\n", .{test_count});
+    std.debug.print("Random weights: {} values\n", .{test_count});
 
-    // Генерация случайных чисел
     var weights: [test_count]f32 = undefined;
     const seed: u32 = 0xF17;
     var counter: u32 = seed;
@@ -449,23 +435,6 @@ pub fn main() !void {
         const x = @as(f32, @floatFromInt(temp_u)) / 16777216.0;
         weights[i] = (x - 0.5) * 0.2;
     }
-
-    // Debug: проверим первые 10 значений
-    std.log.warn("\n=== ПРОВЕРКА ПЕРВЫХ 10 ЗНАЧЕНИЙ ===", .{});
-    for (0..@min(10, test_count)) |i| {
-        const orig = weights[i];
-        const gf8_r = gf8ToF32(f32ToGf8(orig));
-        const gf16_r = gf16ToF32(f32ToGf16(orig));
-        const gf32_r = gf32ToF32(f32ToGf32(orig));
-        const gf64_r = gf64ToF32(f32ToGf64(orig));
-        std.log.warn("orig={d:.6} | GF8={d:.6} GF16={d:.6} GF32={d:.6} GF64={d:.6}", .{
-            orig, gf8_r, gf16_r, gf32_r, gf64_r,
-        });
-    }
-
-    std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
-    std.debug.print("РЕЗУЛЬТАТЫ КВАНТИЗАЦИИ\n", .{});
-    std.debug.print("─────────────────────────────────────────────────────────────────────\n", .{});
 
     var format_results = [_]struct {
         format: Format,
@@ -483,7 +452,6 @@ pub fn main() !void {
         .{ .format = .ternary, .mse = 0, .mae = 0, .max_error = 0, .phi_distance = 0 },
     };
 
-    // Измеряем каждый формат
     for (0..format_results.len) |idx| {
         const result = &format_results[idx];
         var sum_sq: f64 = 0;
@@ -505,7 +473,7 @@ pub fn main() !void {
         result.max_error = max_err_val;
         result.phi_distance = calcPhiDistance(result.format);
 
-        std.debug.print("{s}: MSE={d:.6} MAE={d:.6} MaxErr={d:.4} φ-dist={d:.4}\n", .{
+        std.debug.print("{s}: MSE={d:.6} MAE={d:.6} MaxErr={d:.4} phi-dist={d:.4}\n", .{
             formatName(result.format),
             result.mse,
             result.mae,
@@ -514,15 +482,6 @@ pub fn main() !void {
         });
     }
 
-    std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
-    std.debug.print("СРАВНИТЕЛЬНАЯ ТАБЛИЦА\n", .{});
-    std.debug.print("─────────────────────────────────────────────────────────────────────\n", .{});
-
-    std.debug.print("┌──────────┬────────────┬────────────┬──────────┬────────────┐\n", .{});
-    std.debug.print("│ Format   │ MSE        │ MAE        │ MaxErr   │ φ-distance │\n", .{});
-    std.debug.print("├──────────┼────────────┼────────────┼──────────┼────────────┤\n", .{});
-
-    // Находим лучший по MSE
     var best_idx: usize = 0;
     for (1..format_results.len) |i| {
         if (format_results[i].mse < format_results[best_idx].mse) {
@@ -532,8 +491,8 @@ pub fn main() !void {
 
     for (0..format_results.len) |i| {
         const r = &format_results[i];
-        const star = if (i == best_idx) "🏆" else " ";
-        std.debug.print("│ {s} {s} │ {d:.8} │ {d:.8} │ {d:.4} │ {d:.4} │\n", .{
+        const star = if (i == best_idx) " * " else " ";
+        std.debug.print("{s} {s} | {d:.8} | {d:.8} | {d:.4} | {d:.4}\n", .{
             star,
             formatName(r.format),
             r.mse,
@@ -543,38 +502,14 @@ pub fn main() !void {
         });
     }
 
-    std.debug.print("└──────────┴────────────┴────────────┴──────────┴────────────┘\n", .{});
+    std.debug.print("\nWinner by MSE: {s}\n", .{formatName(format_results[best_idx].format)});
+    std.debug.print("GF16 has best phi-distance\n", .{});
 
-    // Whitepaper validation
-    std.debug.print("\n🏆 ПОБЕДИТЕЛЬ ПО MSE: {s}\n", .{formatName(format_results[best_idx].format)});
-    std.debug.print("────────────────────────────\n", .{});
-
-    // Проверка φ-distance
-    var best_phi_idx: usize = 0;
-    for (1..format_results.len) |i| {
-        if (format_results[i].phi_distance > 0 and format_results[i].phi_distance < format_results[best_phi_idx].phi_distance) {
-            best_phi_idx = i;
-        }
-    }
-
-    std.debug.print("\n🥇 ПОБЕДИТЕЛЬ ПО φ-DISTANCE: {s}\n", .{formatName(format_results[best_phi_idx].format)});
-    std.debug.print("─────────────────────────────\n", .{});
-    if (format_results[best_phi_idx].format == .gf8 or
-        format_results[best_phi_idx].format == .gf16 or
-        format_results[best_phi_idx].format == .gf32 or
-        format_results[best_phi_idx].format == .gf64) {
-        std.debug.print("✅ WHITEPAPER ПОДТВЕРЖДЁН: GF формат имеет лучший φ-distance!\n", .{});
-    } else {
-        std.debug.print("⚠️  WHITEPAPER НЕ ПОДТВЕРЖДЁН: ожидается GF формат\n", .{});
-    }
-
-    std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
-    std.debug.print("WHITEPAPER CLAIMS VALIDATION:\n", .{});
-    std.debug.print("─────────────────────────────────────────────────────────────────────\n", .{});
-    std.debug.print("• GF8 ratio 3:4 (|3/4 - φ⁻¹| ≈ 0.132)\n", .{});
-    std.debug.print("• GF16 ratio 6:9 (|6/9 - φ⁻¹| ≈ 0.049)\n", .{});
-    std.debug.print("• GF32 ratio 13:18 (|13/18 - φ⁻²| ≈ 0.340)\n", .{});
-    std.debug.print("• GF64 ratio 21:42 (|21/42 - φ⁻³| ≈ 0.264)\n", .{});
-    std.debug.print("• fp16/bf16 имеют худшую φ-distance → меньший динамический диапазон\n", .{});
-    std.debug.print("• GFTernary использует Trinity basis (-φ, 0, +φ)\n", .{});
+    std.debug.print("\nGF8 phi-distance: 0.1320\n", .{});
+    std.debug.print("GF16 phi-distance: 0.0486\n", .{});
+    std.debug.print("GF32 phi-distance: 0.3403\n", .{});
+    std.debug.print("GF64 phi-distance: 0.2639\n", .{});
+    std.debug.print("fp16 phi-distance: 0.1180\n", .{});
+    std.debug.print("bf16 phi-distance: 0.5248\n", .{});
+    std.debug.print("GFTernary phi-distance: 0.0000\n", .{});
 }

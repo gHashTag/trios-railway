@@ -516,122 +516,9 @@ impl TriosRailwayMcp {
             serde_json::to_string_pretty(&body).unwrap(),
         )]))
     }
-}
 
-impl Default for TriosRailwayMcp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+    // -------- new tools: experiment_queue, worker_status, batch_redeploy --------
 
-#[tool_handler]
-impl ServerHandler for TriosRailwayMcp {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2025_03_26,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "trios-railway-mcp".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                title: Some("Trios Railway MCP".to_string()),
-                website_url: Some("https://github.com/gHashTag/trios-railway".to_string()),
-                icons: None,
-            },
-            instructions: Some(
-                "Public MCP server controlling the IGLA Railway project. \
-                 Set RAILWAY_TOKEN before invoking deploy/redeploy/delete tools. \
-                 Anchor: phi^2 + phi^-2 = 3."
-                    .to_string(),
-            ),
-        }
-    }
-}
-
-// -------- helpers --------
-
-/// Build a client using the default `RAILWAY_TOKEN` env var (legacy fallback).
-fn build_client() -> Result<Client, McpError> {
-    Client::from_env().map_err(|e| {
-        McpError::internal_error(format!("RAILWAY_TOKEN not set or invalid: {e}"), None)
-    })
-}
-
-/// Build a client with the correct token for the given project ID.
-/// Looks up `RAILWAY_TOKEN_ACC{0..3}` env vars to find a matching account.
-/// Falls back to `build_client()` if no match found.
-fn build_client_for_project(project: &str) -> Result<Client, McpError> {
-    // Validate project is in whitelist
-    if !ALLOWED_PROJECT_IDS.contains(&project) {
-        return Err(McpError::invalid_params(
-            format!(
-                "project {project} not in ALLOWED_PROJECT_IDS. Allowed: {ALLOWED_PROJECT_IDS:?}"
-            ),
-            None,
-        ));
-    }
-    // Find matching account
-    for acc in accounts() {
-        if acc.project_id == project {
-            let auth = match acc.token_kind.as_str() {
-                "team" | "bearer" | "personal" => AuthMode::Team,
-                "project" => AuthMode::Project,
-                _ if is_uuid_like(&acc.token) => AuthMode::Project,
-                _ => AuthMode::Team,
-            };
-            return Client::with_token_and_mode(&acc.token, auth).map_err(|e| {
-                McpError::internal_error(
-                    format!("token error for project {project}: {e}"),
-                    None,
-                )
-            });
-        }
-    }
-    // Fallback to default token
-    build_client()
-}
-
-/// Return the environment ID for a project, or the default IGLA env.
-fn env_for_project(project: &str) -> String {
-    for acc in accounts() {
-        if acc.project_id == project && !acc.env_id.is_empty() {
-            return acc.env_id.clone();
-        }
-    }
-    IGLA_PROD_ENV_ID.to_string()
-}
-
-fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
-    McpError::internal_error(e.to_string(), None)
-}
-
-// -------- database helpers --------
-
-#[allow(dead_code)]
-fn neon_url() -> Result<String, McpError> {
-    std::env::var("NEON_DATABASE_URL").map_err(|_| {
-        McpError::internal_error("NEON_DATABASE_URL not set — required for queue/worker tools", None)
-    })
-}
-
-#[allow(dead_code)]
-async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
-    let url = neon_url()?;
-    let (client, connection) =
-        tokio_postgres::connect(&url, tokio_postgres::NoTls)
-            .await
-            .map_err(internal_err)?;
-    // Spawn connection handler in background
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            tracing::error!(%e, "postgres connection error");
-        }
-    });
-    Ok(client)
-}
-
-// -------- new tools: experiment_queue, worker_status, batch_redeploy --------
-
-impl TriosRailwayMcp {
     /// Show experiment queue status grouped by status and account.
     #[tool(description = "Show experiment queue status from Neon database. Returns counts grouped by status and account, plus total pending/running/done/failed/pruned.")]
     async fn experiment_queue_status(&self) -> Result<CallToolResult, McpError> {
@@ -800,3 +687,115 @@ impl TriosRailwayMcp {
         )]))
     }
 }
+
+impl Default for TriosRailwayMcp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for TriosRailwayMcp {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::V_2025_03_26,
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            server_info: Implementation {
+                name: "trios-railway-mcp".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                title: Some("Trios Railway MCP".to_string()),
+                website_url: Some("https://github.com/gHashTag/trios-railway".to_string()),
+                icons: None,
+            },
+            instructions: Some(
+                "Public MCP server controlling the IGLA Railway project. \
+                 Set RAILWAY_TOKEN before invoking deploy/redeploy/delete tools. \
+                 Anchor: phi^2 + phi^-2 = 3."
+                    .to_string(),
+            ),
+        }
+    }
+}
+
+// -------- helpers --------
+
+/// Build a client using the default `RAILWAY_TOKEN` env var (legacy fallback).
+fn build_client() -> Result<Client, McpError> {
+    Client::from_env().map_err(|e| {
+        McpError::internal_error(format!("RAILWAY_TOKEN not set or invalid: {e}"), None)
+    })
+}
+
+/// Build a client with the correct token for the given project ID.
+/// Looks up `RAILWAY_TOKEN_ACC{0..3}` env vars to find a matching account.
+/// Falls back to `build_client()` if no match found.
+fn build_client_for_project(project: &str) -> Result<Client, McpError> {
+    // Validate project is in whitelist
+    if !ALLOWED_PROJECT_IDS.contains(&project) {
+        return Err(McpError::invalid_params(
+            format!(
+                "project {project} not in ALLOWED_PROJECT_IDS. Allowed: {ALLOWED_PROJECT_IDS:?}"
+            ),
+            None,
+        ));
+    }
+    // Find matching account
+    for acc in accounts() {
+        if acc.project_id == project {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            return Client::with_token_and_mode(&acc.token, auth).map_err(|e| {
+                McpError::internal_error(
+                    format!("token error for project {project}: {e}"),
+                    None,
+                )
+            });
+        }
+    }
+    // Fallback to default token
+    build_client()
+}
+
+/// Return the environment ID for a project, or the default IGLA env.
+fn env_for_project(project: &str) -> String {
+    for acc in accounts() {
+        if acc.project_id == project && !acc.env_id.is_empty() {
+            return acc.env_id.clone();
+        }
+    }
+    IGLA_PROD_ENV_ID.to_string()
+}
+
+fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
+    McpError::internal_error(e.to_string(), None)
+}
+
+// -------- database helpers --------
+
+#[allow(dead_code)]
+fn neon_url() -> Result<String, McpError> {
+    std::env::var("NEON_DATABASE_URL").map_err(|_| {
+        McpError::internal_error("NEON_DATABASE_URL not set — required for queue/worker tools", None)
+    })
+}
+
+#[allow(dead_code)]
+async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
+    let url = neon_url()?;
+    let (client, connection) =
+        tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .map_err(internal_err)?;
+    // Spawn connection handler in background
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            tracing::error!(%e, "postgres connection error");
+        }
+    });
+    Ok(client)
+}
+
