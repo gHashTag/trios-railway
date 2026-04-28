@@ -17,6 +17,7 @@
 
 mod actuate;
 mod bpb_source;
+mod canon;
 mod decide;
 mod leaderboard;
 mod ledger;
