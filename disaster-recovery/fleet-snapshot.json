@@ -1,13 +1,50 @@
 {
   "anchor": "phi^2 + phi^-2 = 3",
-  "generated_at": "2026-04-27T18:43:31Z",
+  "generated_at": "2026-04-28T16:02:01Z",
   "generator": "tri-railway snapshot fleet",
   "version": "1.0.0",
   "accounts": [
     {
+      "alias": "acc0",
+      "project_label": "kaglerslomaansc",
+      "email": null,
+      "token_secret": "RAILWAY_TOKEN_ACC0",
+      "project_id": "da1fb0c7-199f-42b0-9f08-a84d122feb5b",
+      "project_name": "woody",
+      "environments": [],
+      "services": [
+        {
+          "createdAt": "2026-04-28T14:13:25.270Z",
+          "id": "2b674f13-1482-4394-b71a-f50f5c4b01d8",
+          "name": "igla-gf-seed10005"
+        },
+        {
+          "createdAt": "2026-04-28T14:45:09.726Z",
+          "id": "5c6feec3-c371-456d-882d-5a81358763ed",
+          "name": "igla-gf-seed10001-v2"
+        },
+        {
+          "createdAt": "2026-04-28T14:12:25.590Z",
+          "id": "6b834e57-fdc2-465b-9ea5-cb7ac56a69ce",
+          "name": "igla-gf-seed10001"
+        },
+        {
+          "createdAt": "2026-04-12T09:11:49.752Z",
+          "id": "6f19cada-fcc3-4151-9c9f-7ca4cc6c83fa",
+          "name": "woody-woodpecker-tma"
+        },
+        {
+          "createdAt": "2026-04-28T14:13:30.028Z",
+          "id": "7a24f811-8a7c-4fb9-8dac-ff4cc738bf70",
+          "name": "igla-gf-seed10009"
+        }
+      ],
+      "service_count": 5
+    },
+    {
       "alias": "acc1",
-      "project_label": "IGLA",
-      "email": "rumbodzalaclhdv0@hotmail.com",
+      "project_label": "rumbodzalaclhdv0",
+      "email": null,
       "token_secret": "RAILWAY_TOKEN_ACC1",
       "project_id": "e4fe33bb-3b09-4842-9782-7d2dea1abc9b",
       "project_name": "IGLA",
@@ -17,21 +54,6 @@
           "createdAt": "2026-04-27T18:01:22.731Z",
           "id": "05dd3cb0-2ae6-4919-a6df-4008fd1eacfd",
           "name": "trios-train-seed-221-L2-jepat"
-        },
-        {
-          "createdAt": "2026-04-27T06:11:12.110Z",
-          "id": "0f0a948f-c457-4f4c-b5c7-a5ef96fcf9e9",
-          "name": "trios-train-seed-100"
-        },
-        {
-          "createdAt": "2026-04-27T14:35:16.506Z",
-          "id": "10994ca5-3079-4d1f-81c4-4c4be0ac97b5",
-          "name": "igla-final-seed-44"
-        },
-        {
-          "createdAt": "2026-04-27T06:11:22.881Z",
-          "id": "20b0fcef-b6da-4853-94b7-b1cc27cbd406",
-          "name": "trios-train-seed-102"
         },
         {
           "createdAt": "2026-04-27T11:35:27.500Z",
@@ -44,44 +66,14 @@
           "name": "trios-train-seed-242-L4-h2000"
         },
         {
-          "createdAt": "2026-04-27T11:10:39.900Z",
-          "id": "47b49b66-60b8-459a-a78d-843e43014b1e",
-          "name": "igla-trainer-seed-100"
-        },
-        {
-          "createdAt": "2026-04-27T10:43:24.662Z",
-          "id": "4c7aadec-48ab-47bc-8694-ee0ce8239ebf",
-          "name": "trios-train-seed-47"
-        },
-        {
           "createdAt": "2026-04-27T11:12:28.986Z",
           "id": "7941c83a-deba-4958-a658-754ddfeda2ab",
           "name": "igla-trainer-seed-102"
         },
         {
-          "createdAt": "2026-04-27T11:12:29.101Z",
-          "id": "8479b05a-b42f-4adb-bea9-742a817d5985",
-          "name": "igla-trainer-seed-101"
-        },
-        {
           "createdAt": "2026-04-27T18:01:22.600Z",
           "id": "861b9501-1003-4d39-8382-266bf6638316",
           "name": "trios-train-seed-212-L1-attnbw"
-        },
-        {
-          "createdAt": "2026-04-27T14:35:16.543Z",
-          "id": "89e5243d-800a-4e9b-b2da-3299c0b9d619",
-          "name": "igla-final-seed-42"
-        },
-        {
-          "createdAt": "2026-04-24T09:01:52.727Z",
-          "id": "8b90e9a5-33cb-4a7d-b68e-658c6d183fca",
-          "name": "trios-dwagent"
-        },
-        {
-          "createdAt": "2026-04-27T06:11:20.601Z",
-          "id": "8e1c7858-5c38-43bc-8015-23c46aaa1ee2",
-          "name": "trios-train-seed-101"
         },
         {
           "createdAt": "2026-04-27T18:02:03.281Z",
@@ -94,19 +86,19 @@
           "name": "trios-train-seed-210-L1-attnbw"
         },
         {
+          "createdAt": "2026-04-28T08:48:10.503Z",
+          "id": "b84f7b81-fbc3-4de4-8df9-edcdc16ed399",
+          "name": "trios-railway"
+        },
+        {
           "createdAt": "2026-04-27T18:01:59.907Z",
           "id": "c9c5324d-20cc-4799-8aba-16078d40fa41",
           "name": "trios-train-seed-240-L4-h2000"
         },
         {
-          "createdAt": "2026-04-27T10:43:32.798Z",
-          "id": "cb10efd7-9bdb-44c3-91c3-a81a6ac38dbe",
-          "name": "trios-train-seed-48"
-        },
-        {
-          "createdAt": "2026-04-27T10:43:19.418Z",
-          "id": "d4d96b6a-a22c-47a6-8a73-6826a09874ec",
-          "name": "trios-train-seed-46"
+          "createdAt": "2026-04-28T08:13:19.034Z",
+          "id": "db786a4b-5a79-4643-b915-e9184680cf97",
+          "name": "trios-railway-mcp"
         },
         {
           "createdAt": "2026-04-27T18:01:22.728Z",
@@ -114,19 +106,14 @@
           "name": "trios-train-seed-222-L2-jepat"
         },
         {
-          "createdAt": "2026-04-27T14:35:16.569Z",
-          "id": "e9779d8f-88ce-47f2-a56d-60d7d84016c6",
-          "name": "igla-final-seed-43"
-        },
-        {
           "createdAt": "2026-04-27T18:01:22.979Z",
           "id": "eb9d7525-6d7d-49f8-9e50-5a91b6837a3d",
           "name": "trios-train-seed-220-L2-jepat"
         },
         {
-          "createdAt": "2026-04-27T04:29:29.151Z",
-          "id": "f29473a2-09d6-4c18-bcc3-f5bb8cab2f42",
-          "name": "igla-trainer-seed-43"
+          "createdAt": "2026-04-28T11:39:14.358Z",
+          "id": "f6318414-9551-4a82-8f32-50993229493a",
+          "name": "seed-agent-001"
         },
         {
           "createdAt": "2026-04-27T18:01:22.560Z",
@@ -134,97 +121,131 @@
           "name": "trios-train-seed-211-L1-attnbw"
         }
       ],
-      "service_count": 24
-    },
-    {
-      "alias": "acc1",
-      "project_label": "artistic-beauty",
-      "email": "rumbodzalaclhdv0@hotmail.com",
-      "token_secret": "RAILWAY_TOKEN_ACC1",
-      "project_id": null,
-      "project_name": null,
-      "environments": [],
-      "services": [],
-      "service_count": 0
+      "service_count": 14
     },
     {
       "alias": "acc2",
-      "project_label": "thriving-eagerness (IGLA-MIRROR-2)",
-      "email": "brabbtjubindt5cug@hotmail.com",
+      "project_label": "brabbtjubindt5cug",
+      "email": null,
       "token_secret": "RAILWAY_TOKEN_ACC2",
-      "project_id": "39d833c1-4cb6-4af9-b61b-c204b6733a98",
-      "project_name": "thriving-eagerness",
+      "project_id": "f3350520-8aff-4ebf-8618-c041bd17e6d0",
+      "project_name": "IGLA-MIRROR-2",
       "environments": [],
       "services": [
         {
-          "createdAt": "2026-04-22T12:55:53.385Z",
-          "id": "3a0bd62a-e36b-43a7-a1e5-0fc7349f28f1",
-          "name": "guacamole-railway"
+          "createdAt": "2026-04-28T13:58:51.706Z",
+          "id": "0ea4bae6-ec4e-47e4-bb41-bdf744a88386",
+          "name": "igla-gf-seed10001"
         },
         {
-          "createdAt": "2026-04-27T14:34:23.001Z",
-          "id": "63a8a01d-59db-47ea-bb1b-f4f2c450865b",
-          "name": "iglaB-seed-43"
+          "createdAt": "2026-04-28T13:59:49.067Z",
+          "id": "107ce4a1-f95f-41ef-b3f6-4d488e32062e",
+          "name": "igla-gf-seed10003"
         },
         {
-          "createdAt": "2026-04-22T12:55:53.698Z",
-          "id": "916e3de8-88f2-4134-80ce-1da3a2d3af73",
-          "name": "Postgres"
+          "createdAt": "2026-04-28T14:01:50.535Z",
+          "id": "12a7264d-0d21-41c7-bb32-a4427c913c46",
+          "name": "igla-gf-seed10007"
         },
         {
-          "createdAt": "2026-04-22T12:55:53.353Z",
-          "id": "98092958-c0da-406d-96df-d2c25f98e13d",
-          "name": "guacd"
+          "createdAt": "2026-04-28T14:01:50.822Z",
+          "id": "2dccf15c-94fc-4416-a02e-d643fc2e9ec5",
+          "name": "igla-gf-seed10006"
         },
         {
-          "createdAt": "2026-04-27T14:34:06.840Z",
-          "id": "c6675e56-64c6-4629-bf65-c4da77cda6e0",
-          "name": "iglaB-seed-42"
+          "createdAt": "2026-04-28T14:01:50.540Z",
+          "id": "3cea78f1-44c2-4792-8fee-72d73644eb9c",
+          "name": "igla-gf-seed10008"
         },
         {
-          "createdAt": "2026-04-27T14:34:43.989Z",
-          "id": "f95cedf4-a4ef-4616-b561-82e017b31a99",
-          "name": "iglaB-seed-44"
+          "createdAt": "2026-04-28T05:29:36.439Z",
+          "id": "4ed9b28a-d761-47fc-aaef-0b8be4c7347b",
+          "name": "igla-final-seed-43"
+        },
+        {
+          "createdAt": "2026-04-28T05:29:25.527Z",
+          "id": "6b939490-1e6d-4d92-aa47-cb16288754f5",
+          "name": "igla-final-seed-42"
+        },
+        {
+          "createdAt": "2026-04-28T11:38:55.742Z",
+          "id": "75e4dd11-3a03-41eb-9242-c3593ff686ad",
+          "name": "trios-railway"
+        },
+        {
+          "createdAt": "2026-04-28T14:01:50.535Z",
+          "id": "7da9712c-a063-4807-a64f-e36d7cb03ed2",
+          "name": "igla-gf-seed10009"
+        },
+        {
+          "createdAt": "2026-04-28T05:29:19.112Z",
+          "id": "7f141e0e-0b14-4f3e-bb51-30fc464de75f",
+          "name": "trios-mcp-public"
+        },
+        {
+          "createdAt": "2026-04-28T14:01:50.536Z",
+          "id": "93dc7905-ff03-45e9-bc9f-67f01677e81c",
+          "name": "igla-gf-seed10010"
+        },
+        {
+          "createdAt": "2026-04-28T13:59:49.080Z",
+          "id": "a1cc0d19-2655-41d9-b978-3cf6afbdb425",
+          "name": "igla-gf-seed10002"
+        },
+        {
+          "createdAt": "2026-04-28T13:59:49.071Z",
+          "id": "e089a9ef-08a9-40f6-b484-8b0b4f910e98",
+          "name": "igla-gf-seed10005"
+        },
+        {
+          "createdAt": "2026-04-28T05:30:20.386Z",
+          "id": "f7edf432-d3dc-4e69-a48b-365ba9001b0f",
+          "name": "igla-final-seed-44"
+        },
+        {
+          "createdAt": "2026-04-28T13:59:49.067Z",
+          "id": "fed11150-bfdb-41b8-8188-cf74f110e8b3",
+          "name": "igla-gf-seed10004"
         }
       ],
-      "service_count": 6
+      "service_count": 15
     },
     {
-      "alias": "acc2",
-      "project_label": "reasonable-perception",
-      "email": "brabbtjubindt5cug@hotmail.com",
-      "token_secret": "RAILWAY_TOKEN_ACC2",
-      "project_id": "12c508c7-1196-468d-b06d-d8de8cb77e93",
-      "project_name": "reasonable-perception",
+      "alias": "acc3",
+      "project_label": "gondiigamzevup",
+      "email": null,
+      "token_secret": "RAILWAY_TOKEN_ACC3",
+      "project_id": "8ab06401-aa28-4af7-9faf-39a1548b7008",
+      "project_name": "angelic-embrace",
       "environments": [],
       "services": [
         {
-          "createdAt": "2026-04-22T13:00:57.974Z",
-          "id": "a8a4914a-083d-410f-85f1-5efa61d15197",
-          "name": "Agents Anywhere"
+          "createdAt": "2026-04-28T14:11:06.562Z",
+          "id": "0bce8293-afe8-47d5-94ae-20374f8d58b4",
+          "name": "igla-gf-seed10001"
         },
         {
-          "createdAt": "2026-04-21T10:37:11.339Z",
-          "id": "b0abd03e-ac0a-45e8-ab69-3f819dbb9321",
-          "name": "zeroclaw"
+          "createdAt": "2026-04-28T07:58:44.095Z",
+          "id": "3042c5d1-6a87-42a3-b078-379b90ee89e8",
+          "name": "trios-railway"
         },
         {
-          "createdAt": "2026-03-31T11:57:57.640Z",
-          "id": "e7c8d163-57d1-4d4f-8d1a-3909f92eec06",
-          "name": "function-bun"
+          "createdAt": "2026-04-28T14:13:40.930Z",
+          "id": "c2ed3a9f-e06e-40f3-b5b0-4b445d9fa22a",
+          "name": "igla-gf-seed10008"
         },
         {
-          "createdAt": "2026-04-21T09:54:19.910Z",
-          "id": "f932cb04-8d14-4a52-8941-e97106f6e159",
-          "name": "opencode"
+          "createdAt": "2026-04-28T14:13:35.790Z",
+          "id": "c768f520-b67c-40d6-9c43-486a679def56",
+          "name": "igla-gf-seed10004"
         }
       ],
       "service_count": 4
     }
   ],
   "totals": {
-    "accounts": 2,
+    "accounts": 4,
     "projects": 4,
-    "services": 34
+    "services": 38
   }
 }
