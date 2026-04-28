@@ -299,6 +299,51 @@ pub fn champion_lock_reason(exp_id: u32) -> Option<&'static str> {
         .map(|(_, r)| *r)
 }
 
+// ---------------------------------------------------------------------
+// GATE-0 SMOKE RACE — reserved tag + seed range.
+// ---------------------------------------------------------------------
+
+/// The Gate-0 smoke race uses RNG seeds in `[500, 600)` so they never
+/// collide with production seeds (Phase-1: 100..299, champion: 42..45).
+/// Tripwire #106 enforces this at parse-time.
+pub const SMOKE_SEED_RANGE: std::ops::Range<u32> = 500..600;
+
+/// Marker substring that the orchestrator embeds in the tag for any
+/// smoke-race deploy. Combined with `SMOKE_SEED_RANGE` this is enough
+/// to round-trip identify a smoke service from its canon name alone.
+pub const SMOKE_TAG_MARKER: &str = "SMOKE";
+
+/// True iff the canon's `tag` ends with `-SMOKE` (or equals `SMOKE`),
+/// i.e. the deploy belongs to a Gate-0 smoke run.
+pub fn is_smoke(canon: &IglaCanon) -> bool {
+    canon
+        .tag
+        .as_deref()
+        .map(|t| t == SMOKE_TAG_MARKER || t.ends_with("-SMOKE"))
+        .unwrap_or(false)
+}
+
+/// **Tripwire #106** — smoke deploys must use seeds in the reserved
+/// 500..600 window. Production deploys must NOT use that window.
+pub fn assert_smoke_seed_range(canon: &IglaCanon) -> Result<(), CanonError> {
+    let smoke = is_smoke(canon);
+    let rng = canon
+        .rng
+        .ok_or_else(|| CanonError::MissingRng(canon.to_string()))?;
+    let in_range = SMOKE_SEED_RANGE.contains(&rng);
+    match (smoke, in_range) {
+        (true, true) | (false, false) => Ok(()),
+        (true, false) => Err(CanonError::SmokeSeedOutOfRange {
+            rng,
+            tag: canon.tag.clone().unwrap_or_default(),
+        }),
+        (false, true) => Err(CanonError::ProductionSeedInSmokeRange {
+            rng,
+            tag: canon.tag.clone().unwrap_or_default(),
+        }),
+    }
+}
+
 /// Tripwire #101 — kill-before-spin guard. Caller passes the set of
 /// service names currently occupying the slot the new deploy targets;
 /// if any are still alive AND `force_replace` is `false`, reject.
@@ -467,6 +512,10 @@ pub enum CanonError {
     MissingExpId(String),
     #[error("INV-12: deploy name missing <rngN>: {0:?}")]
     MissingRng(String),
+    #[error("INV-12 #106: smoke deploy with rng={rng} outside reserved range 500..600 (tag={tag:?})")]
+    SmokeSeedOutOfRange { rng: u32, tag: String },
+    #[error("INV-12 #106: production deploy with rng={rng} collides with reserved smoke range 500..600 (tag={tag:?})")]
+    ProductionSeedInSmokeRange { rng: u32, tag: String },
 }
 
 #[cfg(test)]
@@ -730,6 +779,50 @@ mod tests {
             n.validate_for_deploy(0).unwrap_err(),
             CanonError::MissingExpId(_)
         ));
+    }
+
+    // -----------------------------------------------------------------
+    // GATE-0 SMOKE RACE tripwire #106
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn smoke_marker_detection() {
+        let smoke: IglaCanon = "IGLA-HYBRID-FP32-E0500-WSD-SMOKE-rng500".parse().unwrap();
+        assert!(is_smoke(&smoke));
+        let prod: IglaCanon = "IGLA-HYBRID-FP32-E0042-WSD-rng201".parse().unwrap();
+        assert!(!is_smoke(&prod));
+    }
+
+    #[test]
+    fn tripwire_106_smoke_seed_must_be_in_500_600_range() {
+        let bad: IglaCanon = "IGLA-HYBRID-FP32-E0500-WSD-SMOKE-rng201".parse().unwrap();
+        assert!(matches!(
+            assert_smoke_seed_range(&bad).unwrap_err(),
+            CanonError::SmokeSeedOutOfRange { rng: 201, .. }
+        ));
+        let good: IglaCanon = "IGLA-HYBRID-FP32-E0500-WSD-SMOKE-rng500".parse().unwrap();
+        assert!(assert_smoke_seed_range(&good).is_ok());
+    }
+
+    #[test]
+    fn tripwire_106_production_must_avoid_smoke_seed_range() {
+        // Even if the tag is plain WSD (production), rng=550 is in the
+        // smoke window and must be rejected to keep the windows disjoint.
+        let bad: IglaCanon = "IGLA-HYBRID-FP32-E0042-WSD-rng550".parse().unwrap();
+        assert!(matches!(
+            assert_smoke_seed_range(&bad).unwrap_err(),
+            CanonError::ProductionSeedInSmokeRange { rng: 550, .. }
+        ));
+        let good: IglaCanon = "IGLA-HYBRID-FP32-E0042-WSD-rng201".parse().unwrap();
+        assert!(assert_smoke_seed_range(&good).is_ok());
+    }
+
+    #[test]
+    fn smoke_seed_range_is_500_to_599_inclusive() {
+        assert!(SMOKE_SEED_RANGE.contains(&500));
+        assert!(SMOKE_SEED_RANGE.contains(&599));
+        assert!(!SMOKE_SEED_RANGE.contains(&499));
+        assert!(!SMOKE_SEED_RANGE.contains(&600));
     }
 
     #[test]
