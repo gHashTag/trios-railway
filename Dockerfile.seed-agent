@@ -1,0 +1,73 @@
+# Multi-stage Dockerfile for bin/seed-agent (pull-loop trainer worker).
+# ADR-0081: Trainer = autonomous agent. Only needs NEON_DATABASE_URL.
+# Anchor: phi^2 + phi^-2 = 3.
+
+# ---------- builder ----------
+FROM rust:1.90-slim-bookworm AS builder
+
+ENV CARGO_TERM_COLOR=always \
+    DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        pkg-config \
+        ca-certificates \
+        build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Cargo files first for layer cache.
+COPY Cargo.toml Cargo.lock ./
+COPY crates/trios-railway-core/Cargo.toml       crates/trios-railway-core/Cargo.toml
+COPY crates/trios-railway-audit/Cargo.toml      crates/trios-railway-audit/Cargo.toml
+COPY crates/trios-railway-experience/Cargo.toml crates/trios-railway-experience/Cargo.toml
+COPY crates/trios-railway-mcp/Cargo.toml        crates/trios-railway-mcp/Cargo.toml
+COPY bin/tri-railway/Cargo.toml                 bin/tri-railway/Cargo.toml
+COPY bin/tri-gardener/Cargo.toml                bin/tri-gardener/Cargo.toml
+COPY bin/seed-agent/Cargo.toml                  bin/seed-agent/Cargo.toml
+
+# Stub sources for dep cache.
+RUN mkdir -p crates/trios-railway-core/src \
+             crates/trios-railway-audit/src \
+             crates/trios-railway-experience/src \
+             crates/trios-railway-mcp/src \
+             bin/tri-railway/src \
+             bin/tri-gardener/src \
+             bin/seed-agent/src \
+ && echo 'fn main() {}' > bin/seed-agent/src/main.rs \
+ && echo 'fn main() {}' > bin/tri-railway/src/main.rs \
+ && echo 'fn main() {}' > bin/tri-gardener/src/main.rs \
+ && echo 'fn main() {}' > crates/trios-railway-mcp/src/main.rs \
+ && echo ''             > crates/trios-railway-core/src/lib.rs \
+ && echo ''             > crates/trios-railway-audit/src/lib.rs \
+ && echo ''             > crates/trios-railway-experience/src/lib.rs
+
+RUN cargo build --release --bin seed-agent --locked || true
+
+# Real sources.
+COPY crates ./crates
+COPY bin    ./bin
+
+RUN cargo build --release --bin seed-agent --locked
+
+# ---------- runtime ----------
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libssl3 \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd -r -u 10001 -m -s /usr/sbin/nologin trios
+
+USER trios
+WORKDIR /home/trios
+
+COPY --from=builder /build/target/release/seed-agent /usr/local/bin/seed-agent
+
+# Only env needed: NEON_DATABASE_URL.
+# No Railway tokens required (pull-based ADR-0081).
+ENV RUST_LOG=info
+
+ENTRYPOINT ["/usr/local/bin/seed-agent"]
