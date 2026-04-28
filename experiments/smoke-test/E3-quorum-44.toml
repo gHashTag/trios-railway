@@ -1,0 +1,35 @@
+# E3: Quorum-3 candidate (seed=44)
+# Goal: Check variance of train_v2 h=1024 ctx=12 with seed=44
+# Expectation: Same as E2; if σ² < 0.01 → quorum admission
+
+[experiment]
+name = "e3-quorum-seed44"
+seed = 44
+priority = 6
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = false
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "quorum-validation"
+quorum_candidate = true
+expected_bpb_range = [1.88, 1.91]
+note = "Legacy attention-series BPB=2.2024 — testing train_v2 bridge"

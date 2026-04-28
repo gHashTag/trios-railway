@@ -1,0 +1,37 @@
+# E4: Capacity push (h=1536 ctx=16)
+# Goal: Test if larger model can breach Gate-2 (BPB < 1.85)
+# Expectation: ΔBPB = -0.05…-0.15 if capacity helps
+
+[experiment]
+name = "e4-capacity-push-h1536"
+seed = 42
+priority = 4
+
+[model]
+hidden_dim = 1536
+context_len = 16
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test
+warmup_steps = 100
+learning_rate = 0.0020  # Slightly lower for larger model
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = false
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "capacity-exploration"
+target_gate = "gate-2"
+target_bpb = 1.85
+expected_delta = [-0.05, -0.15]  # Negative = improvement
+note = "Lucas closure INV-5 guarantees stability for ctx=16"
+risk = "medium"  # More params, longer context, potential overfitting

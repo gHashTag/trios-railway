@@ -1,0 +1,37 @@
+# E7: φ-optimal learning rate test (lr=αφ/φ³ = 0.004)
+# Goal: Verify INV-8 lr=α_φ/φ³ anchor provides optimal convergence
+# Expectation: Stable or faster convergence than baseline lr=0.0025
+
+[experiment]
+name = "e7-lr-phi-optimal"
+seed = 42
+priority = 2
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000
+warmup_steps = 100
+learning_rate = 0.004  # φ-optimal per INV-8: αφ/φ³ = 0.004
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = false
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm", "lr_schedule"]
+
+[meta]
+category = "lr-validation"
+invariant = "INV-8"  # lr=αφ/φ³
+lr_derivation = "0.618 / 1.618^3 = 0.618 / 4.236 = 0.004"
+baseline_lr = 0.0025
+expected_outcome = ["stable", "faster", "unstable"]
+note = "Test if φ-anchored lr beats baseline without NaN/gradient explosion"

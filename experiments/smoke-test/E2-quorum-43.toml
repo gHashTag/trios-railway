@@ -1,0 +1,35 @@
+# E2: Quorum-3 candidate (seed=43)
+# Goal: Check variance of train_v2 h=1024 ctx=12 with seed=43
+# Expectation: If σ² < 0.01 and BPB ≈ 1.89 → admit to quorum-3
+
+[experiment]
+name = "e2-quorum-seed43"
+seed = 43
+priority = 5  # Lower than champion reproduction
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test only
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = false  # Baseline
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "quorum-validation"
+quorum_candidate = true
+expected_bpb_range = [1.88, 1.91]  # ±σ²<0.01 around champion
+note = "Legacy attention-series BPB=2.1919 — testing if train_v2 architecture bridges gap"
