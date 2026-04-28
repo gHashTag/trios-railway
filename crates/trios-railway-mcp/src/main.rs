@@ -18,7 +18,9 @@
 //! Transport: Streamable HTTP over `axum` at `/mcp`, listens on
 //! `0.0.0.0:$PORT` (Railway convention).
 
+mod connections;
 mod tools;
+mod tripwires;
 
 use std::net::{Ipv6Addr, SocketAddr};
 

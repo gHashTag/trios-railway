@@ -228,6 +228,35 @@ impl RailwayMultiClient {
     }
 }
 
+/// Tripwire #107 — closed set of project UUIDs the gateway is allowed
+/// to mutate. Any deploy / redeploy / delete / cleanup against a
+/// non-listed project is rejected at parse-time. Adding a new project
+/// requires a code change (R5: never silent).
+pub const ALLOWED_PROJECT_IDS: &[&str] = &[
+    "da1fb0c7-199f-42b0-9f08-a84d122feb5b", // primary control plane
+    "49a92e6d-1722-4f0b-8361-64b5b8577e37", // secondary control plane
+    "e4fe33bb-3b09-4842-9782-7d2dea1abc9b", // Acc1 IGLA (current race)
+    "265301ce-0bf2-4187-a36f-348b0eb9942f", // Acc0 trios-trainer
+    "39d833c1-4cb6-4af9-b61b-c204b6733a98", // Acc2 thriving-eagerness
+];
+
+#[derive(Debug, thiserror::Error)]
+#[error("INV-12 #107: project {project:?} not in ALLOWED_PROJECT_IDS")]
+pub struct ProjectWhitelistError {
+    pub project: String,
+}
+
+/// Tripwire #107 enforcement helper.
+pub fn assert_project_allowed(project: &str) -> Result<(), ProjectWhitelistError> {
+    if ALLOWED_PROJECT_IDS.iter().any(|p| *p == project) {
+        Ok(())
+    } else {
+        Err(ProjectWhitelistError {
+            project: project.to_string(),
+        })
+    }
+}
+
 fn parse_auth_mode(token: &str, kind_hint: &str) -> AuthMode {
     let normalized = kind_hint.trim().to_ascii_lowercase();
     match normalized.as_str() {
