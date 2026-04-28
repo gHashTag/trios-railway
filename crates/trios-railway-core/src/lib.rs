@@ -17,6 +17,10 @@ pub mod transport;
 #[allow(clippy::module_name_repetitions)]
 pub mod client_ext;
 pub mod multiclient;
+// Shared IGLA canonical-name parser. Used by both `bin/tri-gardener`
+// (leaderboard rendering, decision filters) and `crates/trios-railway-mcp`
+// (mcp.igla.validate tool, project-whitelist tripwires).
+pub mod canon;
 
 pub use hash::RailwayHash;
 pub use ids::{DeployId, EnvironmentId, ProjectId, ServiceId};
