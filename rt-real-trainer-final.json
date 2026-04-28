@@ -1,0 +1,37 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "name": "RT-1 - Real Training Baseline (FP32, seed=100)",
+  "description": "Trinity-3k model, d_model=2048, lr=0.003, steps=60000, FineWeb-like data (tiny_shakespeare.txt)",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "/usr/local/bin/trinity_3k_tinyshakespeare",
+    "healthcheckPath": "/healthz",
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  },
+  "variables": {
+    "SEED": {
+      "default": "100"
+    },
+    "STEPS": {
+      "default": "60000"
+    },
+    "LR": {
+      "default": "0.003"
+    },
+    "HIDDEN": {
+      "default": "2048"
+    },
+    "CTX": {
+      "default": "24"
+    },
+    "NEON_DATABASE_URL": {
+      "isOptional": false
+    },
+    "RUST_LOG": {
+      "default": "info"
+    }
+  }
+}

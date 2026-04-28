@@ -1,0 +1,37 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "name": "RT-3 - GF8 Format Test (GF8, seed=102)",
+  "description": "Trinity-3k model with GF8 format, d_model=2048, lr=0.001, steps=60000, FineWeb-like data (tiny_shakespeare.txt)",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "/usr/local/bin/trinity_3k_tinyshakespeare",
+    "healthcheckPath": "/healthz",
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  },
+  "variables": {
+    "SEED": {
+      "default": "102"
+    },
+    "STEPS": {
+      "default": "60000"
+    },
+    "LR": {
+      "default": "0.001"
+    },
+    "HIDDEN": {
+      "default": "2048"
+    },
+    "CTX": {
+      "default": "24"
+    },
+    "NEON_DATABASE_URL": {
+      "isOptional": false
+    },
+    "RUST_LOG": {
+      "default": "info"
+    }
+  }
+}

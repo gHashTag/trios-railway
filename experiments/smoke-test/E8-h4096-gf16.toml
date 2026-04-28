@@ -1,0 +1,41 @@
+# E8: h=4096 GF16 storage test (OPEN AI GOLF push)
+# Goal: Verify h=4096 + GF16 can breach BPB < 1.50 on seeds 42/43/44
+# Risk: GF16 gradient quantization unverified on BPB (MNIST-only validation)
+
+[experiment]
+name = "e8-h4096-gf16-push"
+seed = 42  # Will run on 43 and 44 for quorum
+priority = 1  # Highest priority - hackathon deadline
+
+[model]
+hidden_dim = 4096  # 2x champion capacity
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 50000  # Extended for larger model convergence
+warmup_steps = 500
+learning_rate = 0.0025  # Champion baseline LR
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf16"  # Golden Fleece (DLFloat-6:9) - φ-distance=0.0486
+storage_target = "gradients"  # Store in GF16
+keep_activations_fp32 = true  # Critical layers stay f32 per L-R9
+
+[output]
+log_every = 500
+save_every = 2500
+metrics = ["loss", "bpb_samples", "grad_norm", "quantization_stats"]
+
+[meta]
+category = "h4096-golf-push"
+target_gate = "golf-bpb-1.50"
+target_bpb = 1.50
+expected_delta_max = 0.3618  # Gap from current champion BPB 1.8618
+risk = "high"  # GF16 unverified on BPB
+hypothesis = "2x capacity + GF16 storage breaches 1.50 BPB"
+note = "OPEN AI GOLF: Aggressive capacity push with GF16. Requires trios-trainer-igla to support GF16 gradient quantization."
