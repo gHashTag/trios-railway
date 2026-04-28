@@ -1,0 +1,41 @@
+# Golden Float Family: GF32 (32-bit FP32 drop-in replacement)
+# Whitepaper: https://github.com/gHashTag/zig-golden-float/blob/main/docs/whitepaper.md
+# Specification: 32 bits, 1:13:18 exp:mantissa, u32 backing
+# φ-constant: 13/18 ≈ φ⁻²·k — FP32 drop-in replacement
+# Status: ⬜ TODO (not yet implemented)
+
+[experiment]
+name = "gf32-fp32-dropin-test"
+seed = 42
+priority = 15  # Medium priority (speculative)
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf32"  # 32-bit golden float: 1:13:18 exp:mantissa
+storage_target = "all"  # Full GF32 pipeline
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "quantization_stats"]
+
+[meta]
+category = "golden-float-exploration"
+format = "GF32"
+phi_constant = "13/18 ≈ φ⁻²·k"
+status = "speculative"
+note = "FP32 drop-in replacement: eliminates 62+ compiler f16 ecosystem issues. Mantissa 1:13:18 = 18 bits integer (Lucas closure: φ^18 + φ^-18 ∈ Z? TBD)."
+risk = "medium"
