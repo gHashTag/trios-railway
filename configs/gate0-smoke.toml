@@ -1,0 +1,40 @@
+# GATE-0 SMOKE RACE — single override applied to every tag-config in
+# bin/tri-gardener/queue.toml. The smoke runner injects [smoke] over
+# every base config before deploying.
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · SMOKE BEFORE FIRE
+
+[smoke]
+override = true
+max_steps = 500
+eval_every = 50
+checkpoint_every = 250
+bpb_emit_every = 10
+batch_size = 4
+warmup_steps = 50
+dataset_subset = 0.10
+wallclock_budget_minutes = 30
+
+[smoke.naming]
+# canon: IGLA-<TYPE>-<FORMAT>-E<NNNN>-<TAG>-SMOKE-rng<NNN>
+tag_marker = "SMOKE"
+seed_range_low = 500
+seed_range_high = 600
+first_exp_id = 500
+
+[smoke.experiments]
+# (model, tag, [rng_seeds])
+WSD     = { model = "HYBRID", rng_seeds = [500, 501, 502] }
+BS8     = { model = "HYBRID", rng_seeds = [510, 511, 512] }
+GRADFIX_JEPAT = { model = "JEPA-T", rng_seeds = [520, 521, 522], primary_loss = "bpb" }
+GRADFIX_NCA   = { model = "NCA",    rng_seeds = [530, 531, 532], primary_loss = "bpb" }
+EMA10   = { model = "HYBRID", rng_seeds = [540, 541, 542] }
+h512    = { model = "HYBRID", rng_seeds = [550, 551, 552] }
+h768    = { model = "HYBRID", rng_seeds = [560, 561, 562] }
+
+[smoke.acceptance]
+# 14-criterion gate. Pure-logic checks live in tri-gardener crate as
+# Rust tests; live-infra ones are documented stubs for the operator's
+# tri smoke-race driver.
+pure_logic_count = 9
+live_infra_count = 5
