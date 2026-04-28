@@ -16,7 +16,9 @@
 #![allow(clippy::default_trait_access, clippy::doc_markdown)]
 
 mod actuate;
+mod bpb_source;
 mod decide;
+mod leaderboard;
 mod ledger;
 #[allow(clippy::module_name_repetitions)]
 #[path = "loop_.rs"]
