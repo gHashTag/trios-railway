@@ -1,0 +1,17 @@
+# Code Owners
+
+# Global code owner
+* @gHashTag
+
+# CI/CD workflows
+.github/workflows/* @gHashTag
+
+# Source code
+src/* @gHashTag
+
+# Documentation
+*.md @gHashTag
+
+# Configuration files
+*.json @gHashTag
+*.toml @gHashTag
