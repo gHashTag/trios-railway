@@ -1,0 +1,102 @@
+{
+  "anchor": "phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP",
+  "race": {
+    "id": "trios#143",
+    "start_utc": "2026-04-27T18:00:00Z",
+    "gate2_deadline_utc": "2026-04-30T23:59:00Z",
+    "current_t_plus_h_estimate": 22.5
+  },
+  "phase_e_steps": [
+    {
+      "n": 1,
+      "tool": "mcp.fleet.snapshot",
+      "args": {},
+      "save_to": ".trinity/fleet_snapshots/<UTC>-all4.json",
+      "acceptance": "≥3 accounts return services array, total ≥25"
+    },
+    {
+      "n": 2,
+      "tool": "mcp.audit.migrate",
+      "args": {},
+      "apply_via": "psql $NEON_DATABASE_URL",
+      "verify": "\\dt gardener_runs && \\dt bpb_samples"
+    },
+    {
+      "n": "3a",
+      "tool": "mcp.fleet.cleanup",
+      "args": {
+        "account": "acc1",
+        "keep_pattern": "^(igla-final-seed-(42|43|44|45)|trios-railway|igla-train-v2|gardener|cron-watchdog|audit-watchdog|trios-mcp)",
+        "idempotency_key": "cull-2026-04-28-acc1-001",
+        "dry_run": true,
+        "confirm": false
+      },
+      "expected_would_delete_count": 9,
+      "guard": "if would_delete_count > 12 → ABORT, ask_user_question"
+    },
+    {
+      "n": "3b",
+      "tool": "mcp.fleet.cleanup",
+      "args": {
+        "account": "acc1",
+        "keep_pattern": "<same as 3a>",
+        "idempotency_key": "cull-2026-04-28-acc1-001-live",
+        "dry_run": false,
+        "confirm": true
+      },
+      "preconditions": ["3a completed", "operator confirm_action approved"]
+    },
+    {
+      "n": 4,
+      "loop": "for rng in [42, 43, 44]",
+      "validate_first": {
+        "tool": "mcp.igla.validate",
+        "args_template": {
+          "name": "IGLA-TRAIN_V2-FP32-E0042-rng${rng}",
+          "current_max_exp_id": 4
+        },
+        "expect": "valid=true"
+      },
+      "deploy": {
+        "tool": "mcp.railway.deploy",
+        "args_template": {
+          "account": "acc1",
+          "name": "IGLA-TRAIN_V2-FP32-E0042-rng${rng}",
+          "image": "ghcr.io/ghashtag/trios-trainer-igla:latest",
+          "vars": [
+            {"key": "SEED", "value": "${rng}"},
+            {"key": "MODEL_TYPE", "value": "TRAIN_V2"},
+            {"key": "NUMBER_FORMAT", "value": "FP32"},
+            {"key": "EXP_ID", "value": "0042"},
+            {"key": "HIDDEN_DIM", "value": "1024"},
+            {"key": "CONTEXT_LEN", "value": "12"},
+            {"key": "OPTIMIZER", "value": "AdamW"},
+            {"key": "LR", "value": "0.002"},
+            {"key": "ARCHITECTURE", "value": "14gram_WT_resid"}
+          ],
+          "idempotency_key": "deploy-train-v2-rng${rng}-2026-04-28"
+        }
+      },
+      "save_to": ".trinity/train_v2_quorum_2026-04-28.json"
+    },
+    {
+      "n": 5,
+      "tool": "github_mcp_direct",
+      "action": "comment on trios#143",
+      "title_template": "LIVE LEADERBOARD · T+${h}h · Gate-2 deadline T+77.98h",
+      "preconditions": ["step 4 completed", "≥2 BPB samples received in bpb_samples"]
+    }
+  ],
+  "champion_locks_at_start_of_phase_e": [
+    {"exp_id": 1, "name": "IGLA-HYBRID-FP32 BPB=2.1919 rng43"},
+    {"exp_id": 2, "name": "IGLA-HYBRID-FP32 BPB=2.1944 rng45"},
+    {"exp_id": 3, "name": "IGLA-HYBRID-FP32 BPB=2.2024 rng44"},
+    {"exp_id": 4, "name": "IGLA-TRAIN_V2-FP32 BPB=1.8921 rng42 (NEW CHAMPION)"}
+  ],
+  "abort_conditions": {
+    "fleet_snapshot_total_services_below": 10,
+    "cleanup_would_delete_above": 12,
+    "any_igla_validate_invalid": true,
+    "any_deploy_returns_error_with_no_idempotency_replay": true
+  }
+}
