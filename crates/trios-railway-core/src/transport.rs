@@ -13,7 +13,7 @@ use thiserror::Error;
 const ENDPOINT: &str = "https://backboard.railway.com/graphql/v2";
 
 /// True if `s` matches the canonical 8-4-4-4-12 hex UUID shape.
-fn is_uuid_like(s: &str) -> bool {
+pub fn is_uuid_like(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.len() != 36 {
         return false;

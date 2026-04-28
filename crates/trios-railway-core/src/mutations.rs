@@ -108,6 +108,29 @@ pub async fn variable_upsert(
     Ok(())
 }
 
+/// Upsert multiple variables in parallel. Returns the number of variables
+/// successfully upserted. Individual failures are logged but do not abort
+/// the batch — the caller decides how to handle partial failures.
+pub async fn variables_upsert_parallel(
+    client: &Client,
+    project: &ProjectId,
+    env: &EnvironmentId,
+    service: &ServiceId,
+    kvs: &[(String, String)],
+) -> Result<usize, ClientError> {
+    let futures: Vec<_> = kvs
+        .iter()
+        .map(|(k, v)| variable_upsert(client, project, env, service, k, v))
+        .collect();
+    let results = futures::future::join_all(futures).await;
+    let ok = results.iter().filter(|r| r.is_ok()).count();
+    let err = results.len() - ok;
+    if err > 0 {
+        tracing::warn!(ok, err, "partial variable upsert failure");
+    }
+    Ok(ok)
+}
+
 /// Redeploy a service in an environment using the most recent source.
 /// Returns the new deployment id.
 pub async fn service_redeploy(
