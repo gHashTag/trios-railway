@@ -31,6 +31,7 @@ mod neon;
 mod queue;
 mod serve;
 mod state;
+mod strategy;
 
 use anyhow::Result;
 use chrono::Utc;
@@ -62,6 +63,15 @@ enum Cmd {
     },
     /// Print the gardener_runs DDL and exit.
     Ddl,
+    /// ADR-0081 strategic-decision tick. Reads experiment_queue +
+    /// bpb_samples + workers from Neon, runs pure decision logic,
+    /// prints decisions as JSON. Read-only by default; pass
+    /// `--apply` to actually write back (UPDATE / INSERT).
+    StrategyTick {
+        /// Apply decisions to Neon. Default: dry-run (print only).
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+    },
     /// Long-lived service mode. Drives one tick every --interval seconds.
     Serve {
         /// Tick interval in seconds. Range: 60..=86_400. Default 3600.
@@ -86,6 +96,30 @@ async fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Ddl => {
             print!("{}", crate::neon::GARDENER_DDL);
+            return Ok(());
+        }
+        Cmd::StrategyTick { apply } => {
+            // PR-1 of #NEW6 ships pure logic + dry-run JSON. Live Neon
+            // wiring (apply=true) is a follow-up; for now we honestly
+            // print the decisions and the operator pipes them into
+            // psql via gardener_decisions audit + manual review.
+            let snap = strategy::Snapshot {
+                now: Utc::now(),
+                experiments: vec![],
+                workers: vec![],
+                best_bpb_by_canon_seed: vec![],
+                stale_claim_threshold: chrono::Duration::minutes(2),
+                gate2_target_bpb: 1.85,
+            };
+            let decisions = strategy::decisions_for_snapshot(&snap);
+            let json = serde_json::to_string_pretty(&decisions)?;
+            println!("{json}");
+            if apply {
+                tracing::warn!(
+                    "strategy-tick --apply: live Neon writes are wired in PR-2 (NEW6 follow-up); \
+                     this dry-run is R5-honest about scope"
+                );
+            }
             return Ok(());
         }
         Cmd::Serve { interval, mode } => {
