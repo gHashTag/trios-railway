@@ -18,24 +18,32 @@ const RACE_START: &str = "2026-04-27T18:00:00Z";
 
 /// Architectural BPB floor for the trainer as currently shipped.
 ///
-/// Champion record: `2.1919` (h=828, 2L hybrid attn, ReLU², 81K, σ²=0.0006).
-/// Cross-validated against the CPU N-gram floor (~2.54) reported in
-/// [trios#237](https://github.com/gHashTag/trios/issues/237) and the live
-/// GPU champion tracked in [trios#143](https://github.com/gHashTag/trios/issues/143).
+/// **Champion record (2026-04-28 T+11.5h, local-Mac agent):**
+/// `1.8921` BPB at step 94_500/120_000, seed 42, **train_v2** architecture
+/// (14-gram + weight tying + residual bottleneck, no attention, AdamW,
+/// h=1024, ctx=12, lr=0.002). Architecture pivot away from the prior
+/// 2L hybrid_attn h=828 family (which floored at 2.1919, σ²=0.0006).
+///
+/// **R5 honesty:** `1.8921` is still **+0.0421 BPB above** the Gate-2
+/// target (1.85). Gate-2 is **not** passed by this single seed at this
+/// step. What changed is the *architectural floor* (capacity + steps +
+/// simple ngram beats 9 parallel attention experiments without
+/// feedback). Gate-2 OFFICIAL still requires a 3-seed quorum below
+/// 1.85.
 ///
 /// **Anti-cull guard:** the gardener MUST NOT issue `Decision::CullSeed`
 /// for a seed whose BPB is above this floor unless plateau is
 /// independently confirmed (≥5 ticks in a 0.005 band AND step ≥ 50_000).
-/// Without that guard, a healthy seed sitting at the architectural floor
-/// would be culled merely for not crossing the 1.85 Gate-2 target —
-/// which is impossible without ALPHA's L1 / L2 / h=1024 patches landing
-/// first. Gardener decision policy must read this constant rather than
-/// hardcoding `2.19` at the call site.
+/// The floor moves with the champion: when a new run sets a record we
+/// lower this constant in-tree and ship it as part of the same PR. It is
+/// **never** lowered prospectively.
 ///
 /// Refs:
-/// - <https://github.com/gHashTag/trios/issues/237> (CPU N-gram floor)
-/// - <https://github.com/gHashTag/trios/issues/143> (GPU champion)
-pub const ARCHITECTURAL_FLOOR_BPB: f64 = 2.19;
+/// - <https://github.com/gHashTag/trios/issues/237> (CPU N-gram floor ~2.54)
+/// - <https://github.com/gHashTag/trios/issues/143> (GPU champion history)
+/// - `docs/POSTMORTEM_GATE2_LOCAL_WIN.md` (why the local-Mac agent beat
+///   the Railway fleet by skipping attention).
+pub const ARCHITECTURAL_FLOOR_BPB: f64 = 1.89;
 
 /// Single ledger row about to be written.
 #[derive(Debug, Clone)]
@@ -255,18 +263,35 @@ mod tests {
     }
 
     #[test]
-    fn architectural_floor_bpb_is_2_19() {
-        // Tripwire: if a future patch tries to lower this without an
-        // ALPHA architecture change, this test forces the conversation.
-        assert_eq!(ARCHITECTURAL_FLOOR_BPB, 2.19_f64);
+    fn architectural_floor_bpb_is_1_89() {
+        // Tripwire: locks the floor to the current champion record
+        // (train_v2 BPB=1.8921 @ 94.5K, seed 42, h=1024 ctx=12 14-gram
+        // weight-tied residual bottleneck, no attention).
+        assert_eq!(ARCHITECTURAL_FLOOR_BPB, 1.89_f64);
     }
 
     #[test]
-    fn architectural_floor_below_gate2_target() {
-        // Sanity: floor must sit *above* the Gate-2 target. Otherwise
-        // "do not cull above the floor" would be a no-op below 1.85.
+    fn architectural_floor_above_gate2_target() {
+        // R5 honesty: 1.89 (and the actual champion 1.8921) is **above**
+        // the Gate-2 target 1.85. Gate-2 is NOT passed by setting this
+        // floor. Floor only moves anti-cull behaviour; quorum-3 below
+        // 1.85 still required for Gate-2 OFFICIAL.
         const GATE2_TARGET: f64 = 1.85;
-        assert!(ARCHITECTURAL_FLOOR_BPB > GATE2_TARGET);
+        assert!(
+            ARCHITECTURAL_FLOOR_BPB > GATE2_TARGET,
+            "Floor must remain above the Gate-2 target until a real <1.85 quorum exists"
+        );
+    }
+
+    #[test]
+    fn architectural_floor_strictly_below_prior_floor() {
+        // Tripwire-2: any future re-raising of the floor would silently
+        // re-enable cull on the train_v2 champion family. Forbid it.
+        const PRIOR_HYBRID_ATTN_FLOOR: f64 = 2.19;
+        assert!(
+            ARCHITECTURAL_FLOOR_BPB < PRIOR_HYBRID_ATTN_FLOOR,
+            "Floor must remain at or below the train_v2 record; never re-raise above prior arch's floor"
+        );
     }
 
     #[tokio::test]
