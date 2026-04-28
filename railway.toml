@@ -1,0 +1,16 @@
+# Railway config for the trios-railway-mcp gateway (service b84f7b81).
+#
+# Uses Dockerfile.mcp from the repo root. The multi-account MCP server
+# listens on $PORT (Railway-supplied) and serves Streamable HTTP over
+# /mcp. seed-agent workers use Dockerfile.seed-agent in separate
+# services pointed at the same repo.
+#
+# Anchor: phi^2 + phi^-2 = 3
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.mcp"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
