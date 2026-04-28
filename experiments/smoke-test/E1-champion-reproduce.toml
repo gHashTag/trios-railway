@@ -1,0 +1,35 @@
+# E1: Champion reproduce (anchor for all)
+# Goal: Verify train_v2 h=1024 ctx=12 WT+resid reproduces 1.8921 BPB
+# Expectation: 0 deviation from anchor
+
+[experiment]
+name = "e1-champion-reproduce"
+seed = 42
+priority = 10
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test: 1000 steps only
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = false  # Baseline: no quantization
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "smoke-test"
+expected_bpb = 1.8921  # Champion from local-Mac run
+target_gate = "gate-2"
+target_bpb = 1.85
