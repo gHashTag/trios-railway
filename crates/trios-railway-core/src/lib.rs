@@ -16,6 +16,7 @@ pub mod queries;
 pub mod transport;
 #[allow(clippy::module_name_repetitions)]
 pub mod client_ext;
+pub mod multiclient;
 
 pub use hash::RailwayHash;
 pub use ids::{DeployId, EnvironmentId, ProjectId, ServiceId};
