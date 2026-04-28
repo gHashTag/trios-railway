@@ -36,3 +36,4 @@ async-trait    = "0.1"
 uuid           = { workspace = true }
 reqwest        = { workspace = true }
 regex          = "1"
+thiserror      = { workspace = true }
