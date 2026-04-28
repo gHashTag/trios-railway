@@ -783,13 +783,22 @@ fn neon_url() -> Result<String, McpError> {
     })
 }
 
-#[allow(dead_code)]
 async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
     let url = neon_url()?;
-    let (client, connection) =
-        tokio_postgres::connect(&url, tokio_postgres::NoTls)
-            .await
-            .map_err(internal_err)?;
+    tracing::info!(url_len = url.len(), "connecting to Neon");
+
+    // Build rustls TLS connector with webpki roots for Neon
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let rustls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
+
+    let (client, connection) = tokio_postgres::connect(&url, tls)
+        .await
+        .map_err(internal_err)?;
+
     // Spawn connection handler in background
     tokio::spawn(async move {
         if let Err(e) = connection.await {
