@@ -17,7 +17,10 @@
 
 mod actuate;
 mod bpb_source;
-mod canon;
+// canon was moved to `trios_railway_core::canon` for sharing with the
+// MCP server (#NEW3). Re-exported here so `crate::canon::...` paths
+// keep working in the rest of the binary without churn.
+pub use trios_railway_core::canon;
 mod decide;
 mod leaderboard;
 mod ledger;
