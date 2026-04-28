@@ -785,18 +785,18 @@ fn neon_url() -> Result<String, McpError> {
 
 async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
     let raw_url = neon_url()?;
-    // Strip unsupported libpq params that tokio-postgres doesn't handle
-    // (channel_binding, sslmode — we handle TLS via rustls directly)
+    // Strip channel_binding — tokio-postgres doesn't support it.
+    // Keep sslmode=require so tokio-postgres knows to use TLS.
     let url: String = raw_url
         .split('&')
-        .filter(|p| {
-            !p.starts_with("channel_binding=") && !p.starts_with("sslmode=")
-        })
+        .filter(|p| !p.starts_with("channel_binding="))
         .collect::<Vec<_>>()
         .join("&");
-    // Ensure sslmode is removed from query too (first param uses ?)
     let url = url.replace("?&", "?");
     tracing::info!(url_len = url.len(), "connecting to Neon via rustls");
+
+    // Install aws-lc-rs crypto provider (required by rustls 0.23)
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     // Build rustls TLS connector with webpki roots for Neon
     let mut root_store = rustls::RootCertStore::empty();
