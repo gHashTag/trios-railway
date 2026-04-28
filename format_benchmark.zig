@@ -148,16 +148,16 @@ fn f32ToBf16(x: f32) u16 {
         return sign_bit;
     }
 
-    const mant_f = (m_val - 1.0) * 256.0;
+    const mant_f = (m_val - 1.0) * 128.0;
     var mant_i = @as(i32, @intFromFloat(std.math.round(mant_f)));
 
-    if (mant_i == 256) {
-        mant_i = 255;
+    if (mant_i == 128) {
+        mant_i = 127;
         e += 1;
         if (e >= 7) return 0x7F80;
     }
 
-    return sign_bit | ((@as(u16, @intCast(e)) << 7) | (@as(u16, @intCast(mant_i))) & 0x00FF;
+    return sign_bit | (@as(u16, @intCast(e)) << 7) | @as(u16, @intCast(mant_i));
 }
 
 fn bf16ToF32(x: u16) f32 {
@@ -245,7 +245,7 @@ pub fn main() !void {
     std.debug.print("РЕЗУЛЬТАТЫ КВАНТИЗАЦИИ\n", .{});
     std.debug.print("─────────────────────────────────────────────────────────────────────\n", .{});
 
-    const format_results = [_]struct {
+    var format_results = [_]struct {
         format: Format,
         mse: f64,
         mae: f64,
