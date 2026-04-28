@@ -17,4 +17,4 @@ pub mod transport;
 
 pub use hash::RailwayHash;
 pub use ids::{DeployId, EnvironmentId, ProjectId, ServiceId};
-pub use transport::{AuthMode, Client, ClientError};
+pub use transport::{is_uuid_like, AuthMode, Client, ClientError};

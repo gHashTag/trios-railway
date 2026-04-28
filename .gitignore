@@ -4,3 +4,5 @@
 artifacts/
 .trinity/experience/*.trinity
 node_modules
+.env
+.env.*

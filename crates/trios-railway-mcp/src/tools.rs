@@ -16,14 +16,61 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use trios_railway_core::{
-    mutations as M, queries as Q, transport::Client, EnvironmentId, ProjectId, RailwayHash,
-    ServiceId,
+    is_uuid_like, mutations as M, queries as Q, transport::Client, AuthMode, EnvironmentId,
+    ProjectId, RailwayHash, ServiceId,
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
 const IGLA_PROJECT_ID: &str = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b";
 const IGLA_PROD_ENV_ID: &str = "54e293b9-00a9-4102-814d-db151636d96e";
 const DEFAULT_TRAINER_IMAGE: &str = "ghcr.io/ghashtag/trios-trainer-igla:latest";
+
+/// All known project IDs that this gateway is allowed to operate on.
+/// Serves as both a whitelist and a routing table to select the correct
+/// per-account token.
+const ALLOWED_PROJECT_IDS: &[&str] = &[
+    "e4fe33bb-3b09-4842-9782-7d2dea1abc9b", // acc1 — IGLA (primary)
+    "da1fb0c7-199f-42b0-9f08-a84d122feb5b", // acc0 — woody
+    "f3350520-8aff-4ebf-8618-c041bd17e6d0", // acc2
+    "8ab06401-aa28-4af7-9faf-39a1548b7008", // acc3
+];
+
+/// Per-account token info, loaded once from env vars.
+struct AccountConfig {
+    project_id: String,
+    token: String,
+    token_kind: String,
+    env_id: String,
+}
+
+static ACCOUNTS: std::sync::OnceLock<Vec<AccountConfig>> = std::sync::OnceLock::new();
+
+fn load_accounts() -> Vec<AccountConfig> {
+    let mut accounts = Vec::new();
+    for i in 0..4 {
+        let Ok(token) = std::env::var(format!("RAILWAY_TOKEN_ACC{i}")) else {
+            continue;
+        };
+        let project_id = std::env::var(format!("RAILWAY_PROJECT_ID_ACC{i}")).unwrap_or_default();
+        let token_kind = std::env::var(format!("RAILWAY_TOKEN_KIND_ACC{i}")).unwrap_or_default();
+        let env_id =
+            std::env::var(format!("RAILWAY_ENVIRONMENT_ID_ACC{i}")).unwrap_or_default();
+        if !project_id.is_empty() {
+            accounts.push(AccountConfig {
+                project_id,
+                token,
+                token_kind,
+                env_id,
+            });
+        }
+    }
+    tracing::info!(count = accounts.len(), "loaded multi-account config");
+    accounts
+}
+
+fn accounts() -> &'static Vec<AccountConfig> {
+    ACCOUNTS.get_or_init(load_accounts)
+}
 
 // -------- request payload structs --------
 
@@ -133,8 +180,8 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<ListServicesRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
+        let client = build_client_for_project(&project)?;
         let pid = ProjectId::from(project.clone());
         let pv = Q::project_view(&client, &pid).await.map_err(internal_err)?;
         let services: Vec<_> = pv
@@ -166,13 +213,13 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<DeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
+        let client = build_client_for_project(&project)?;
         let token_fp = client.token_fingerprint();
 
-        let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
         let environment = req
             .environment
-            .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
+            .unwrap_or_else(|| env_for_project(&project));
         let image = req
             .image
             .unwrap_or_else(|| DEFAULT_TRAINER_IMAGE.to_string());
@@ -291,12 +338,10 @@ impl TriosRailwayMcp {
         Parameters(req): Parameters<ExperienceAppendRequest>,
     ) -> Result<CallToolResult, McpError> {
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
-        let pid = ProjectId::from(project);
+        let pid = ProjectId::from(project.as_str());
         let service_id = req.service.map(ServiceId::from);
-        let token_fp = std::env::var("RAILWAY_TOKEN").ok().as_deref().map_or_else(
-            || "no-token".to_string(),
-            trios_railway_core::hash::token_fingerprint,
-        );
+        let token_fp = build_client_for_project(&project)
+            .map_or_else(|_| "no-token".to_string(), |c| c.token_fingerprint());
 
         let verb = req.verb.unwrap_or_else(|| "experience".to_string());
         let hash = RailwayHash::seal(&verb, &pid, service_id.as_ref(), &token_fp);
@@ -372,10 +417,55 @@ impl ServerHandler for TriosRailwayMcp {
 
 // -------- helpers --------
 
+/// Build a client using the default `RAILWAY_TOKEN` env var (legacy fallback).
 fn build_client() -> Result<Client, McpError> {
     Client::from_env().map_err(|e| {
         McpError::internal_error(format!("RAILWAY_TOKEN not set or invalid: {e}"), None)
     })
+}
+
+/// Build a client with the correct token for the given project ID.
+/// Looks up `RAILWAY_TOKEN_ACC{0..3}` env vars to find a matching account.
+/// Falls back to `build_client()` if no match found.
+fn build_client_for_project(project: &str) -> Result<Client, McpError> {
+    // Validate project is in whitelist
+    if !ALLOWED_PROJECT_IDS.contains(&project) {
+        return Err(McpError::invalid_params(
+            format!(
+                "project {project} not in ALLOWED_PROJECT_IDS. Allowed: {ALLOWED_PROJECT_IDS:?}"
+            ),
+            None,
+        ));
+    }
+    // Find matching account
+    for acc in accounts() {
+        if acc.project_id == project {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            return Client::with_token_and_mode(&acc.token, auth).map_err(|e| {
+                McpError::internal_error(
+                    format!("token error for project {project}: {e}"),
+                    None,
+                )
+            });
+        }
+    }
+    // Fallback to default token
+    build_client()
+}
+
+/// Return the environment ID for a project, or the default IGLA env.
+fn env_for_project(project: &str) -> String {
+    for acc in accounts() {
+        if acc.project_id == project && !acc.env_id.is_empty() {
+            return acc.env_id.clone();
+        }
+    }
+    IGLA_PROD_ENV_ID.to_string()
 }
 
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
