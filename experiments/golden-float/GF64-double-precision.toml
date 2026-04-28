@@ -1,0 +1,41 @@
+# Golden Float Family: GF64 (64-bit double precision)
+# Whitepaper: https://github.com/gHashTag/zig-golden-float/blob/main/docs/whitepaper.md
+# Specification: 64 bits, 1:21:42 exp:mantissa, u64 backing
+# φ-constant: 21:42 = F₈ : F₈·2 — double-precision scientific
+# Status: ⬜ TODO (not yet implemented)
+
+[experiment]
+name = "gf64-double-precision-test"
+seed = 42
+priority = 16  # Lower priority (niche scientific computing)
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf64"  # 64-bit golden float: 1:21:42 exp:mantissa
+storage_target = "all"  # Full GF64 pipeline
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "quantization_stats"]
+
+[meta]
+category = "golden-float-exploration"
+format = "GF64"
+phi_constant = "21:42 = F₈ : F₈·2"
+status = "speculative"
+note = "Double-precision format for scientific computing. Mantissa 1:21:42 = 21:42 = F₈ : F₈·2 (Lucas closure: φ^42 + φ^-42 ∈ Z). Fibonacci F₈ = 21."
+risk = "low"  # Double precision is numerically stable

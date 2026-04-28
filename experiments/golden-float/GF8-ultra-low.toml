@@ -1,0 +1,41 @@
+# Golden Float Family: GF8 (8-bit ultra-low-power)
+# Whitepaper: https://github.com/gHashTag/zig-golden-float/blob/main/docs/whitepaper.md
+# Specification: 8 bits, 1:3:4 exp:mantissa, u8 backing
+# φ-constant: φ⁴+φ⁻⁴ = 7 (L₄) — ultra-low-power edge, sensors
+# Status: ⬜ Specification only (not yet implemented)
+
+[experiment]
+name = "gf8-ultra-low-power-test"
+seed = 42
+priority = 20  # Speculative, low priority
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf8"  # 8-bit golden float: 1:3:4 exp:mantissa
+storage_target = "all"  # All weights and activations
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "quantization_stats"]
+
+[meta]
+category = "golden-float-exploration"
+format = "GF8"
+phi_constant = "φ⁴+φ⁻⁴ = 7 (L₄)"
+risk = "high"  # Ultra-low-power edge, not production ready
+status = "speculative"
+note = "Speculation: 8-bit format for sensors/IoT. Mantissa 1:3:4 = 7 bits integer."

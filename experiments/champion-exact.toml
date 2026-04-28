@@ -1,0 +1,44 @@
+# Champion Exact Reproduction - BPB=1.8921
+# Goal: Reproduce local-Mac champion EXACTLY
+# Source: Leaderboard 🥇 train_v2 h=1024 ctx=12 WT+resid (no attn)
+# Expected BPB: 1.8921 (Δ = 0)
+
+[experiment]
+name = "champion-exact-reproduce"
+seed = 42
+priority = 0  # Highest priority - this IS the champion
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false  # Explicit: no attention (WT+resid only)
+
+[residual]
+enabled = true
+depth = 4  # 4-layer residual (WT+resid)
+activation = "relu"  # Implicit: default is ReLU²
+pre_norm = true
+
+[training]
+steps_budget = 120000  # Full champion training
+warmup_steps = 500
+learning_rate = 0.0025  # Exact champion LR
+batch_size = 128
+gradient_accumulation_steps = 1
+weight_decay = 0.01  # Standard L2 regularization
+
+[quantization]
+enabled = false  # Baseline: no quantization
+
+[output]
+log_every = 500
+save_every = 5000
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "champion-validation"
+target_bpb = 1.8921  # Exact champion BPB
+target_gate = "gate-2"
+delta_tolerance = 0.005  # Must match within ±0.005
+note = "EXACT champion reproduction - same architecture, same seed, same hyperparameters"
