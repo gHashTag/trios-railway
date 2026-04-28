@@ -384,6 +384,111 @@ impl TriosRailwayMcp {
             .join("\n");
         Ok(CallToolResult::success(vec![Content::text(sql)]))
     }
+
+    #[tool(
+        description = "Check fleet health across all accounts. Returns service counts, project status, and account connectivity for each configured account."
+    )]
+    async fn fleet_health(&self) -> Result<CallToolResult, McpError> {
+        let mut results = Vec::new();
+        let mut total_services = 0usize;
+        let mut healthy_accounts = 0usize;
+
+        for acc in accounts() {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
+                results.push(json!({
+                    "account": acc.project_id,
+                    "status": "ERROR",
+                    "error": "client build failed",
+                    "services": 0,
+                }));
+                continue;
+            };
+            let pid = ProjectId::from(acc.project_id.as_str());
+            match Q::project_view(&client, &pid).await {
+                Ok(pv) => {
+                    let count = pv.services().len();
+                    total_services += count;
+                    healthy_accounts += 1;
+                    results.push(json!({
+                        "project_id": pv.id,
+                        "project_name": pv.name,
+                        "status": "OK",
+                        "services": count,
+                    }));
+                }
+                Err(e) => {
+                    results.push(json!({
+                        "project_id": acc.project_id,
+                        "status": "ERROR",
+                        "error": e.to_string(),
+                        "services": 0,
+                    }));
+                }
+            }
+        }
+
+        let body = json!({
+            "healthy_accounts": healthy_accounts,
+            "total_accounts": accounts().len(),
+            "total_services": total_services,
+            "accounts": results,
+            "anchor": "phi^2 + phi^-2 = 3",
+        });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap(),
+        )]))
+    }
+
+    #[tool(
+        description = "List all seed training services across all accounts. Returns service name, ID, and project for every service matching 'seed' or 'igla' or 'train' pattern."
+    )]
+    async fn seed_list(&self) -> Result<CallToolResult, McpError> {
+        let mut all_seeds = Vec::new();
+
+        for acc in accounts() {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
+                continue;
+            };
+            let pid = ProjectId::from(acc.project_id.as_str());
+            let Ok(pv) = Q::project_view(&client, &pid).await else {
+                continue;
+            };
+            for s in pv.services() {
+                let lower = s.name.to_lowercase();
+                if lower.contains("seed")
+                    || lower.contains("igla")
+                    || lower.contains("train")
+                {
+                    all_seeds.push(json!({
+                        "id": s.id,
+                        "name": s.name,
+                        "project_id": acc.project_id,
+                        "created_at": s.created_at,
+                    }));
+                }
+            }
+        }
+
+        let body = json!({
+            "total_seeds": all_seeds.len(),
+            "seeds": all_seeds,
+        });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap(),
+        )]))
+    }
 }
 
 impl Default for TriosRailwayMcp {
