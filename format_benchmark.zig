@@ -218,6 +218,173 @@ fn calcPhiDistance(fmt: Format) f32 {
     };
 }
 
+// Простая MLP инференс для реалистичного теста (без квантования - baseline)
+fn mlpInferenceF32(input: [10]f32, weights1: [10*8]f32, biases1: [8]f32, weights2: [8*4]f32, biases2: [4]f32, weights3: [4*1]f32, bias3: f32) f32 {
+    var hidden1: [8]f32 = undefined;
+    var hidden2: [4]f32 = undefined;
+
+    // Layer 1: 10 -> 8
+    for (0..8) |j| {
+        var sum: f32 = biases1[j];
+        for (0..10) |i| {
+            sum += input[i] * weights1[j*10 + i];
+        }
+        hidden1[j] = if (sum > 0) sum else 0; // ReLU
+    }
+
+    // Layer 2: 8 -> 4
+    for (0..4) |j| {
+        var sum: f32 = biases2[j];
+        for (0..8) |i| {
+            sum += hidden1[i] * weights2[j*8 + i];
+        }
+        hidden2[j] = if (sum > 0) sum else 0; // ReLU
+    }
+
+    // Layer 3: 4 -> 1
+    var result: f32 = bias3;
+    for (0..4) |i| {
+        result += hidden2[i] * weights3[i];
+    }
+
+    return result; // Linear output (regression)
+}
+
+// MLP инференс с квантованием весов
+fn mlpInference(input: [10]f32, weights1: [10*8]f32, biases1: [8]f32, weights2: [8*4]f32, biases2: [4]f32, weights3: [4*1]f32, bias3: f32, fmt: Format) f32 {
+    var hidden1: [8]f32 = undefined;
+    var hidden2: [4]f32 = undefined;
+
+    // Layer 1: 10 -> 8
+    for (0..8) |j| {
+        var sum: f32 = biases1[j];
+        for (0..10) |i| {
+            sum += input[i] * quantize(weights1[j*10 + i], fmt);
+        }
+        hidden1[j] = if (sum > 0) sum else 0; // ReLU
+    }
+
+    // Layer 2: 8 -> 4
+    for (0..4) |j| {
+        var sum: f32 = biases2[j];
+        for (0..8) |i| {
+            sum += hidden1[i] * quantize(weights2[j*8 + i], fmt);
+        }
+        hidden2[j] = if (sum > 0) sum else 0; // ReLU
+    }
+
+    // Layer 3: 4 -> 1
+    var result: f32 = bias3;
+    for (0..4) |i| {
+        result += hidden2[i] * quantize(weights3[i], fmt);
+    }
+
+    return result; // Linear output (regression)
+}
+
+fn nextFloat(rng_ptr: *u32) f32 {
+    const new_rng = (rng_ptr.* * 1103515245) + 12345;
+    rng_ptr.* = new_rng;
+    const temp_u = new_rng & 0xFFFFFF;
+    return @as(f32, @floatFromInt(temp_u)) / 16777216.0;
+}
+
+fn runMlpBenchmark(fmt: Format) !struct { mse: f64, mae: f64, output_drift: f64 } {
+    // Генерируем тестовые веса (имитация обученной сети)
+    const seed: u32 = 0xABC123;
+    var rng: u32 = seed;
+
+    var weights1: [10*8]f32 = undefined;
+    var biases1: [8]f32 = undefined;
+    var weights2: [8*4]f32 = undefined;
+    var biases2: [4]f32 = undefined;
+    var weights3: [4]f32 = undefined;
+    const bias3: f32 = nextFloat(&rng) - 0.5;
+
+    for (0..80) |i| weights1[i] = (nextFloat(&rng) - 0.5) * 0.5;
+    for (0..8) |i| biases1[i] = (nextFloat(&rng) - 0.5) * 0.2;
+    for (0..32) |i| weights2[i] = (nextFloat(&rng) - 0.5) * 0.5;
+    for (0..4) |i| biases2[i] = (nextFloat(&rng) - 0.5) * 0.2;
+    for (0..4) |i| weights3[i] = (nextFloat(&rng) - 0.5) * 0.5;
+
+    const test_count: usize = 1000;
+    var mse: f64 = 0;
+    var mae: f64 = 0;
+
+    // Запускаем инференс
+    for (0..test_count) |_| {
+        var input: [10]f32 = undefined;
+        for (0..10) |i| input[i] = nextFloat(&rng);
+
+        // f32 baseline - без квантования (reference)
+        const f32_output = mlpInferenceF32(input, weights1, biases1, weights2, biases2, weights3, bias3);
+        // quantized output - с квантованием
+        const quant_output = mlpInference(input, weights1, biases1, weights2, biases2, weights3, bias3, fmt);
+
+        const diff = @abs(@as(f64, quant_output - @as(f64, f32_output)));
+        mse += diff * diff;
+        mae += diff;
+    }
+
+    return .{
+        .mse = mse / @as(f64, test_count),
+        .mae = mae / @as(f64, test_count),
+        .output_drift = 0, // Будет вычисляться относительно fp16
+    };
+}
+
+fn loadWeightsFromFile(filename: []const u8, max_count: usize) ![]f32 {
+    const file = try std.fs.cwd().openFile(filename, .{});
+    defer file.close();
+
+    const stat = try file.stat();
+    const file_size = @as(usize, stat.size);
+    const content = try file.reader().readAllAlloc(std.heap.page_allocator, file_size);
+
+    var weights = std.ArrayList(f32).init(std.heap.page_allocator);
+    defer weights.deinit();
+
+    var iter = std.mem.tokenizeScalar(u8, content, '\n');
+    var count: usize = 0;
+    while (iter.next()) |line| {
+        if (line.len == 0) continue;
+        const trimmed = std.mem.trim(u8, line, &std.ascii.whitespace);
+        if (trimmed.len == 0) continue;
+
+        const val = std.fmt.parseFloat(f32, trimmed) catch continue;
+        if (!std.math.isNan(val)) {
+            try weights.append(val);
+            count += 1;
+            if (count >= max_count) break;
+        }
+    }
+
+    return weights.toOwnedSlice();
+}
+
+fn generateGaussianWeights(count: usize) ![]f32 {
+    var weights = try std.heap.page_allocator.alloc(f32, count);
+    errdefer std.heap.page_allocator.free(weights);
+
+    const seed: u32 = 0xF17;
+    var counter: u32 = seed;
+
+    for (0..count) |i| {
+        counter = (counter * 1103515245) + 12345;
+        const @"u1" = @as(f32, @floatFromInt(counter & 0xFFFFFF)) / 16777216.0;
+        counter = (counter * 1103515245) + 54321;
+        const @"u2" = @as(f32, @floatFromInt(counter & 0xFFFFFF)) / 16777216.0;
+
+        // Box-Muller transform for Gaussian distribution
+        const r = @sqrt(-2.0 * @log(1.0 - @"u1"));
+        const theta = 2.0 * std.math.pi * @"u2";
+
+        if (i < count) weights[i] = r * @cos(theta) * 0.1; // σ = 0.1
+    }
+
+    return weights;
+}
+
 pub fn main() !void {
     std.debug.print("\n", .{});
     std.debug.print("╔══════════════════════════════════════════════════════════════╗\n", .{});
@@ -228,18 +395,11 @@ pub fn main() !void {
     std.debug.print("\n", .{});
 
     const test_count: usize = 10000;
-    std.debug.print("Случайные веса: {} значений\n", .{test_count});
+    std.debug.print("Генерация гауссовских весов: {} значений (σ=0.1)\n", .{test_count});
 
-    // Генерация случайных чисел
-    var weights: [test_count]f32 = undefined;
-    const seed: u32 = 0xF17;
-    var counter: u32 = seed;
-    for (0..test_count) |i| {
-        counter = ((counter *% 1103515245) + 1);
-        const temp_u = counter & 0xFFFFFF;
-        const x = @as(f32, @floatFromInt(temp_u)) / 16777216.0;
-        weights[i] = (x - 0.5) * 0.2;
-    }
+    // Генерация гауссовских весов (реалистичное распределение)
+    const weights = try generateGaussianWeights(test_count);
+    defer std.heap.page_allocator.free(weights);
 
     std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
     std.debug.print("РЕЗУЛЬТАТЫ КВАНТИЗАЦИИ\n", .{});
@@ -280,7 +440,7 @@ pub fn main() !void {
         result.max_error = max_err_val;
         result.phi_distance = calcPhiDistance(result.format);
 
-        std.debug.print("{}: MSE={d:.6} MAE={d:.6} MaxErr={d:.4} φ-dist={d:.4}\n", .{
+        std.debug.print("{s}: MSE={d:.6} MAE={d:.6} MaxErr={d:.4} φ-dist={d:.4}\n", .{
             formatName(result.format),
             result.mse,
             result.mae,
@@ -308,7 +468,7 @@ pub fn main() !void {
     for (0..format_results.len) |i| {
         const r = &format_results[i];
         const star = if (i == best_idx) "🏆" else " ";
-        std.debug.print("│ {} {} │ {d:.8} │ {d:.8} │ {d:.4} │ {d:.4} │\n", .{
+        std.debug.print("│ {s} {s} │ {d:.8} │ {d:.8} │ {d:.4} │ {d:.4} │\n", .{
             star,
             formatName(r.format),
             r.mse,
@@ -320,8 +480,48 @@ pub fn main() !void {
 
     std.debug.print("└─────────┴────────────┴────────────┴──────────┴────────────┘\n", .{});
 
+    // MLP Inference Benchmark (реалистичный тест)
+    std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
+    std.debug.print("MLP INFERENCE BENCHMARK (3-layer: 10→8→4→1)\n", .{});
+    std.debug.print("─────────────────────────────────────────────────────────────────────\n", .{});
+
+    var mlp_results = [_]struct {
+        format: Format,
+        mse: f64,
+        mae: f64,
+        output_drift: f64,
+    }{
+        .{ .format = .gf16, .mse = 0, .mae = 0, .output_drift = 0 },
+        .{ .format = .fp16, .mse = 0, .mae = 0, .output_drift = 0 },
+        .{ .format = .bf16, .mse = 0, .mae = 0, .output_drift = 0 },
+    };
+
+    for (0..mlp_results.len) |idx| {
+        const result = &mlp_results[idx];
+        const stats = try runMlpBenchmark(result.format);
+        result.mse = stats.mse;
+        result.mae = stats.mae;
+        result.output_drift = stats.output_drift;
+
+        std.debug.print("{s}: MSE={d:.6} MAE={d:.6}\n", .{
+            formatName(result.format),
+            result.mse,
+            result.mae,
+        });
+    }
+
+    // Находим лучший по MSE для MLP
+    var mlp_best_idx: usize = 0;
+    for (1..mlp_results.len) |i| {
+        if (mlp_results[i].mse < mlp_results[mlp_best_idx].mse) {
+            mlp_best_idx = i;
+        }
+    }
+
+    std.debug.print("\n🏆 MLP ПОБЕДИТЕЛЬ ПО MSE: {s}\n", .{formatName(mlp_results[mlp_best_idx].format)});
+
     // Whitepaper validation
-    std.debug.print("\n🏆 ПОБЕДИТЕЛЬ ПО MSE: {}\n", .{formatName(format_results[best_idx].format)});
+    std.debug.print("\n🏆 ПОБЕДИТЕЛЬ ПО MSE: {s}\n", .{formatName(format_results[best_idx].format)});
     std.debug.print("────────────────────────────\n", .{});
 
     // Проверка φ-distance
@@ -332,7 +532,7 @@ pub fn main() !void {
         }
     }
 
-    std.debug.print("\n🥇 ПОБЕДИТЕЛЬ ПО φ-DISTANCE: {}\n", .{formatName(format_results[best_phi_idx].format)});
+    std.debug.print("\n🥇 ПОБЕДИТЕЛЬ ПО φ-DISTANCE: {s}\n", .{formatName(format_results[best_phi_idx].format)});
     std.debug.print("─────────────────────────────\n", .{});
     if (format_results[best_phi_idx].format == .gf16) {
         std.debug.print("✅ WHITEPAPER ПОДТВЕРЖДЁН: GF16 имеет лучший φ-distance!\n", .{});
