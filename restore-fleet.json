@@ -14,11 +14,14 @@
 
   "shared_vars": [
     { "key": "RUST_LOG",                "value": "info" },
-    { "key": "TRIOS_HIDDEN",            "value": "384" },
+    { "key": "TRIOS_HIDDEN",            "value": "828" },
     { "key": "TRIOS_LR",                "value": "0.003" },
     { "key": "TRIOS_OPTIMIZER",         "value": "adamw" },
-    { "key": "TRIOS_STEPS",             "value": "60000" },
+    { "key": "TRIOS_STEPS",             "value": "81000" },
     { "key": "TRIOS_ATTN_LAYERS",       "value": "2" },
+    { "key": "TRIOS_ATTN_SCALE",        "value": "0.3" },
+    { "key": "TRIOS_ATTN_SEQ",          "value": "16" },
+    { "key": "TRIOS_GF16_DISABLE",      "value": "1" },
     { "key": "L_R8_SYNTHETIC_FALLBACK", "value": "FORBID" },
     { "key": "NEON_DATABASE_URL",       "value": "${secret:NEON_DATABASE_URL}" }
   ],
