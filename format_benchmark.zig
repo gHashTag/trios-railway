@@ -370,9 +370,9 @@ fn generateGaussianWeights(count: usize) ![]f32 {
     var counter: u32 = seed;
 
     for (0..count) |i| {
-        counter = (counter * 1103515245) + 12345;
+        counter = ((counter * 1103515245) + 12345);
         const @"u1" = @as(f32, @floatFromInt(counter & 0xFFFFFF)) / 16777216.0;
-        counter = (counter * 1103515245) + 54321;
+        counter = ((counter * 1103515245) + 54321);
         const @"u2" = @as(f32, @floatFromInt(counter & 0xFFFFFF)) / 16777216.0;
 
         // Box-Muller transform for Gaussian distribution
@@ -539,6 +539,65 @@ pub fn main() !void {
     } else {
         std.debug.print("⚠️  WHITEPAPER НЕ ПОДТВЕРЖДЁН: ожидается GF16\n", .{});
     }
+
+    std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
+    std.debug.print("UNIFORM DISTRIBUTION TEST [-100, 100]\n", .{});
+    std.debug.print("─────────────────────────────────────────────────────────────────────\n", .{});
+
+    const large_test_count: usize = 1000;
+    var large_weights: [large_test_count]f32 = undefined;
+    var large_rng: u32 = 0xDEADBEEF;
+
+    for (0..large_test_count) |i| {
+        large_rng = ((large_rng * 1103515245) + 12345);
+        const masked = large_rng & 0xFFFFFF;
+        const temp_u32 = @as(u32, masked);
+        const x = @as(f32, @floatFromInt(temp_u32)) / 16777216.0;
+        large_weights[i] = (x - 0.5) * 200.0;
+    }
+
+    var large_format_results = [_]struct {
+        format: Format,
+        mse: f64,
+        mae: f64,
+    }{
+        .{ .format = .gf16, .mse = 0, .mae = 0 },
+        .{ .format = .fp16, .mse = 0, .mae = 0 },
+        .{ .format = .bf16, .mse = 0, .mae = 0 },
+    };
+
+    for (0..large_format_results.len) |idx| {
+        const result = &large_format_results[idx];
+        var sum_sq: f64 = 0;
+        var sum_abs: f64 = 0;
+
+        for (0..large_test_count) |i| {
+            const original = large_weights[i];
+            const quantized = quantize(original, result.format);
+            const diff = @abs(@as(f64, quantized - @as(f64, original)));
+
+            sum_sq += diff * diff;
+            sum_abs += diff;
+        }
+
+        result.mse = sum_sq / @as(f64, large_test_count);
+        result.mae = sum_abs / @as(f64, large_test_count);
+
+        std.debug.print("{s}: MSE={d:.6} MAE={d:.6}\n", .{
+            formatName(result.format),
+            result.mse,
+            result.mae,
+        });
+    }
+
+    var large_best_idx: usize = 0;
+    for (1..large_format_results.len) |i| {
+        if (large_format_results[i].mse < large_format_results[large_best_idx].mse) {
+            large_best_idx = i;
+        }
+    }
+
+    std.debug.print("\n🏆 UNIFORM WINNER: {s}\n", .{formatName(large_format_results[large_best_idx].format)});
 
     std.debug.print("\n─────────────────────────────────────────────────────────────────────\n", .{});
     std.debug.print("WHITEPAPER CLAIMS VALIDATION:\n", .{});
