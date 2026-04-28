@@ -1,0 +1,60 @@
+# ── trios-mcp-gateway — multi-account Streamable-HTTP MCP server ─────────────
+# Supports up to 4 Railway accounts via RAILWAY_TOKEN_ACC{0..3} env vars.
+# Single instance controls the full fleet through one Perplexity connector.
+#
+# Build:  docker build -f Dockerfile.mcp -t trios-mcp-gateway:local .
+# Run:    docker run -p 8080:8080 --env-file .env.mcp trios-mcp-gateway:local
+# Deploy: push to ghcr.io/ghashtag/trios-mcp-gateway:latest  (CI does this)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM rust:1.90-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Cache deps layer first
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+
+# Build only the MCP server binary
+RUN cargo build --release -p trios-mcp --bin trios-mcp-server 2>&1
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/trios-mcp-server /usr/local/bin/trios-mcp-server
+
+# ── Required env vars (must be set at deploy time) ────────────────────────────
+# RAILWAY_TOKEN          — default account token (personal, "All workspaces" scope)
+# RAILWAY_TOKEN_ACC0     — kaglerslomaansc@hotmail.com  (Acc0)
+# RAILWAY_TOKEN_ACC1     — rumbodzalaclhdv0@hotmail.com (Acc1)
+# RAILWAY_TOKEN_ACC2     — brabbtjubindt5cug@hotmail.com (Acc2)
+# RAILWAY_TOKEN_ACC3     — gondiigamzevup@hotmail.com   (Acc3)
+# RAILWAY_TOKEN_AUTH     — "team" (Bearer) | "project" (Project-Access-Token)
+# NEON_DATABASE_URL      — shared Neon connection string (audit ledger)
+# PORT                   — default 8080
+# RUST_LOG               — default "info"
+# ─────────────────────────────────────────────────────────────────────────────
+
+ENV PORT=8080 \
+    RUST_LOG=info \
+    RAILWAY_TOKEN_AUTH=team
+
+EXPOSE 8080
+
+# Healthcheck for Railway + Perplexity connector validation
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fs http://localhost:${PORT}/healthz || exit 1
+
+ENTRYPOINT ["/usr/local/bin/trios-mcp-server"]
