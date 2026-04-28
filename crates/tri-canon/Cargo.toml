@@ -1,0 +1,12 @@
+[package]
+name = "tri-canon"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Dmitrii Vasilev <gHashTag>"]
+repository = "https://github.com/gHashTag/trios-railway"
+
+[dependencies]
+anyhow = { workspace = true }
+regex = "1.10"
+tracing = { workspace = true }

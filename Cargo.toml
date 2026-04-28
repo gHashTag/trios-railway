@@ -5,6 +5,13 @@ members = [
     "crates/trios-railway-audit",
     "crates/trios-railway-experience",
     "crates/trios-railway-mcp",
+    "crates/tri-core",
+    "crates/tri-hunt",
+    "crates/tri-exp",
+    "crates/tri-canon",
+    "crates/tri-ledger",
+    "bin/tri",
+    "bin/tri-gardener",
     "bin/tri-railway",
 ]
 
