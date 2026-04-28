@@ -784,8 +784,19 @@ fn neon_url() -> Result<String, McpError> {
 }
 
 async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
-    let url = neon_url()?;
-    tracing::info!(url_len = url.len(), "connecting to Neon");
+    let raw_url = neon_url()?;
+    // Strip unsupported libpq params that tokio-postgres doesn't handle
+    // (channel_binding, sslmode — we handle TLS via rustls directly)
+    let url: String = raw_url
+        .split('&')
+        .filter(|p| {
+            !p.starts_with("channel_binding=") && !p.starts_with("sslmode=")
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    // Ensure sslmode is removed from query too (first param uses ?)
+    let url = url.replace("?&", "?");
+    tracing::info!(url_len = url.len(), "connecting to Neon via rustls");
 
     // Build rustls TLS connector with webpki roots for Neon
     let mut root_store = rustls::RootCertStore::empty();
@@ -795,8 +806,11 @@ async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
         .with_no_client_auth();
     let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
 
-    let (client, connection) = tokio_postgres::connect(&url, tls)
+    // Connect with 10s timeout to avoid hanging
+    let connect_future = tokio_postgres::connect(&url, tls);
+    let (client, connection) = tokio::time::timeout(std::time::Duration::from_secs(10), connect_future)
         .await
+        .map_err(|_| McpError::internal_error("Neon connection timed out after 10s", None))?
         .map_err(internal_err)?;
 
     // Spawn connection handler in background
