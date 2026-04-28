@@ -33,3 +33,12 @@
 {"ts":"2026-04-28T20:00:10.493713+00:00","agent":"GENERAL","soul_name":"BatchDeployer","issue":"#81","task":"batch-deploy trios-train-seed-42-e4-capacity-push-h1536 image=ghcr.io/ghashtag/trios-trainer-igla:latest acc=2","status":"OK","phi_step":"PUSH","triplet":"RAIL=batch-deploy @ project=f3350520 service=ccfa2d1e sha=6bb640bf7628e4e1 ts=2026-04-28T20:00:10.493706+00:00"}
 {"ts":"2026-04-28T20:00:26.258749+00:00","agent":"GENERAL","soul_name":"BatchDeployer","issue":"#81","task":"batch-deploy trios-train-seed-42-e5-gf16-storage-test image=ghcr.io/ghashtag/trios-trainer-igla:latest acc=2","status":"OK","phi_step":"PUSH","triplet":"RAIL=batch-deploy @ project=f3350520 service=b9b28339 sha=22c06463ec5bf677 ts=2026-04-28T20:00:26.258741+00:00"}
 {"ts":"2026-04-28T20:00:37.106610+00:00","agent":"GENERAL","soul_name":"BatchDeployer","issue":"#81","task":"batch-deploy trios-train-seed-42-e7-lr-phi-optimal image=ghcr.io/ghashtag/trios-trainer-igla:latest acc=2","status":"OK","phi_step":"PUSH","triplet":"RAIL=batch-deploy @ project=f3350520 service=4fd2185c sha=e6c206b73788e231 ts=2026-04-28T20:00:37.106606+00:00"}
+
+## Fleet-wide NEON_DATABASE_URL injection — 2026-04-28T23:02Z
+
+- Upserted NEON_DATABASE_URL on 48 services across 4 accounts (ACC0:10, ACC1:8, ACC2:20, ACC3:10)
+- Redeployed all 48 services to pick up new env var
+- Worker status: acc0=2 alive/129 total, acc1=0/96, acc2=0/102, acc3=0/25
+- Queue: 107 pending, 91 done, 2 running, 258 pruned, 1 failed
+- Containers starting up; worker registration depends on trios-trainer-igla code
+- Agent: GENERAL
