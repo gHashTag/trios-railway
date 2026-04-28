@@ -1,0 +1,11 @@
+FROM ghcr.io/ghashtag/trios-trainer-igla:latest
+ENV TRIOS_SEED=10001
+ENV TRIOS_HIDDEN=384
+ENV TRIOS_LR=0.003
+ENV TRIOS_OPTIMIZER=adamw
+ENV TRIOS_STEPS=1000
+ENV TRIOS_ATTN_LAYERS=2
+ENV TRIOS_LANE=A-champion-fineweb
+ENV L_R8_SYNTHETIC_FALLBACK=FORBID
+ENV NEON_DATABASE_URL=postgresql://neondb_owner:npg_NHBC5hdbM0Kx@ep-curly-math-ao51pquy-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+ENV RUST_LOG=info
