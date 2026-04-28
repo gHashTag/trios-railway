@@ -1,0 +1,14 @@
+[package]
+name = "tri-exp"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Dmitrii Vasilev <gHashTag>"]
+repository = "https://github.com/gHashTag/trios-railway"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+tokio-postgres = { workspace = true }
+tracing = { workspace = true }

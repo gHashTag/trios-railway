@@ -1,0 +1,18 @@
+[package]
+name = "tri-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Dmitrii Vasilev <gHashTag>"]
+repository = "https://github.com/gHashTag/trios-railway"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+
+[dependencies.trios-railway-core]
+path = "../trios-railway-core"

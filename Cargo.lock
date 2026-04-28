@@ -1402,6 +1402,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex"
+version = "1.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2122,6 +2134,101 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tri"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tri-canon",
+ "tri-core",
+ "tri-exp",
+ "tri-hunt",
+ "tri-ledger",
+ "trios-railway-core",
+]
+
+[[package]]
+name = "tri-canon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "regex",
+ "tracing",
+]
+
+[[package]]
+name = "tri-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "trios-railway-core",
+]
+
+[[package]]
+name = "tri-exp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
+name = "tri-gardener"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tri-canon",
+ "tri-exp",
+ "tri-hunt",
+ "tri-ledger",
+]
+
+[[package]]
+name = "tri-hunt"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "trios-railway-core",
+]
+
+[[package]]
+name = "tri-ledger"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
 ]
 
 [[package]]

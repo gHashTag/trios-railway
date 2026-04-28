@@ -1,0 +1,39 @@
+[package]
+name = "tri"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Dmitrii Vasilev <gHashTag>"]
+repository = "https://github.com/gHashTag/trios-railway"
+
+[[bin]]
+name = "tri"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dependencies.tri-core]
+path = "../../crates/tri-core"
+
+[dependencies.tri-hunt]
+path = "../../crates/tri-hunt"
+
+[dependencies.tri-exp]
+path = "../../crates/tri-exp"
+
+[dependencies.tri-canon]
+path = "../../crates/tri-canon"
+
+[dependencies.tri-ledger]
+path = "../../crates/tri-ledger"
+
+[dependencies.trios-railway-core]
+path = "../../crates/trios-railway-core"
