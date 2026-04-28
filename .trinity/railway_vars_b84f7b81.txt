@@ -1,0 +1,49 @@
+# =====================================================================
+# Paste this block into Railway service b84f7b81 → Variables → Raw Editor
+# (trios-railway-mcp gateway @ trios-railway-production.up.railway.app)
+#
+# Replace 5 <PASTE_*> placeholders below with the values you collect:
+#   <PASTE_TOKEN_ACC0>      personal API token of kaglerslomaansc
+#   <PASTE_TOKEN_ACC1>      personal API token of rumbodzalaclhdv0
+#                           (same as the existing RAILWAY_TOKEN; keep both)
+#   <PASTE_TOKEN_ACC2>      personal API token of brabbtjubindt5cug
+#   <PASTE_TOKEN_ACC3>      personal API token of gondiigamzevup
+#   <PASTE_NEON_URL>        same NEON_DATABASE_URL as in igla-final-seed-42
+#   <PASTE_PROJECT_ID_ACC3> UUID of the new empty Acc3 project
+#   <PASTE_ENV_ID_ACC3>     UUID of that project's production environment
+#
+# Keep RAILWAY_TOKEN intact — it's the legacy single-token fallback so
+# existing tools (cron-watchdog, audit-watchdog) don't break mid-cutover.
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP
+# =====================================================================
+
+# ----- Acc0 — kaglerslomaansc — trios-trainer -----
+RAILWAY_TOKEN_ACC0=<PASTE_TOKEN_ACC0>
+RAILWAY_PROJECT_ID_ACC0=265301ce-0bf2-4187-a36f-348b0eb9942f
+RAILWAY_ENVIRONMENT_ID_ACC0=f3517e98-c11a-49d8-b5fd-4cbb82d04384
+RAILWAY_TOKEN_KIND_ACC0=team
+
+# ----- Acc1 — rumbodzalaclhdv0 — IGLA (current race) -----
+RAILWAY_TOKEN_ACC1=<PASTE_TOKEN_ACC1>
+RAILWAY_PROJECT_ID_ACC1=e4fe33bb-3b09-4842-9782-7d2dea1abc9b
+RAILWAY_ENVIRONMENT_ID_ACC1=54e293b9-00a9-4102-814d-db151636d96e
+RAILWAY_TOKEN_KIND_ACC1=team
+
+# ----- Acc2 — brabbtjubindt5cug — thriving-eagerness -----
+RAILWAY_TOKEN_ACC2=<PASTE_TOKEN_ACC2>
+RAILWAY_PROJECT_ID_ACC2=39d833c1-4cb6-4af9-b61b-c204b6733a98
+RAILWAY_ENVIRONMENT_ID_ACC2=bce42949-d4ab-43d9-89d1-a6fcc576f45a
+RAILWAY_TOKEN_KIND_ACC2=team
+
+# ----- Acc3 — gondiigamzevup — NEW -----
+RAILWAY_TOKEN_ACC3=<PASTE_TOKEN_ACC3>
+RAILWAY_PROJECT_ID_ACC3=<PASTE_PROJECT_ID_ACC3>
+RAILWAY_ENVIRONMENT_ID_ACC3=<PASTE_ENV_ID_ACC3>
+RAILWAY_TOKEN_KIND_ACC3=team
+
+# ----- Audit / shared -----
+NEON_DATABASE_URL=<PASTE_NEON_URL>
+
+# ----- Legacy fallback (DO NOT remove until cutover complete) -----
+# RAILWAY_TOKEN should already be present in the service. Verify it
+# matches RAILWAY_TOKEN_ACC1 (both point at Acc1 / IGLA).
