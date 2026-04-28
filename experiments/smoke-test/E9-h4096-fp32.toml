@@ -1,0 +1,35 @@
+# E9: h=4096 FP32 control (capacity isolation)
+# Goal: Baseline h=4096 without GF16 to isolate format effects
+
+[experiment]
+name = "e9-h4096-fp32-control"
+seed = 42  # Will run on 43 and 44 for quorum
+priority = 1
+
+[model]
+hidden_dim = 4096  # Same capacity as E8 for isolation
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 50000
+warmup_steps = 500
+learning_rate = 0.0025  # Same LR as E8
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = false  # FP32 baseline
+
+[output]
+log_every = 500
+save_every = 2500
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "h4096-capacity-control"
+target_bpb = 1.50
+risk = "medium"  # Only capacity scaling, no format risk
+hypothesis = "h=4096 alone provides capacity boost; GF16 isolates format effect"
+note = "Isolates capacity (h=4096) from format (GF16) effects. Control for E8."

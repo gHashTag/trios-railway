@@ -1,0 +1,42 @@
+# P1: Extension to 5K-81K on best seed (after attention backward fix)
+# Issue: trios-railway#81 (R5-honest)
+# Expected ΔBPB: -0.10
+# Time: 6-12h (after P1 attention backward fix: -0.20, cumulative -0.30)
+
+[experiment]
+name = "p1-extension-best-seed-50k"
+seed = 1597  # Will be determined after E0058 replay baseline
+priority = 1
+
+[model]
+hidden_dim = 2048
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 81000  # 81K steps (after 1K baseline)
+warmup_steps = 1000
+learning_rate = 0.004  # φ-anchor (verified by E0058 replay)
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf16"
+storage_target = "gradients"
+keep_activations_fp32 = true
+
+[output]
+log_every = 1000
+save_every = 10000  # Save at 10K, 20K, ..., 80K
+metrics = ["loss", "bpb_samples", "grad_norm"]
+
+[meta]
+category = "p1-extension-81k"
+target_gate = "gate-2"
+target_bpb = 1.50
+expected_delta = -0.10
+risk = "medium"
+hypothesis = "81K training after attention backward fix achieves BPB < 1.70"
+note = "Depends on P1 attention backward fix (issue #143). Extended from 1K baseline. Best seed from E0058 replay will be used (1597/2584/4181)."

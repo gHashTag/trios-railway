@@ -1,0 +1,17 @@
+{
+  "R1": {
+    "priority": "HIGH",
+    "description": "proceed to #70 — add tri-mcp workspace crates"
+  },
+  "R2": {
+    "priority": "MED",
+    "description": "add integration tests for public crate API surface"
+  },
+  "R3": {
+    "priority": "LOW",
+    "description": "benchmark crate compile time, doc coverage check"
+  },
+  "pr": "https://github.com/gHashTag/trios-railway/pull/86",
+  "branch": "ring-69-extract-public-crates",
+  "issue": "#69"
+}

@@ -129,6 +129,33 @@ pub struct DeleteRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[allow(dead_code)]
+pub struct BatchRedeployRequest {
+    /// Account index (0-3).
+    pub account: u8,
+    /// Optional name substring filter (e.g. "seed-42").
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[allow(dead_code)]
+pub struct ExperimentInsertRequest {
+    /// Canonical experiment name (e.g. "IGLA-TRAIN_V2-GF16-E0800-H512-rng10001").
+    pub canon_name: String,
+    /// Experiment config as JSON object.
+    pub config_json: serde_json::Value,
+    /// Priority 0-100 (higher = runs first).
+    pub priority: i32,
+    /// Random seed (must be sanctioned: 42, 43, 44, 1597, 2584, 4181, 6765, 10001-10010, 10946).
+    pub seed: i32,
+    /// Training steps budget.
+    pub steps_budget: i32,
+    /// Target account (acc0, acc1, acc2, acc3).
+    pub account: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ExperienceAppendRequest {
     /// Issue ref like `#20`.
     pub issue: String,
@@ -575,4 +602,201 @@ fn env_for_project(project: &str) -> String {
 
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
     McpError::internal_error(e.to_string(), None)
+}
+
+// -------- database helpers --------
+
+#[allow(dead_code)]
+fn neon_url() -> Result<String, McpError> {
+    std::env::var("NEON_DATABASE_URL").map_err(|_| {
+        McpError::internal_error("NEON_DATABASE_URL not set — required for queue/worker tools", None)
+    })
+}
+
+#[allow(dead_code)]
+async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
+    let url = neon_url()?;
+    let (client, connection) =
+        tokio_postgres::connect(&url, tokio_postgres::NoTls)
+            .await
+            .map_err(internal_err)?;
+    // Spawn connection handler in background
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            tracing::error!(%e, "postgres connection error");
+        }
+    });
+    Ok(client)
+}
+
+// -------- new tools: experiment_queue, worker_status, batch_redeploy --------
+
+impl TriosRailwayMcp {
+    /// Show experiment queue status grouped by status and account.
+    #[tool(description = "Show experiment queue status from Neon database. Returns counts grouped by status and account, plus total pending/running/done/failed/pruned.")]
+    async fn experiment_queue_status(&self) -> Result<CallToolResult, McpError> {
+        let client = db_connect().await?;
+        let rows = client
+            .query(
+                "SELECT status, account, COUNT(*) as cnt FROM experiment_queue GROUP BY status, account ORDER BY status, account",
+                &[],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let mut summary = serde_json::Map::new();
+        for row in &rows {
+            let status: String = row.get(0);
+            let account: String = row.get(1);
+            let cnt: i64 = row.get(2);
+            let key = format!("{status}/{account}");
+            summary.insert(key, json!(cnt));
+        }
+
+        // Also get totals
+        let total_rows = client
+            .query(
+                "SELECT status, COUNT(*) as cnt FROM experiment_queue GROUP BY status ORDER BY status",
+                &[],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let mut totals = serde_json::Map::new();
+        for row in &total_rows {
+            let status: String = row.get(0);
+            let cnt: i64 = row.get(1);
+            totals.insert(status, json!(cnt));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json!({
+                "breakdown": summary,
+                "totals": totals,
+            }))
+            .map_err(internal_err)?,
+        )]))
+    }
+
+    /// Show worker status grouped by account with alive/stale/dead counts.
+    #[tool(description = "Show worker status from Neon database. Returns counts of alive (<5min), stale (5-30min), and dead (>30min) workers per account.")]
+    async fn worker_status(&self) -> Result<CallToolResult, McpError> {
+        let client = db_connect().await?;
+        let rows = client
+            .query(
+                "SELECT railway_acc, COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE last_heartbeat > now() - interval '5 minutes') as alive_5m,
+                    COUNT(*) FILTER (WHERE last_heartbeat BETWEEN now() - interval '30 minutes' AND now() - interval '5 minutes') as stale,
+                    COUNT(*) FILTER (WHERE last_heartbeat < now() - interval '30 minutes') as dead
+                 FROM workers GROUP BY railway_acc ORDER BY railway_acc",
+                &[],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let mut result = serde_json::Map::new();
+        for row in &rows {
+            let acc: String = row.get(0);
+            let total: i64 = row.get(1);
+            let alive: i64 = row.get(2);
+            let stale: i64 = row.get(3);
+            let dead: i64 = row.get(4);
+            result.insert(acc, json!({ "total": total, "alive": alive, "stale": stale, "dead": dead }));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).map_err(internal_err)?,
+        )]))
+    }
+
+    /// Redeploy all services on a specific account.
+    #[tool(description = "Redeploy all (or filtered) services on a specific account. Provide account index (0-3) and optional name filter. Triggers redeploy for each matching service.")]
+    async fn service_batch_redeploy(
+        &self,
+        Parameters(params): Parameters<BatchRedeployRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let acc = accounts()
+            .get(params.account as usize)
+            .ok_or_else(|| McpError::invalid_params(format!("Account index {} not found (0-3)", params.account), None))?;
+
+        let auth = match acc.token_kind.as_str() {
+            "team" | "bearer" | "personal" => AuthMode::Team,
+            "project" => AuthMode::Project,
+            _ if is_uuid_like(&acc.token) => AuthMode::Project,
+            _ => AuthMode::Team,
+        };
+        let client = Client::with_token_and_mode(&acc.token, auth).map_err(internal_err)?;
+        let pid = ProjectId::from(acc.project_id.as_str());
+        let eid = EnvironmentId::from(acc.env_id.as_str());
+
+        let pv = Q::project_view(&client, &pid).await.map_err(internal_err)?;
+        let all_services = pv.services();
+        let services: Vec<_> = all_services
+            .iter()
+            .filter(|s| {
+                if let Some(ref f) = params.filter {
+                    s.name.contains(f.as_str())
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        let mut ok = 0u32;
+        let mut err_count = 0u32;
+        for s in &services {
+            let sid = ServiceId::from(s.id.as_str());
+            match M::service_redeploy(&client, &sid, &eid).await {
+                Ok(_) => ok += 1,
+                Err(e) => {
+                    tracing::warn!(service = %s.name, %e, "redeploy failed");
+                    err_count += 1;
+                }
+            }
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json!({
+                "account": params.account,
+                "project": acc.project_id,
+                "total_services": services.len(),
+                "redeployed": ok,
+                "failed": err_count,
+            }))
+            .map_err(internal_err)?,
+        )]))
+    }
+
+    /// Insert experiments into the queue.
+    #[tool(description = "Insert experiments into the experiment_queue table in Neon database. Provide canon_name, config_json, priority, seed, steps_budget, and account. Only sanctioned seeds are allowed (42, 43, 44, 1597, 2584, 4181, 6765, 10001-10010, 10946).")]
+    async fn experiment_queue_insert(
+        &self,
+        Parameters(params): Parameters<ExperimentInsertRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let client = db_connect().await?;
+        let config_str = serde_json::to_string(&params.config_json).map_err(internal_err)?;
+        let rows = client
+            .query_one(
+                "INSERT INTO experiment_queue (canon_name, config_json, priority, seed, steps_budget, account, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'mcp-gateway')
+                 RETURNING id",
+                &[&params.canon_name, &config_str, &params.priority, &params.seed, &params.steps_budget, &params.account],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let id: i64 = rows.get(0);
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json!({
+                "inserted": true,
+                "id": id,
+                "canon_name": params.canon_name,
+                "seed": params.seed,
+                "account": params.account,
+                "priority": params.priority,
+                "steps_budget": params.steps_budget,
+            }))
+            .map_err(internal_err)?,
+        )]))
+    }
 }

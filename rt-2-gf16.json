@@ -1,0 +1,37 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "name": "RT-2 - GF16 Experimental (seed=101)",
+  "description": "Trinity-3k model with GF16 format, d_model=2048, lr=0.002, steps=60000, tiny_shakespeare data (real training)",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "/Users/playra/trios-trainer-igla/target/release/trios-train",
+    "healthcheckPath": "/healthz",
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  },
+  "variables": {
+    "TRIOS_SEED": {
+      "default": "101"
+    },
+    "TRIOS_STEPS": {
+      "default": "60000"
+    },
+    "TRIOS_LR": {
+      "default": "0.002"
+    },
+    "TRIOS_HIDDEN": {
+      "default": "2048"
+    },
+    "TRIOS_CTX": {
+      "default": "24"
+    },
+    "NEON_DATABASE_URL": {
+      "isOptional": false
+    },
+    "RUST_LOG": {
+      "default": "info"
+    }
+  }
+}
