@@ -242,6 +242,13 @@ fn format_t_plus(d: Duration) -> String {
 
 /// Helper used by `loop_once` to seed the tracking rows even when
 /// nothing comes back from any source.
+///
+/// Post-T+11.5h pivot: the 9 attention/JEPA Phase-1 lanes are flagged
+/// `cull-pending` (their architecture maxes at ≈2.19, see the new
+/// champion train_v2). They stay on the leaderboard as warmup-tracking
+/// rows for now, but the operator should kill the underlying Railway
+/// services and re-deploy seeds 42/43/44 on train_v2 (see
+/// `docs/POSTMORTEM_GATE2_LOCAL_WIN.md`).
 pub fn default_phase1_expected() -> Vec<ExpectedSeed> {
     let mk = |seed: u32, lane: &str, note: &str| ExpectedSeed {
         seed,
@@ -249,15 +256,20 @@ pub fn default_phase1_expected() -> Vec<ExpectedSeed> {
         note: note.to_string(),
     };
     vec![
-        mk(210, "L1 attn-backward", "Acc1 svc a2a24d1c"),
-        mk(211, "L1 attn-backward", "Acc1 svc fcd0cfbe"),
-        mk(212, "L1 attn-backward", "Acc1 svc 861b9501"),
-        mk(220, "L2 JEPA-T", "Acc1 svc eb9d7525"),
-        mk(221, "L2 JEPA-T", "Acc1 svc 05dd3cb0"),
-        mk(222, "L2 JEPA-T", "Acc1 svc e32af244"),
-        mk(240, "L4 h=2000", "Acc1 svc c9c5324d"),
-        mk(241, "L4 h=2000", "Acc1 svc 8e64cf14"),
-        mk(242, "L4 h=2000", "Acc1 svc 3de0f6ad"),
+        // train_v2 quorum slots (target Gate-2 OFFICIAL): pending portage
+        mk(42, "train_v2 (h=1024 ctx=12 14-gram WT+resid)", "local Mac champion @ 94.5K BPB=1.8921 — Railway portage pending"),
+        mk(43, "train_v2 (h=1024 ctx=12 14-gram WT+resid)", "Railway portage pending (quorum-3)"),
+        mk(44, "train_v2 (h=1024 ctx=12 14-gram WT+resid)", "Railway portage pending (quorum-3)"),
+        // Old Phase-1 attention/JEPA fleet — architecture lost the race; cull-pending
+        mk(210, "L1 attn-backward (cull-pending: arch lost)", "Acc1 svc a2a24d1c"),
+        mk(211, "L1 attn-backward (cull-pending: arch lost)", "Acc1 svc fcd0cfbe"),
+        mk(212, "L1 attn-backward (cull-pending: arch lost)", "Acc1 svc 861b9501"),
+        mk(220, "L2 JEPA-T (cull-pending: arch lost)", "Acc1 svc eb9d7525"),
+        mk(221, "L2 JEPA-T (cull-pending: arch lost)", "Acc1 svc 05dd3cb0"),
+        mk(222, "L2 JEPA-T (cull-pending: arch lost)", "Acc1 svc e32af244"),
+        mk(240, "L4 h=2000 (cull-pending: arch lost)", "Acc1 svc c9c5324d"),
+        mk(241, "L4 h=2000 (cull-pending: arch lost)", "Acc1 svc 8e64cf14"),
+        mk(242, "L4 h=2000 (cull-pending: arch lost)", "Acc1 svc 3de0f6ad"),
     ]
 }
 
@@ -305,13 +317,18 @@ mod tests {
         assert!(out.contains("NO BPB OBSERVED"));
         assert!(out.contains("Acc1: OK"));
         assert!(out.contains("Acc0: FAIL"));
-        // tracking rows for all 9 expected seeds
-        for seed in [210, 211, 212, 220, 221, 222, 240, 241, 242] {
+        // tracking rows for all 12 expected seeds (3 train_v2 quorum +
+        // 9 cull-pending Phase-1 attention/JEPA leftovers).
+        for seed in [42, 43, 44, 210, 211, 212, 220, 221, 222, 240, 241, 242] {
             assert!(
                 out.contains(&format!("| {seed} |")),
                 "missing tracking row for {seed}"
             );
         }
+        // Champion train_v2 architectural pivot must be visible in the
+        // tracking rows so the operator never forgets it.
+        assert!(out.contains("train_v2"));
+        assert!(out.contains("BPB=1.8921"));
     }
 
     #[test]
