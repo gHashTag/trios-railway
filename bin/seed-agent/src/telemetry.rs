@@ -18,9 +18,7 @@ pub async fn push_sample(
     val_bpb_ema: Option<f64>,
 ) -> Result<()> {
     // L-R8 stdout discipline.
-    println!(
-        "BPB={bpb:.4} seed={seed} step={step} canon={canon_name}"
-    );
+    println!("BPB={bpb:.4} seed={seed} step={step} canon={canon_name}");
 
     client
         .execute(
@@ -52,7 +50,10 @@ pub async fn read_history(
         )
         .await
         .with_context(|| "read_history")?;
-    Ok(rows.into_iter().map(|r| (r.get::<_, i32>(0), r.get::<_, f64>(1))).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.get::<_, i32>(0), r.get::<_, f64>(1)))
+        .collect())
 }
 
 #[cfg(test)]
@@ -61,7 +62,10 @@ mod tests {
     /// `trios_railway_core::canon::parse_bpb_line` (BPB=X.XXXX).
     #[test]
     fn stdout_format_matches_l_r8() {
-        let line = format!("BPB={:.4} seed={} step={} canon={}", 1.8921, 42, 1000, "IGLA-X");
+        let line = format!(
+            "BPB={:.4} seed={} step={} canon={}",
+            1.8921, 42, 1000, "IGLA-X"
+        );
         // Same parse rule the audit-watchdog uses.
         let bpb = trios_railway_core::canon::parse_bpb_line(&line);
         assert_eq!(bpb, Some(1.8921));
