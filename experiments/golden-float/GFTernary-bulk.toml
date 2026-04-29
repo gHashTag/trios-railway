@@ -1,0 +1,47 @@
+# Golden Float Family: GFTernary (2-bit bulk quantized)
+# Whitepaper: https://github.com/gHashTag/zig-golden-float/blob/main/docs/whitepaper.md
+# Specification: 2 bits, sign + zero, values: {-φ, 0, +φ}
+# φ-constants: -φ ≈ -1.618, 0, +φ ≈ 1.618 (trinity)
+# Status: ⬜ HYBRID-001 (partial)
+
+[experiment]
+name = "gfternary-bulk-quantization"
+seed = 42
+priority = 18  # Lower priority (for hybrid validation)
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "hybrid_v1"  # Ternary bulk + GF16 critical
+
+[ternary]
+enabled = true
+layers = ["layer1", "layer2", "layer3", "layer4"]  # Bulk ternary
+values = [-1.618, 0, 1.618]  # {-φ, 0, +φ}
+
+[quantization]
+enabled = true
+gf16_layers = ["attention_qk", "attention_v", "final_fc"]  # GF16 critical path
+gf16_format = "gf16"  # DLFloat-6:9
+
+[training]
+steps_budget = 1000  # Smoke test
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm", "ternary_stats", "hybrid_stats"]
+
+[meta]
+category = "hybrid-validation"
+format = "GFTernary"
+phi_constants = "{-φ, 0, +φ} = Trinity basis"
+hybrid_target = "HYBRID-001"
+expected_fpga_ratio = "1.44×"  # 18.4 GOPS vs FP32
+risk = "high"  # Architecture complexity
+status = "hybrid-component"
+note = "Bulk ternary for non-critical path (LUT efficient: 52 LUT vs GF16: 71 LUT). Combined with GF16 critical layers for 1.44× FPGA throughput."

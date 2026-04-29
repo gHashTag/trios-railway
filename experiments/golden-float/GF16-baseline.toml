@@ -1,0 +1,45 @@
+# Golden Float Family: GF16 (16-bit production-ready)
+# Whitepaper: https://github.com/gHashTag/zig-golden-float/blob/main/docs/whitepaper.md
+# Specification: 16 bits, 1:6:9 exp:mantissa, u16 backing
+# φ-constant: 6/9 ≈ 2/3 ≈ 1/φ — production-ready
+# Status: ✅ BENCH-001..006 Complete, L-R9 guard (d_model ≥ 256)
+
+[experiment]
+name = "gf16-production-baseline"
+seed = 42
+priority = 1  # Highest priority for validation
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000  # Smoke test
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf16"  # 16-bit golden float: 1:6:9 exp:mantissa
+storage_target = "gradients"  # Store gradients in GF16, keep critical f32
+keep_activations_fp32 = true  # Critical layers (attention_v, output) stay f32
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm", "quantization_stats"]
+
+[meta]
+category = "golden-float-validation"
+format = "GF16"
+phi_constant = "6/9 ≈ 2/3 ≈ 1/φ"
+bench_target = "BENCH-004b"  # MNIST validation
+expected_accuracy = 97.67  # f32 match (0.00% gap)
+expected_delta = 0.00  # Should match f32 exactly
+safety_guard = "L-R9"  # d_model ≥ 256 guaranteed safe
+status = "production-ready"
+note = "GF16 achieves identical f32 accuracy on trained weights (BENCH-004b: 97.67% = f32). Safe for d_model ≥ 256 per INV-3."

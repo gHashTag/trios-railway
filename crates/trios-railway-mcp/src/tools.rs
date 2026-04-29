@@ -16,14 +16,61 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use trios_railway_core::{
-    mutations as M, queries as Q, transport::Client, EnvironmentId, ProjectId, RailwayHash,
-    ServiceId,
+    is_uuid_like, mutations as M, queries as Q, transport::Client, AuthMode, EnvironmentId,
+    ProjectId, RailwayHash, ServiceId,
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
 const IGLA_PROJECT_ID: &str = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b";
 const IGLA_PROD_ENV_ID: &str = "54e293b9-00a9-4102-814d-db151636d96e";
 const DEFAULT_TRAINER_IMAGE: &str = "ghcr.io/ghashtag/trios-trainer-igla:latest";
+
+/// All known project IDs that this gateway is allowed to operate on.
+/// Serves as both a whitelist and a routing table to select the correct
+/// per-account token.
+const ALLOWED_PROJECT_IDS: &[&str] = &[
+    "e4fe33bb-3b09-4842-9782-7d2dea1abc9b", // acc1 — IGLA (primary)
+    "da1fb0c7-199f-42b0-9f08-a84d122feb5b", // acc0 — woody
+    "f3350520-8aff-4ebf-8618-c041bd17e6d0", // acc2
+    "8ab06401-aa28-4af7-9faf-39a1548b7008", // acc3
+];
+
+/// Per-account token info, loaded once from env vars.
+struct AccountConfig {
+    project_id: String,
+    token: String,
+    token_kind: String,
+    env_id: String,
+}
+
+static ACCOUNTS: std::sync::OnceLock<Vec<AccountConfig>> = std::sync::OnceLock::new();
+
+fn load_accounts() -> Vec<AccountConfig> {
+    let mut accounts = Vec::new();
+    for i in 0..4 {
+        let Ok(token) = std::env::var(format!("RAILWAY_TOKEN_ACC{i}")) else {
+            continue;
+        };
+        let project_id = std::env::var(format!("RAILWAY_PROJECT_ID_ACC{i}")).unwrap_or_default();
+        let token_kind = std::env::var(format!("RAILWAY_TOKEN_KIND_ACC{i}")).unwrap_or_default();
+        let env_id =
+            std::env::var(format!("RAILWAY_ENVIRONMENT_ID_ACC{i}")).unwrap_or_default();
+        if !project_id.is_empty() {
+            accounts.push(AccountConfig {
+                project_id,
+                token,
+                token_kind,
+                env_id,
+            });
+        }
+    }
+    tracing::info!(count = accounts.len(), "loaded multi-account config");
+    accounts
+}
+
+fn accounts() -> &'static Vec<AccountConfig> {
+    ACCOUNTS.get_or_init(load_accounts)
+}
 
 // -------- request payload structs --------
 
@@ -82,6 +129,33 @@ pub struct DeleteRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[allow(dead_code)]
+pub struct BatchRedeployRequest {
+    /// Account index (0-3).
+    pub account: u8,
+    /// Optional name substring filter (e.g. "seed-42").
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[allow(dead_code)]
+pub struct ExperimentInsertRequest {
+    /// Canonical experiment name (e.g. "IGLA-TRAIN_V2-GF16-E0800-H512-rng10001").
+    pub canon_name: String,
+    /// Experiment config as JSON object.
+    pub config_json: serde_json::Value,
+    /// Priority 0-100 (higher = runs first).
+    pub priority: i32,
+    /// Random seed (must be sanctioned: 42, 43, 44, 1597, 2584, 4181, 6765, 10001-10010, 10946).
+    pub seed: i32,
+    /// Training steps budget.
+    pub steps_budget: i32,
+    /// Target account (acc0, acc1, acc2, acc3).
+    pub account: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ExperienceAppendRequest {
     /// Issue ref like `#20`.
     pub issue: String,
@@ -133,8 +207,8 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<ListServicesRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
+        let client = build_client_for_project(&project)?;
         let pid = ProjectId::from(project.clone());
         let pv = Q::project_view(&client, &pid).await.map_err(internal_err)?;
         let services: Vec<_> = pv
@@ -166,13 +240,13 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<DeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
+        let client = build_client_for_project(&project)?;
         let token_fp = client.token_fingerprint();
 
-        let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
         let environment = req
             .environment
-            .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
+            .unwrap_or_else(|| env_for_project(&project));
         let image = req
             .image
             .unwrap_or_else(|| DEFAULT_TRAINER_IMAGE.to_string());
@@ -291,12 +365,10 @@ impl TriosRailwayMcp {
         Parameters(req): Parameters<ExperienceAppendRequest>,
     ) -> Result<CallToolResult, McpError> {
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
-        let pid = ProjectId::from(project);
+        let pid = ProjectId::from(project.as_str());
         let service_id = req.service.map(ServiceId::from);
-        let token_fp = std::env::var("RAILWAY_TOKEN").ok().as_deref().map_or_else(
-            || "no-token".to_string(),
-            trios_railway_core::hash::token_fingerprint,
-        );
+        let token_fp = build_client_for_project(&project)
+            .map_or_else(|_| "no-token".to_string(), |c| c.token_fingerprint());
 
         let verb = req.verb.unwrap_or_else(|| "experience".to_string());
         let hash = RailwayHash::seal(&verb, &pid, service_id.as_ref(), &token_fp);
@@ -339,6 +411,281 @@ impl TriosRailwayMcp {
             .join("\n");
         Ok(CallToolResult::success(vec![Content::text(sql)]))
     }
+
+    #[tool(
+        description = "Check fleet health across all accounts. Returns service counts, project status, and account connectivity for each configured account."
+    )]
+    async fn fleet_health(&self) -> Result<CallToolResult, McpError> {
+        let mut results = Vec::new();
+        let mut total_services = 0usize;
+        let mut healthy_accounts = 0usize;
+
+        for acc in accounts() {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
+                results.push(json!({
+                    "account": acc.project_id,
+                    "status": "ERROR",
+                    "error": "client build failed",
+                    "services": 0,
+                }));
+                continue;
+            };
+            let pid = ProjectId::from(acc.project_id.as_str());
+            match Q::project_view(&client, &pid).await {
+                Ok(pv) => {
+                    let count = pv.services().len();
+                    total_services += count;
+                    healthy_accounts += 1;
+                    results.push(json!({
+                        "project_id": pv.id,
+                        "project_name": pv.name,
+                        "status": "OK",
+                        "services": count,
+                    }));
+                }
+                Err(e) => {
+                    results.push(json!({
+                        "project_id": acc.project_id,
+                        "status": "ERROR",
+                        "error": e.to_string(),
+                        "services": 0,
+                    }));
+                }
+            }
+        }
+
+        let body = json!({
+            "healthy_accounts": healthy_accounts,
+            "total_accounts": accounts().len(),
+            "total_services": total_services,
+            "accounts": results,
+            "anchor": "phi^2 + phi^-2 = 3",
+        });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap(),
+        )]))
+    }
+
+    #[tool(
+        description = "List all seed training services across all accounts. Returns service name, ID, and project for every service matching 'seed' or 'igla' or 'train' pattern."
+    )]
+    async fn seed_list(&self) -> Result<CallToolResult, McpError> {
+        let mut all_seeds = Vec::new();
+
+        for acc in accounts() {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
+                continue;
+            };
+            let pid = ProjectId::from(acc.project_id.as_str());
+            let Ok(pv) = Q::project_view(&client, &pid).await else {
+                continue;
+            };
+            for s in pv.services() {
+                let lower = s.name.to_lowercase();
+                if lower.contains("seed")
+                    || lower.contains("igla")
+                    || lower.contains("train")
+                {
+                    all_seeds.push(json!({
+                        "id": s.id,
+                        "name": s.name,
+                        "project_id": acc.project_id,
+                        "created_at": s.created_at,
+                    }));
+                }
+            }
+        }
+
+        let body = json!({
+            "total_seeds": all_seeds.len(),
+            "seeds": all_seeds,
+        });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap(),
+        )]))
+    }
+
+    // -------- new tools: experiment_queue, worker_status, batch_redeploy --------
+
+    /// Show experiment queue status grouped by status and account.
+    #[tool(description = "Show experiment queue status from Neon database. Returns counts grouped by status and account, plus total pending/running/done/failed/pruned.")]
+    async fn experiment_queue_status(&self) -> Result<CallToolResult, McpError> {
+        let client = db_connect().await?;
+        let rows = client
+            .query(
+                "SELECT status, account, COUNT(*) as cnt FROM experiment_queue GROUP BY status, account ORDER BY status, account",
+                &[],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let mut summary = serde_json::Map::new();
+        for row in &rows {
+            let status: String = row.get(0);
+            let account: String = row.get(1);
+            let cnt: i64 = row.get(2);
+            let key = format!("{status}/{account}");
+            summary.insert(key, json!(cnt));
+        }
+
+        // Also get totals
+        let total_rows = client
+            .query(
+                "SELECT status, COUNT(*) as cnt FROM experiment_queue GROUP BY status ORDER BY status",
+                &[],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let mut totals = serde_json::Map::new();
+        for row in &total_rows {
+            let status: String = row.get(0);
+            let cnt: i64 = row.get(1);
+            totals.insert(status, json!(cnt));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json!({
+                "breakdown": summary,
+                "totals": totals,
+            }))
+            .map_err(internal_err)?,
+        )]))
+    }
+
+    /// Show worker status grouped by account with alive/stale/dead counts.
+    #[tool(description = "Show worker status from Neon database. Returns counts of alive (<5min), stale (5-30min), and dead (>30min) workers per account.")]
+    async fn worker_status(&self) -> Result<CallToolResult, McpError> {
+        let client = db_connect().await?;
+        let rows = client
+            .query(
+                "SELECT railway_acc, COUNT(*) as total,
+                    COUNT(*) FILTER (WHERE last_heartbeat > now() - interval '5 minutes') as alive_5m,
+                    COUNT(*) FILTER (WHERE last_heartbeat BETWEEN now() - interval '30 minutes' AND now() - interval '5 minutes') as stale,
+                    COUNT(*) FILTER (WHERE last_heartbeat < now() - interval '30 minutes') as dead
+                 FROM workers GROUP BY railway_acc ORDER BY railway_acc",
+                &[],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let mut result = serde_json::Map::new();
+        for row in &rows {
+            let acc: String = row.get(0);
+            let total: i64 = row.get(1);
+            let alive: i64 = row.get(2);
+            let stale: i64 = row.get(3);
+            let dead: i64 = row.get(4);
+            result.insert(acc, json!({ "total": total, "alive": alive, "stale": stale, "dead": dead }));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&result).map_err(internal_err)?,
+        )]))
+    }
+
+    /// Redeploy all services on a specific account.
+    #[tool(description = "Redeploy all (or filtered) services on a specific account. Provide account index (0-3) and optional name filter. Triggers redeploy for each matching service.")]
+    async fn service_batch_redeploy(
+        &self,
+        Parameters(params): Parameters<BatchRedeployRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let acc = accounts()
+            .get(params.account as usize)
+            .ok_or_else(|| McpError::invalid_params(format!("Account index {} not found (0-3)", params.account), None))?;
+
+        let auth = match acc.token_kind.as_str() {
+            "team" | "bearer" | "personal" => AuthMode::Team,
+            "project" => AuthMode::Project,
+            _ if is_uuid_like(&acc.token) => AuthMode::Project,
+            _ => AuthMode::Team,
+        };
+        let client = Client::with_token_and_mode(&acc.token, auth).map_err(internal_err)?;
+        let pid = ProjectId::from(acc.project_id.as_str());
+        let eid = EnvironmentId::from(acc.env_id.as_str());
+
+        let pv = Q::project_view(&client, &pid).await.map_err(internal_err)?;
+        let all_services = pv.services();
+        let services: Vec<_> = all_services
+            .iter()
+            .filter(|s| {
+                if let Some(ref f) = params.filter {
+                    s.name.contains(f.as_str())
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        let mut ok = 0u32;
+        let mut err_count = 0u32;
+        for s in &services {
+            let sid = ServiceId::from(s.id.as_str());
+            match M::service_redeploy(&client, &sid, &eid).await {
+                Ok(_) => ok += 1,
+                Err(e) => {
+                    tracing::warn!(service = %s.name, %e, "redeploy failed");
+                    err_count += 1;
+                }
+            }
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json!({
+                "account": params.account,
+                "project": acc.project_id,
+                "total_services": services.len(),
+                "redeployed": ok,
+                "failed": err_count,
+            }))
+            .map_err(internal_err)?,
+        )]))
+    }
+
+    /// Insert experiments into the queue.
+    #[tool(description = "Insert experiments into the experiment_queue table in Neon database. Provide canon_name, config_json, priority, seed, steps_budget, and account. Only sanctioned seeds are allowed (42, 43, 44, 1597, 2584, 4181, 6765, 10001-10010, 10946).")]
+    async fn experiment_queue_insert(
+        &self,
+        Parameters(params): Parameters<ExperimentInsertRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let client = db_connect().await?;
+        let config_str = serde_json::to_string(&params.config_json).map_err(internal_err)?;
+        let rows = client
+            .query_one(
+                "INSERT INTO experiment_queue (canon_name, config_json, priority, seed, steps_budget, account, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'mcp-gateway')
+                 RETURNING id",
+                &[&params.canon_name, &config_str, &params.priority, &params.seed, &params.steps_budget, &params.account],
+            )
+            .await
+            .map_err(internal_err)?;
+
+        let id: i64 = rows.get(0);
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&json!({
+                "inserted": true,
+                "id": id,
+                "canon_name": params.canon_name,
+                "seed": params.seed,
+                "account": params.account,
+                "priority": params.priority,
+                "steps_budget": params.steps_budget,
+            }))
+            .map_err(internal_err)?,
+        )]))
+    }
 }
 
 impl Default for TriosRailwayMcp {
@@ -372,12 +719,106 @@ impl ServerHandler for TriosRailwayMcp {
 
 // -------- helpers --------
 
+/// Build a client using the default `RAILWAY_TOKEN` env var (legacy fallback).
 fn build_client() -> Result<Client, McpError> {
     Client::from_env().map_err(|e| {
         McpError::internal_error(format!("RAILWAY_TOKEN not set or invalid: {e}"), None)
     })
 }
 
+/// Build a client with the correct token for the given project ID.
+/// Looks up `RAILWAY_TOKEN_ACC{0..3}` env vars to find a matching account.
+/// Falls back to `build_client()` if no match found.
+fn build_client_for_project(project: &str) -> Result<Client, McpError> {
+    // Validate project is in whitelist
+    if !ALLOWED_PROJECT_IDS.contains(&project) {
+        return Err(McpError::invalid_params(
+            format!(
+                "project {project} not in ALLOWED_PROJECT_IDS. Allowed: {ALLOWED_PROJECT_IDS:?}"
+            ),
+            None,
+        ));
+    }
+    // Find matching account
+    for acc in accounts() {
+        if acc.project_id == project {
+            let auth = match acc.token_kind.as_str() {
+                "team" | "bearer" | "personal" => AuthMode::Team,
+                "project" => AuthMode::Project,
+                _ if is_uuid_like(&acc.token) => AuthMode::Project,
+                _ => AuthMode::Team,
+            };
+            return Client::with_token_and_mode(&acc.token, auth).map_err(|e| {
+                McpError::internal_error(
+                    format!("token error for project {project}: {e}"),
+                    None,
+                )
+            });
+        }
+    }
+    // Fallback to default token
+    build_client()
+}
+
+/// Return the environment ID for a project, or the default IGLA env.
+fn env_for_project(project: &str) -> String {
+    for acc in accounts() {
+        if acc.project_id == project && !acc.env_id.is_empty() {
+            return acc.env_id.clone();
+        }
+    }
+    IGLA_PROD_ENV_ID.to_string()
+}
+
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
     McpError::internal_error(e.to_string(), None)
 }
+
+// -------- database helpers --------
+
+#[allow(dead_code)]
+fn neon_url() -> Result<String, McpError> {
+    std::env::var("NEON_DATABASE_URL").map_err(|_| {
+        McpError::internal_error("NEON_DATABASE_URL not set — required for queue/worker tools", None)
+    })
+}
+
+async fn db_connect() -> Result<tokio_postgres::Client, McpError> {
+    let raw_url = neon_url()?;
+    // Strip channel_binding — tokio-postgres doesn't support it.
+    // Keep sslmode=require so tokio-postgres knows to use TLS.
+    let url: String = raw_url
+        .split('&')
+        .filter(|p| !p.starts_with("channel_binding="))
+        .collect::<Vec<_>>()
+        .join("&");
+    let url = url.replace("?&", "?");
+    tracing::info!(url_len = url.len(), "connecting to Neon via rustls");
+
+    // Install aws-lc-rs crypto provider (required by rustls 0.23)
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // Build rustls TLS connector with webpki roots for Neon
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let rustls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
+
+    // Connect with 10s timeout to avoid hanging
+    let connect_future = tokio_postgres::connect(&url, tls);
+    let (client, connection) = tokio::time::timeout(std::time::Duration::from_secs(10), connect_future)
+        .await
+        .map_err(|_| McpError::internal_error("Neon connection timed out after 10s", None))?
+        .map_err(internal_err)?;
+
+    // Spawn connection handler in background
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            tracing::error!(%e, "postgres connection error");
+        }
+    });
+    Ok(client)
+}
+

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "name": "RT-2 - GF16 Format Test (GF16, seed=101)",
+  "description": "Trinity-3k model with GF16 format, d_model=2048, lr=0.002, steps=60000, FineWeb-like data (tiny_shakespeare.txt)",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "/usr/local/bin/trinity_3k_tinyshakespeare",
+    "healthcheckPath": "/healthz",
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  },
+  "variables": {
+    "TRIOS_SEED": {
+      "default": "101"
+    },
+    "STEPS": {
+      "default": "60000"
+    },
+    "LR": {
+      "default": "0.002"
+    },
+    "HIDDEN": {
+      "default": "2048"
+    },
+    "CTX": {
+      "default": "24"
+    },
+    "NEON_DATABASE_URL": {
+      "isOptional": false
+    },
+    "RUST_LOG": {
+      "default": "info"
+    }
+  }
+}

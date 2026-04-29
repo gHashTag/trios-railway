@@ -1,0 +1,34 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "name": "RT-1 - FP32 Baseline (seed=100)",
+  "description": "Trinity-3k model, d_model=2048, lr=0.003, steps=60000, tiny_shakespeare data",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "/usr/local/bin/trinity_3k_tinyshakespeare",
+    "healthcheckPath": "/healthz",
+    "restartPolicyType": "ON_FAILURE",
+    "numReplicas": 1
+  },
+  "variables": {
+    "TRIOS_SEED": {
+      "default": "100"
+    },
+    "TRIOS_STEPS": {
+      "default": "60000"
+    },
+    "TRIOS_LR": {
+      "default": "0.003"
+    },
+    "TRIOS_HIDDEN": {
+      "default": "2048"
+    },
+    "NEON_DATABASE_URL": {
+      "isOptional": false
+    },
+    "RUST_LOG": {
+      "default": "info"
+    }
+  }
+}

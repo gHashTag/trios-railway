@@ -1,0 +1,40 @@
+# E5: GF16 storage test (BENCH-012 / TRAIN-001)
+# Goal: Verify GF16 gradient storage works with L-R9 guard (d_model >= 256 safe)
+# Expectation: ΔBPB ≤ +0.01 (passes if grad path stable)
+
+[experiment]
+name = "e5-gf16-storage-test"
+seed = 42
+priority = 3
+
+[model]
+hidden_dim = 1024
+context_len = 12
+architecture = "train_v2"
+attention = false
+
+[training]
+steps_budget = 1000
+warmup_steps = 100
+learning_rate = 0.0025
+batch_size = 128
+gradient_accumulation_steps = 1
+
+[quantization]
+enabled = true
+format = "gf16"  # Golden Fleece (DLFloat-6:9) - φ-distance 0.0486
+storage_target = "gradients"  # Store in GF16
+keep_activations_fp32 = true  # Critical layers stay f32 per L-R9
+
+[output]
+log_every = 100
+save_every = 1000
+metrics = ["loss", "bpb_samples", "grad_norm", "quantization_stats"]
+
+[meta]
+category = "gf16-validation"
+target_gate = "bench-012"
+test_id = "TRAIN-001"
+expected_delta_max = 0.01  # Should be near baseline
+safety_guard = "L-R9"  # d_model >= 256 guaranteed safe
+note = "GF16 safe domain per L-R9 guard: h=1024 >> 256 threshold"

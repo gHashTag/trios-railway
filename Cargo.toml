@@ -5,6 +5,13 @@ members = [
     "crates/trios-railway-audit",
     "crates/trios-railway-experience",
     "crates/trios-railway-mcp",
+    "crates/tri-core",
+    "crates/tri-hunt",
+    "crates/tri-exp",
+    "crates/tri-canon",
+    "crates/tri-ledger",
+    "bin/tri",
+    "bin/tri-gardener",
     "bin/tri-railway",
     "bin/seed-agent",
 ]
@@ -38,6 +45,8 @@ reqwest     = { version = "0.12", default-features = false, features = ["rustls-
 clap        = { version = "4.5", features = ["derive", "env"] }
 sha2        = "0.10"
 hex         = "0.4"
+toml        = "0.8"
+futures     = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
