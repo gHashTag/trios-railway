@@ -60,7 +60,7 @@ struct Cli {
 
     /// Step at which the early-stop decision is made.
     #[arg(long, default_value_t = 1000)]
-    early_stop_step: u32,
+    early_stop_step: i32,
 
     /// Early-stop BPB ceiling. Exceeding this at `early_stop_step` →
     /// abandon experiment, mark `pruned`, pull next.

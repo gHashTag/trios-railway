@@ -5,7 +5,7 @@
 //! `SKIP LOCKED` so concurrent workers never collide, and flips its
 //! status to `claimed` in one round-trip.
 //!
-//! R5: any RowsAffected mismatch surfaces as an error — never silent.
+//! R5: any `RowsAffected` mismatch surfaces as an error — never silent.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

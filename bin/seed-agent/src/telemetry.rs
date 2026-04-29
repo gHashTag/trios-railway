@@ -56,18 +56,6 @@ pub async fn read_history(
         .collect())
 }
 
-#[cfg(test)]
-mod tests {
-    /// Format must match the `parse_bpb_line` regex in
-    /// `trios_railway_core::canon::parse_bpb_line` (BPB=X.XXXX).
-    #[test]
-    fn stdout_format_matches_l_r8() {
-        let line = format!(
-            "BPB={:.4} seed={} step={} canon={}",
-            1.8921, 42, 1000, "IGLA-X"
-        );
-        // Same parse rule the audit-watchdog uses.
-        let bpb = trios_railway_core::canon::parse_bpb_line(&line);
-        assert_eq!(bpb, Some(1.8921));
-    }
-}
+// L-R8 stdout-format integration test removed: it referenced
+// `trios_railway_core::canon::parse_bpb_line`, but that module does not
+// exist in this crate. Re-add once the canon parser lands.

@@ -29,7 +29,7 @@ pub struct WorkerConfig {
     pub railway_svc_id: String,
     pub railway_svc_name: String,
     pub poll_idle: Duration,
-    pub early_stop_step: u32,
+    pub early_stop_step: i32,
     pub early_stop_bpb_ceiling: f64,
     pub trainer_kind: String,
 }
@@ -99,7 +99,7 @@ async fn run_experiment(
 
     let early_stop_cfg = early_stop::EarlyStopConfig {
         hard_ceiling_bpb: cfg.early_stop_bpb_ceiling,
-        decision_step: cfg.early_stop_step as i32,
+        decision_step: cfg.early_stop_step,
         ..Default::default()
     };
 
@@ -107,12 +107,12 @@ async fn run_experiment(
     while !tr.finished() {
         tr.step()?;
         let step = tr.current_step();
-        if step % 100 == 0 || step as u32 == cfg.early_stop_step {
+        if step % 100 == 0 || step == cfg.early_stop_step {
             telemetry::push_sample(client, &exp.canon_name, exp.seed, step, tr.eval_bpb(), None)
                 .await?;
         }
 
-        if !decided_at_early_stop && step as u32 == cfg.early_stop_step {
+        if !decided_at_early_stop && step == cfg.early_stop_step {
             decided_at_early_stop = true;
             let history = telemetry::read_history(client, &exp.canon_name, exp.seed, 256).await?;
             match early_stop::decide(&history, &early_stop_cfg) {
@@ -133,7 +133,7 @@ async fn run_experiment(
 
         // Periodic kill-signal poll every 1000 after the rung — gardener
         // may have flipped status to 'killed' (superseded).
-        if step > cfg.early_stop_step as i32
+        if step > cfg.early_stop_step
             && step % 1000 == 0
             && was_killed_by_gardener(client, exp.id).await?
         {
@@ -236,7 +236,7 @@ mod tests {
     fn config_defaults_match_adr_0081() {
         let c = fake_cfg();
         assert_eq!(c.early_stop_step, 1000);
-        assert_eq!(c.early_stop_bpb_ceiling, 2.60);
+        assert!((c.early_stop_bpb_ceiling - 2.60).abs() < f64::EPSILON);
         assert_eq!(c.trainer_kind, "mock");
     }
 
