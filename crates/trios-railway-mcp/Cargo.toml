@@ -24,6 +24,10 @@ axum        = "0.8"
 schemars    = "1.0"
 tokio-util  = "0.7"
 rmcp        = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server", "transport-sse-server"] }
+tokio-postgres = "0.7"
+rustls       = { version = "0.23", features = ["aws_lc_rs"] }
+tokio-postgres-rustls = "0.13"
+webpki-roots = "0.26"
 
 trios-railway-core       = { path = "../trios-railway-core" }
 trios-railway-experience = { path = "../trios-railway-experience" }
