@@ -362,7 +362,7 @@ mod tests {
         );
     }
 
-    /// gardener_decisions.action enum is the single source of truth
+    /// `gardener_decisions.action` enum is the single source of truth
     /// for orchestrator audit-log values.
     #[test]
     fn gardener_decisions_action_enum_is_locked() {

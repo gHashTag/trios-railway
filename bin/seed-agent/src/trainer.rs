@@ -88,7 +88,7 @@ impl Trainer for MockTrainer {
         self.current_step += 1;
         // Deterministic exponential decay toward target_bpb plus a
         // tiny seed-dependent jitter so two seeds aren't identical.
-        let jitter = ((self.seed as f64).sin().abs()) * 0.005;
+        let jitter = f64::from(self.seed).sin().abs() * 0.005;
         self.bpb = self.target_bpb
             + (self.bpb - self.target_bpb) * (1.0 - self.decay)
             + jitter * self.decay;
