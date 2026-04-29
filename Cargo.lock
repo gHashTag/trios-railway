@@ -1584,6 +1584,7 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5947688160b56fb6c827e3c20a72c90392a1d7e9dec74749197aa1780ac42ca"
 dependencies = [
+ "axum",
  "base64",
  "bytes",
  "chrono",
@@ -2507,6 +2508,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "trios-railway-audit",
