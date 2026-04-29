@@ -83,9 +83,7 @@ pub async fn mark_running(client: &tokio_postgres::Client, id: i64) -> Result<()
         .await
         .with_context(|| "mark_running")?;
     if n != 1 {
-        anyhow::bail!(
-            "mark_running: expected 1 row affected, got {n} — race or stale claim"
-        );
+        anyhow::bail!("mark_running: expected 1 row affected, got {n} — race or stale claim");
     }
     Ok(())
 }
@@ -107,9 +105,7 @@ pub async fn mark_done(
         .await
         .with_context(|| "mark_done")?;
     if n != 1 {
-        anyhow::bail!(
-            "mark_done: expected 1 row affected, got {n} — concurrent gardener prune?"
-        );
+        anyhow::bail!("mark_done: expected 1 row affected, got {n} — concurrent gardener prune?");
     }
     Ok(())
 }
@@ -139,11 +135,7 @@ pub async fn mark_pruned(
 }
 
 /// Mark an experiment `failed` (trainer crashed / unrecoverable).
-pub async fn mark_failed(
-    client: &tokio_postgres::Client,
-    id: i64,
-    reason: &str,
-) -> Result<()> {
+pub async fn mark_failed(client: &tokio_postgres::Client, id: i64, reason: &str) -> Result<()> {
     let _ = client
         .execute(
             "UPDATE experiment_queue \

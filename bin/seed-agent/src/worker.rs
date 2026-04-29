@@ -66,7 +66,9 @@ pub async fn run_one_iteration(
         Ok(ExpOutcome::Pruned(reason)) => Ok(IterOutcome::Pruned(canon, reason)),
         Err(e) => {
             tracing::error!(?e, exp_id = exp.id, "experiment failed");
-            claim::mark_failed(client, exp.id, &format!("{e}")).await.ok();
+            claim::mark_failed(client, exp.id, &format!("{e}"))
+                .await
+                .ok();
             Err(e)
         }
     }
@@ -106,15 +108,8 @@ async fn run_experiment(
         tr.step()?;
         let step = tr.current_step();
         if step % 100 == 0 || step as u32 == cfg.early_stop_step {
-            telemetry::push_sample(
-                client,
-                &exp.canon_name,
-                exp.seed,
-                step,
-                tr.eval_bpb(),
-                None,
-            )
-            .await?;
+            telemetry::push_sample(client, &exp.canon_name, exp.seed, step, tr.eval_bpb(), None)
+                .await?;
         }
 
         if !decided_at_early_stop && step as u32 == cfg.early_stop_step {
@@ -124,7 +119,11 @@ async fn run_experiment(
                 early_stop::EarlyStop::Continue => {
                     tracing::info!(canon=%exp.canon_name, step, "early-stop: continue");
                 }
-                early_stop::EarlyStop::Prune { reason, triggered_by_bpb, .. } => {
+                early_stop::EarlyStop::Prune {
+                    reason,
+                    triggered_by_bpb,
+                    ..
+                } => {
                     tracing::warn!(canon=%exp.canon_name, step, %reason, "early-stop: prune");
                     claim::mark_pruned(client, exp.id, &reason, triggered_by_bpb).await?;
                     return Ok(ExpOutcome::Pruned(reason));
@@ -134,12 +133,13 @@ async fn run_experiment(
 
         // Periodic kill-signal poll every 1000 after the rung — gardener
         // may have flipped status to 'killed' (superseded).
-        if step > cfg.early_stop_step as i32 && step % 1000 == 0 {
-            if was_killed_by_gardener(client, exp.id).await? {
-                let reason = "gardener-superseded";
-                claim::mark_pruned(client, exp.id, reason, tr.eval_bpb()).await?;
-                return Ok(ExpOutcome::Pruned(reason.to_string()));
-            }
+        if step > cfg.early_stop_step as i32
+            && step % 1000 == 0
+            && was_killed_by_gardener(client, exp.id).await?
+        {
+            let reason = "gardener-superseded";
+            claim::mark_pruned(client, exp.id, reason, tr.eval_bpb()).await?;
+            return Ok(ExpOutcome::Pruned(reason.to_string()));
         }
     }
 
@@ -151,10 +151,7 @@ async fn run_experiment(
 
 async fn was_killed_by_gardener(client: &tokio_postgres::Client, id: i64) -> Result<bool> {
     let row = client
-        .query_one(
-            "SELECT status FROM experiment_queue WHERE id=$1",
-            &[&id],
-        )
+        .query_one("SELECT status FROM experiment_queue WHERE id=$1", &[&id])
         .await
         .with_context(|| "kill-signal poll")?;
     let status: &str = row.get(0);

@@ -69,10 +69,7 @@ pub fn decide(history: &[(i32, f64)], cfg: &EarlyStopConfig) -> EarlyStop {
     }
 
     // Find the BPB at (or just before) the decision step.
-    let Some(&(at_step, at_bpb)) = history
-        .iter()
-        .rev()
-        .find(|&&(s, _)| s <= cfg.decision_step)
+    let Some(&(at_step, at_bpb)) = history.iter().rev().find(|&&(s, _)| s <= cfg.decision_step)
     else {
         return EarlyStop::Continue;
     };
@@ -134,7 +131,7 @@ pub fn fit_power_law_asymptote(history: &[(i32, f64)]) -> Option<f64> {
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = sorted.len();
     let cut = n.saturating_sub(n / 4).max(1); // last quartile by sorted BPB
-    let tail = &sorted[..cut.max(1)];          // lowest-BPB quartile (best)
+    let tail = &sorted[..cut.max(1)]; // lowest-BPB quartile (best)
     let avg = tail.iter().sum::<f64>() / tail.len() as f64;
     Some(avg)
 }
@@ -150,7 +147,16 @@ mod tests {
     fn history_with_bpb_at_1000(bpb: f64) -> Vec<(i32, f64)> {
         // 11 samples at steps 0, 100, 200, ..., 1000.
         (0..=10)
-            .map(|i| (i * 100, if i * 100 == 1000 { bpb } else { 3.5 - 0.2 * i as f64 }))
+            .map(|i| {
+                (
+                    i * 100,
+                    if i * 100 == 1000 {
+                        bpb
+                    } else {
+                        3.5 - 0.2 * i as f64
+                    },
+                )
+            })
             .collect()
     }
 
@@ -229,7 +235,9 @@ mod tests {
         let mut c = cfg();
         c.decision_step = 500;
         match decide(&h, &c) {
-            EarlyStop::Prune { triggered_by_step, .. } => {
+            EarlyStop::Prune {
+                triggered_by_step, ..
+            } => {
                 assert!(triggered_by_step <= 500);
             }
             other => panic!("expected prune at custom step, got {other:?}"),
