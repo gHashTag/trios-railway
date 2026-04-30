@@ -9,6 +9,7 @@ members = [
     "crates/trios-igla-race",
     "bin/tri-railway",
     "bin/seed-agent",
+    "bin/ledger-daemon",
 ]
 
 [workspace.package]
