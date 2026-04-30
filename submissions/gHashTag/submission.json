@@ -1,0 +1,13 @@
+{
+  "author": "gHashTag",
+  "github_id": "gHashTag",
+  "val_bpb": 2.1505,
+  "seed": 4181,
+  "hidden_size": 1024,
+  "attn_layers": 2,
+  "learning_rate": 0.003,
+  "training_steps": 12000,
+  "format": "fp32",
+  "context_window": 12,
+  "train_time_minutes": 29
+}
