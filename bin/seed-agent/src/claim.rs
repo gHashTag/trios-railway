@@ -27,10 +27,24 @@ pub struct ClaimedExperiment {
 /// because Postgres does not support `FOR UPDATE` in a top-level
 /// `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)` for
 /// readability — we use a CTE for the same effect.
+/// SCARABAEUS FUNGIBLE POOL (2026-04-30 19:15 UTC, deadline T-5h).
+///
+/// Claim is now **account-agnostic**: any free scarab takes any free
+/// strategy. The legacy `AND account = $2` filter pinned each worker
+/// to its origin account, so when an account died (e.g. acc3 today)
+/// the seeds queued there starved while other accounts idled. Removing
+/// the filter turns the workforce into a true pool: "Это был жук-скарабей” —
+/// any beetle, any ball.
+///
+/// The `account` column on `experiment_queue` is preserved for
+/// observability (which lane the strategy was filed under), but no
+/// longer steers claiming. RETURNING list unchanged.
+///
+/// Refs: trios-railway#101 Scarabaeus Engine umbrella.
 pub const CLAIM_SQL: &str = r"
     WITH pick AS (
         SELECT id FROM experiment_queue
-        WHERE status = 'pending' AND account = $2
+        WHERE status = 'pending'
         ORDER BY priority DESC, id ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -45,15 +59,18 @@ pub const CLAIM_SQL: &str = r"
               q.steps_budget, q.account, q.priority
 ";
 
-/// Atomic claim by `(worker_id, account)`. Returns `None` when the
-/// queue is empty for that account — callers sleep and retry.
+/// Atomic claim. Returns `None` when the queue is empty — callers
+/// sleep / wait on `LISTEN strategy_new` and retry. The `_account`
+/// argument is retained for compat with current call sites but ignored
+/// (Stateless Scarab Pattern). Removing the parameter is a follow-up
+/// once all binaries / tests are migrated.
 pub async fn claim_next(
     client: &tokio_postgres::Client,
     worker_id: Uuid,
-    account: &str,
+    _account: &str,
 ) -> Result<Option<ClaimedExperiment>> {
     let row = client
-        .query_opt(CLAIM_SQL, &[&worker_id, &account])
+        .query_opt(CLAIM_SQL, &[&worker_id])
         .await
         .with_context(|| "claim_next: SKIP LOCKED query failed")?;
     let Some(row) = row else { return Ok(None) };
@@ -203,9 +220,23 @@ mod tests {
     }
 
     #[test]
-    fn claim_sql_is_account_scoped() {
-        // Each worker filters by its own account so two acc0 workers
-        // don't fight an acc1 worker over the same global queue head.
-        assert!(CLAIM_SQL.contains("account = $2"));
+    fn claim_sql_is_fungible_pool() {
+        // SCARABAEUS FUNGIBLE POOL: claim no longer filters by account.
+        // Any free scarab takes any free strategy. Refs: trios-railway#101.
+        assert!(
+            !CLAIM_SQL.contains("account = $2"),
+            "claim must NOT scope by account; revert this test only when\n             you intentionally re-introduce account-pinning"
+        );
+        // We still SELECT account in the RETURNING list for observability,
+        // but the WHERE clause must not bind it.
+        let where_clause = CLAIM_SQL
+            .split("WHERE")
+            .nth(1)
+            .and_then(|s| s.split("ORDER BY").next())
+            .unwrap_or("");
+        assert!(
+            !where_clause.contains("account"),
+            "WHERE clause must not reference account: {where_clause:?}"
+        );
     }
 }
