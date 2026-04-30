@@ -1,0 +1,29 @@
+# Scarab worker — built from trios-igla-race, no separate crate needed.
+#
+# Required env var:
+#   NEON_DATABASE_URL=postgres://...
+#
+# Optional (log label only, no scheduling effect):
+#   SCARAB_ACCOUNT=acc0
+
+FROM rust:1.82-slim AS builder
+
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+# Build scarab from trios-igla-race crate (reuses pull_queue, ema, asha)
+RUN cargo build --release --bin scarab -p trios-igla-race
+
+# ── runtime ───────────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/scarab   /usr/local/bin/scarab
+COPY --from=builder /build/target/release/trios-igla /usr/local/bin/trios-igla
+
+ENV RUST_LOG="info"
+
+CMD ["/usr/local/bin/scarab"]
