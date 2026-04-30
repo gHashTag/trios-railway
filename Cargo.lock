@@ -1782,6 +1782,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
+name = "scarab"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "schemars"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2434,6 +2448,7 @@ dependencies = [
  "rand 0.8.6",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tokio-postgres",
  "tracing",
@@ -2516,6 +2531,8 @@ name = "trios-railway-smoke"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "serde",
  "serde_json",
  "tokio",
  "uuid",

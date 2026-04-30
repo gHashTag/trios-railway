@@ -26,7 +26,7 @@ fn main() -> anyhow::Result<()> {
     println!();
 
     println!("[Trainer] Running synthetic training...");
-    let result = run_local(&cfg);
+    let result = run_local(&cfg)?;
     println!();
 
     println!("[Result] jsonl_lines={}, samples={}", result.jsonl_lines, result.samples.len());

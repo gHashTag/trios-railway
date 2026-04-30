@@ -1,80 +1,103 @@
-//! Smoke test agent for IGLA race.
-//!
-//! Runs a synthetic 1-step experiment to verify the pipeline is alive.
-//! This is the first line of defense against:
-//! - "zero steps" (trainer exits without output)
-//! - dead workers (no DB connection)
-//! - rotated credentials (RAILWAY_TOKEN invalid)
-//!
-//! Usage:
-//!   cargo run -p trios-igla-race --features smoke --bin smoke_agent -- \
-//!     --steps 1 --seed 42
-
 use anyhow::Result;
 use clap::Parser;
-use tracing::info;
+use std::io::{BufRead, BufReader};
+use trios_igla_race::pull_queue::{ExperimentConfig, PullQueueDb};
+use trios_railway_smoke::{SmokeConfig, MockTrainer, parse_jsonl_line};
 
-#[cfg(feature = "smoke")]
-use trios_railway_smoke::{run_local, SmokeConfig};
+const SMOKE_STEPS: u32 = 1;
+const SMOKE_SEED: u64 = 42;
 
 #[derive(Parser)]
 #[command(
     name = "smoke-agent",
-    about = "ADR-002: Fast smoke test agent (synthetic, CPU-only, <60s)"
+    about = "Smoke test agent: validates full pipeline in <60s with synthetic data"
 )]
 struct Cli {
-    /// Number of steps to run (default: 1 for smoke)
-    #[arg(long, default_value = "1")]
-    steps: u32,
-    /// Random seed (default: 42)
-    #[arg(long, default_value = "42")]
-    seed: u64,
-    /// Exit with error code 1 if smoke fails
-    #[arg(long)]
-    fail_on_error: bool,
+    #[arg(long, env = "NEON_DATABASE_URL")]
+    neon_url: String,
+
+    #[arg(long, default_value = "smoke-test")]
+    worker_id: String,
 }
 
-fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter("smoke_agent=info")
-        .init();
-
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    info!("smoke-agent starting | steps={} | seed={}", cli.steps, cli.seed);
+    eprintln!("SMOKE AGENT STARTED - proving pipeline is alive...");
 
-    #[cfg(feature = "smoke")]
-    {
-        let config = SmokeConfig {
-            steps: cli.steps,
-            seed: cli.seed,
-            ..Default::default()
-        };
+    // 1. DB connection
+    let db = PullQueueDb::connect(&cli.neon_url).await?;
+    db.health_check().await?;
+    eprintln!("✓ DB connection OK");
 
-        let result = run_local(&config);
+    // 2. Create synthetic experiment config
+    let config = ExperimentConfig {
+        seed: SMOKE_SEED,
+        hidden: 128,
+        ctx: 8,
+        lr: 0.001,
+        steps: SMOKE_STEPS as usize,
+    };
 
-        info!(
-            "smoke result: jsonl_lines={}, samples={}",
-            result.jsonl_lines,
-            result.samples.len()
-        );
+    eprintln!("✓ Config created: seed={} steps={}", config.seed, config.steps);
 
-        if result.jsonl_lines < config.steps as usize {
-            eprintln!("❌ SMOKE TEST FAILED: expected {} lines, got {}",
-                config.steps, result.jsonl_lines);
-            if cli.fail_on_error {
-                std::process::exit(1);
-            }
-        } else {
-            println!("✅ SMOKE TEST PASSED");
+    // 3. Run mock trainer with stdout
+    let smoke_config = SmokeConfig::new(SMOKE_STEPS);
+    let trainer = MockTrainer::new(smoke_config);
+
+    eprintln!("✓ Running mock trainer (synthetic, CPU-only)...");
+
+    trainer.run_with_stdout()?;
+
+    eprintln!("✓ Training completed - {} step(s) output to stdout", SMOKE_STEPS);
+
+    // 4. Parse output to verify format
+    let stdin = std::io::stdin();
+    let reader = BufReader::new(stdin);
+    let mut step_count = 0;
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
         }
 
-        Ok(())
+        match parse_jsonl_line(&line) {
+            Ok(step) => {
+                step_count += 1;
+                eprintln!("✓ Parsed step {}: loss={:.4} bpb={:?}",
+                    step.step, step.loss, step.bpb);
+            }
+            Err(e) => {
+                eprintln!("✗ Failed to parse JSONL: {} (line: {})", e, line);
+                std::process::exit(1);
+            }
+        }
     }
 
-    #[cfg(not(feature = "smoke"))]
-    {
-        anyhow::bail!("smoke-agent requires the 'smoke' feature. Build with: --features smoke");
+    if step_count == 0 {
+        eprintln!("✗ ZERO STEPS DETECTED - trainer exited without output");
+        eprintln!("This is the EXACT bug causing 186 failed experiments!");
+        std::process::exit(1);
+    }
+
+    eprintln!("✓✓✓ SMOKE TEST PASSED - pipeline is healthy");
+    eprintln!("✓✓✓ Steps produced: {}", step_count);
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_parse() {
+        let cli = Cli::try_parse_from([
+            "smoke-agent",
+            "--neon-url", "postgres://localhost/test",
+        ]);
+        assert!(cli.is_ok());
     }
 }

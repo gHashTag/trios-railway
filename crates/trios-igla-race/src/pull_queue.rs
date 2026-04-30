@@ -176,6 +176,53 @@ impl PullQueueDb {
         Ok(())
     }
 
+    /// Record checkpoint for a running experiment (critical for submission with artifact)
+    /// Saves checkpoint weights to Railway persistent storage and updates experiment_queue metadata
+    pub async fn record_checkpoint(
+        &self,
+        exp_id: i64,
+        weights: &[u8],
+    ) -> anyhow::Result<String> {
+        use sha2::{Digest, Sha256};
+        let client = self.client.lock().await;
+
+        // Calculate SHA256 of checkpoint weights
+        let mut hasher = Sha256::new();
+        hasher.update(weights);
+        let sha = format!("{:x}", hasher.finalize());
+
+        // Store checkpoint in Railway volume (data/ckpts/{exp_id}/{sha}.safetensors)
+        let path = format!("/data/ckpts/{}/{}.safetensors", exp_id, &sha[..8]);
+        tokio::fs::create_dir_all("/data/ckpts").await.ok();
+        tokio::fs::write(&path, weights).await?;
+
+        // Update experiment_queue with checkpoint metadata
+        client
+            .execute(
+                "UPDATE experiment_queue
+                 SET artifact_path=$1, artifact_sha256=$2, artifact_bytes=$3
+                 WHERE id=$4",
+                &[&path, &sha, &(weights.len() as i64), &exp_id],
+            )
+            .await?;
+
+        Ok(path)
+    }
+
+    /// Mark experiment as failed (critical for error handling and resilience)
+    pub async fn mark_failed(&self, exp_id: i64, error: &str) -> Result<()> {
+        let client = self.client.lock().await;
+        client
+            .execute(
+                "UPDATE experiment_queue
+                 SET status='failed', last_error=$1, completed_at=now()
+                 WHERE id=$2",
+                &[&error, &exp_id],
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn push_bpb_sample(
         &self,
         exp_id: i64,

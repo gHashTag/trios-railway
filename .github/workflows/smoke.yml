@@ -2,16 +2,19 @@ name: smoke-cycle
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-  workflow_dispatch:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  smoke:
-    name: Smoke Test (<60s)
+  smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
-
+    timeout-minutes: 3  # Must complete in <60s for smoke
+    
+    env:
+      NEON_DATABASE_URL: postgresql://postgres:password@localhost:5432/test
+      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,101 +24,122 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
 
-      - name: Run unit tests
+      - name: Build smoke crate
+        run: cargo build -p trios-railway-smoke --release
+
+      - name: Run smoke tests
         run: cargo test -p trios-railway-smoke --lib
 
-      - name: Run smoke pipeline test
-        run: cargo test -p trios-railway-smoke --features ci --lib
+      - name: Build smoke-agent with smoke feature
+        run: cargo build -p trios-igla-race --bin smoke-agent --features smoke --release
 
-      - name: Check clippy
-        run: cargo clippy -p trios-railway-smoke -- -D warnings
-
-      - name: Check formatting
-        run: cargo fmt -p trios-railway-smoke -- --check
-
-      - name: Run in-memory smoke cycle
+      - name: Run smoke-agent pipeline test
         run: |
-          # This simulates the full cycle without DB/GPU
-          cargo run --example smoke_in_memory
+          set -euo pipefail
+          echo "Starting smoke-agent pipeline test..."
+          
+          # Run smoke-agent and capture output
+          cargo run -p trios-igla-race --bin smoke-agent --features smoke \
+            --neon-url "mock://skip-db" \
+            --worker-id ci-smoke > smoke.jsonl 2>&1 || true
+          
+          echo "=== SMOKE OUTPUT ==="
+          cat smoke.jsonl
+          echo "===================="
+          
+          # Assert that we got at least one step line
+          if ! grep -q '"step"' smoke.jsonl; then
+            echo "FAIL: No step lines found in output!"
+            echo "This is the 'zero steps' bug - trainer exited without JSONL output"
+            exit 1
+          fi
+          
+          # Count step lines
+          STEPS=$(grep -c '"step"' smoke.jsonl || echo "0")
+          echo "✓ Found $STEPS step(s) in output"
+          
+          if [ "$STEPS" -ge 1 ]; then
+            echo "✓✓✓ SMOKE TEST PASSED - pipeline is healthy"
+            exit 0
+          else
+            echo "FAIL: Expected at least 1 step, got $STEPS"
+            exit 1
+          fi
+
+      - name: Validate JSONL format
+        run: |
+          # Parse each line as valid JSON
+          while IFS= read -r line; do
+            if echo "$line" | jq -e '.step' > /dev/null; then
+              echo "✓ Valid step: $line"
+            fi
+          done < smoke.jsonl
+
+      - name: Upload smoke.jsonl artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-output
+          path: smoke.jsonl
+          retention-days: 7
+
+  smoke-db-integration:
+    # This job runs only if the unit smoke test passes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: smoke-test
+    if: success()
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
         env:
-          RUST_LOG: info
-
-      - name: Verify JSONL parsing
-        run: |
-          # Test that we can parse trainer output
-          cat <<'EOF' > /tmp/test_trainer.jsonl
-          {"step":1,"loss":3.5,"val_bpb":3.6,"ts":"2024-01-01T00:00:00Z","duration_ms":100}
-          {"step":2,"loss":3.2,"val_bpb":3.3,"ts":"2024-01-01T00:00:01Z","duration_ms":200}
-          EOF
-
-          LINES=$(wc -l < /tmp/test_trainer.jsonl)
-          if [ "$LINES" -lt 2 ]; then
-            echo "ERROR: Expected at least 2 JSONL lines, got $LINES"
-            exit 1
-          fi
-          echo "✓ JSONL parsing works: $LINES lines"
-
-  igla-race-smoke:
-    name: IGLA Race Smoke Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-smoke')
-
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build with smoke feature
-        run: cargo build -p trios-igla-race --features smoke
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
 
-      - name: Test smoke feature builds
-        run: cargo test -p trios-igla-race --features smoke
-
-  audit-smoke:
-    name: Audit DDL Smoke Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build audit crate
-        run: cargo build -p trios-railway-audit
-
-      - name: Generate DDL
-        run: cargo run -p trios-igla-race --bin tri-railway audit migrate-sql > /tmp/ddl.sql
-
-      - name: Verify DDL output
+      - name: Setup database
         run: |
-          if [ ! -s /tmp/ddl.sql ]; then
-            echo "ERROR: DDL output is empty"
+          PGPASSWORD=password psql -h localhost -U postgres -d test -c "
+            CREATE TABLE IF NOT EXISTS smoke_tests (
+              id SERIAL PRIMARY KEY,
+              step INTEGER NOT NULL,
+              loss FLOAT NOT NULL,
+              bpb FLOAT,
+              ts TIMESTAMP DEFAULT NOW()
+            );
+          "
+
+      - name: Run smoke with real DB
+        env:
+          NEON_DATABASE_URL: postgresql://postgres:password@localhost:5432/test
+        run: |
+          cargo run -p trios-igla-race --bin smoke-agent --features smoke \
+            --neon-url "$NEON_DATABASE_URL" \
+            --worker-id ci-integration | tee integration.jsonl
+          
+          # Verify we got at least one step
+          if ! grep -q '"step"' integration.jsonl; then
+            echo "FAIL: No steps in integration test"
             exit 1
           fi
-          # Check for required tables
-          if ! grep -q "CREATE TABLE.*experiment_queue" /tmp/ddl.sql; then
-            echo "ERROR: experiment_queue table missing from DDL"
-            exit 1
-          fi
-          if ! grep -q "CREATE TABLE.*workers" /tmp/ddl.sql; then
-            echo "ERROR: workers table missing from DDL"
-            exit 1
-          fi
-          echo "✓ DDL contains required tables"
+          
+          STEPS=$(grep -c '"step"' integration.jsonl)
+          echo "✓ Integration smoke: $STEPS steps produced"

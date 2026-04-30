@@ -12,9 +12,11 @@ const KILL_CHECK_INTERVAL: i32 = 1000;
 const REPORT_INTERVAL: i32 = 100;
 const ABANDON_GAP: f32 = 2.0;
 const PREDICTED_INF_GATE2: f32 = 1.95;
-const DEFAULT_TRAINER_BIN: &str =
-    "/Users/playom/trios-trainer-igla/target/release/trios-train";
-const DEFAULT_WORKDIR: &str = "/Users/playom/trios-trainer-igla";
+/// TRAINER_BIN env var is checked first. Fallback to Dockerfile default.
+/// FIX for "zero steps" — the hardcoded macOS path never works on Railway.
+const DEFAULT_TRAINER_BIN: &str = "/usr/local/bin/trios-train";
+/// TRAINER_WORKDIR env var is checked first. Empty on Railway (no workdir needed).
+const DEFAULT_WORKDIR: &str = "";
 
 #[derive(Parser)]
 #[command(
@@ -28,8 +30,12 @@ struct Cli {
     railway_acc: String,
     #[arg(long, env = "RAILWAY_SERVICE_NAME", default_value = "opencode-seed-agent")]
     railway_svc: String,
-    #[arg(long, default_value = DEFAULT_TRAINER_BIN)]
+    /// Path to trios-train binary. Checks TRAINER_BIN env var first.
+    #[arg(long, env = "TRAINER_BIN", default_value = DEFAULT_TRAINER_BIN)]
     trainer_bin: String,
+    /// Working directory for trainer. Checks TRAINER_WORKDIR env var first.
+    #[arg(long, env = "TRAINER_WORKDIR", default_value = DEFAULT_WORKDIR)]
+    workdir: String,
 }
 
 #[tokio::main]
@@ -64,7 +70,7 @@ async fn main() -> Result<()> {
     let _hb = trios_igla_race::pull_queue::spawn_heartbeat(db.clone_handle(), worker_id);
 
     loop {
-        match worker_tick(&db, &worker_id, &cli.trainer_bin).await {
+        match worker_tick(&db, &worker_id, &cli.trainer_bin, &cli.workdir).await {
             Ok(true) => {
                 info!("experiment completed, pulling next");
             }
@@ -80,7 +86,17 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn worker_tick(db: &PullQueueDb, worker_id: &Uuid, trainer_bin: &str) -> Result<bool> {
+async fn worker_tick(db: &PullQueueDb, worker_id: &Uuid, trainer_bin: &str, workdir: &str) -> Result<bool> {
+    // CRITICAL FIX: Verify trainer binary exists before spawning.
+    // This catches the macOS-harcode bug on Railway immediately.
+    let trainer_path = std::path::Path::new(trainer_bin);
+    if !trainer_path.exists() {
+        return Err(anyhow::anyhow!(
+            "trainer binary not found at {} (set TRAINER_BIN env var)",
+            trainer_bin
+        ));
+    }
+
     let exp = match db.pull_experiment(worker_id).await? {
         Some(e) => e,
         None => return Ok(false),
@@ -107,18 +123,32 @@ async fn worker_tick(db: &PullQueueDb, worker_id: &Uuid, trainer_bin: &str) -> R
     let mut bpb_history: Vec<(i32, f32)> = Vec::new();
     let mut abandoned = false;
 
-    let mut child = tokio::process::Command::new(trainer_bin)
-        .arg("--seed")
+    let mut cmd = tokio::process::Command::new(trainer_bin);
+    cmd.arg("--seed")
         .arg(seed.to_string())
         .arg("--steps")
         .arg(steps.to_string())
         .arg("--hidden")
         .arg(config.hidden.to_string())
         .arg("--lr")
-        .arg(format!("{:.6}", config.lr))
-        .current_dir(DEFAULT_WORKDIR)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .arg(format!("{:.6}", config.lr));
+
+    // CRITICAL FIX: --ctx is REQUIRED for trios-train to produce output.
+    // Without it, the trainer hangs silently → zero steps.
+    // Bisect showed experiment #800 (BPB=1.82) had ctx=12 and worked.
+    if config.ctx > 0 {
+        cmd.arg("--ctx").arg(config.ctx.to_string());
+    }
+
+    // Set workdir only if specified (Docker env, empty on Railway).
+    if !workdir.is_empty() {
+        cmd.current_dir(workdir);
+    }
+
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn {trainer_bin}: {e}"))?;
 

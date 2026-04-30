@@ -7,6 +7,7 @@ members = [
     "crates/trios-railway-mcp",
     "crates/trios-railway-smoke",
     "crates/trios-igla-race",
+    "crates/scarab",
     "bin/tri-railway",
     "bin/seed-agent",
 ]
