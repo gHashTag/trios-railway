@@ -27,10 +27,12 @@ pub struct ClaimedExperiment {
 /// because Postgres does not support `FOR UPDATE` in a top-level
 /// `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED)` for
 /// readability — we use a CTE for the same effect.
+/// Stateless claim — any free worker claims any pending experiment.
+/// No account affinity; workers are fungible per Khepri-1 architecture.
 pub const CLAIM_SQL: &str = r"
     WITH pick AS (
         SELECT id FROM experiment_queue
-        WHERE status = 'pending' AND account = $2
+        WHERE status = 'pending'
         ORDER BY priority DESC, id ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
@@ -45,15 +47,14 @@ pub const CLAIM_SQL: &str = r"
               q.steps_budget, q.account, q.priority
 ";
 
-/// Atomic claim by `(worker_id, account)`. Returns `None` when the
-/// queue is empty for that account — callers sleep and retry.
+/// Atomic claim by worker_id only — stateless fungible pool per Khepri-1.
+/// Returns `None` when queue empty — caller sleeps and retries.
 pub async fn claim_next(
     client: &tokio_postgres::Client,
     worker_id: Uuid,
-    account: &str,
 ) -> Result<Option<ClaimedExperiment>> {
     let row = client
-        .query_opt(CLAIM_SQL, &[&worker_id, &account])
+        .query_opt(CLAIM_SQL, &[&worker_id])
         .await
         .with_context(|| "claim_next: SKIP LOCKED query failed")?;
     let Some(row) = row else { return Ok(None) };
@@ -203,9 +204,9 @@ mod tests {
     }
 
     #[test]
-    fn claim_sql_is_account_scoped() {
-        // Each worker filters by its own account so two acc0 workers
-        // don't fight an acc1 worker over the same global queue head.
-        assert!(CLAIM_SQL.contains("account = $2"));
+    fn claim_sql_is_stateless_fungible() {
+        // Khepri-1: workers are fungible — no account filter.
+        // Any free worker claims any pending experiment.
+        assert!(!CLAIM_SQL.contains("account = $2"));
     }
 }

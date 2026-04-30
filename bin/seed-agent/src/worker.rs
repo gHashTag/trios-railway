@@ -47,7 +47,8 @@ pub async fn run_one_iteration(
     client: &tokio_postgres::Client,
     cfg: &WorkerConfig,
 ) -> Result<IterOutcome> {
-    let Some(exp) = claim::claim_next(client, cfg.worker_id, &cfg.railway_acc).await? else {
+    // Stateless claim — fungible pool, no account affinity (Khepri-1)
+    let Some(exp) = claim::claim_next(client, cfg.worker_id).await? else {
         return Ok(IterOutcome::Idle);
     };
 
