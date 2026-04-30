@@ -51,3 +51,8 @@ path = "src/bin/debug_queue.rs"
 name = "smoke_agent"
 path = "src/bin/smoke_agent.rs"
 required-features = ["smoke"]
+
+# Stateless fungible worker — replaces crates/scarab
+[[bin]]
+name = "scarab"
+path = "src/bin/scarab.rs"
