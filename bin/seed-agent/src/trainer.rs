@@ -221,9 +221,8 @@ impl ExternalTrainer {
         // The trios-train binary only accepts: --seed, --steps, --hidden,
         // --lr, --attn-layers, --eval-every, --train-data, --val-data,
         // --sweep, --optimizer, --config.
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::inherit()); // R5: stream stderr to seed-agent logs
-        // Set working directory only when it exists (present in Docker, absent on macOS dev).
+        cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()); // R5: stream stderr to seed-agent logs
+                                                             // Set working directory only when it exists (present in Docker, absent on macOS dev).
         if workdir.is_dir() {
             cmd.current_dir(&workdir);
         }
@@ -467,8 +466,9 @@ mod tests {
     #[test]
     fn external_trainer_constructs_when_binary_exists() {
         let cfg = json!({"hidden_dim": 384});
-        let tr = ExternalTrainer::with_trainer_path("IGLA-X", 42, 100, &cfg, "/usr/bin/true".into())
-            .expect("construct");
+        let tr =
+            ExternalTrainer::with_trainer_path("IGLA-X", 42, 100, &cfg, "/usr/bin/true".into())
+                .expect("construct");
         assert_eq!(tr.current_step(), 0);
         assert!(!tr.finished());
         assert!(
