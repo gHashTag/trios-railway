@@ -25,16 +25,43 @@ const IGLA_PROJECT_ID: &str = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b";
 const IGLA_PROD_ENV_ID: &str = "54e293b9-00a9-4102-814d-db151636d96e";
 const DEFAULT_TRAINER_IMAGE: &str = "ghcr.io/ghashtag/trios-trainer-igla:latest";
 
-/// All known project IDs that this gateway is allowed to operate on.
-/// Serves as both a whitelist and a routing table to select the correct
-/// per-account token.
-const ALLOWED_PROJECT_IDS: &[&str] = &[
+/// Default project IDs used when the `ALLOWED_PROJECT_IDS` env var is not set.
+/// Loaded at startup; changes require a redeploy only if the env var is absent.
+const DEFAULT_ALLOWED_PROJECT_IDS: &[&str] = &[
+    "abdf752c-20ac-4813-a586-04a031db96e8", // acc0
     "e4fe33bb-3b09-4842-9782-7d2dea1abc9b", // acc1 — IGLA (primary)
-    "da1fb0c7-199f-42b0-9f08-a84d122feb5b", // acc0 — woody
-    "f3350520-8aff-4ebf-8618-c041bd17e6d0", // acc2
+    "12c508c7-1196-468d-b06d-d8de8cb77e93", // acc2
     "8ab06401-aa28-4af7-9faf-39a1548b7008", // acc3
-    "475a2290-d990-426a-af57-594a934cf6f4", // acc6/acc7 — robust-radiance
+    "0247abaa-6487-4347-811c-168d7fe53078", // acc4
+    "475a2290-d990-426a-af57-594a934cf6f4", // acc5/acc6 — robust-radiance
 ];
+
+/// Runtime-resolved allowed project IDs (loaded from `ALLOWED_PROJECT_IDS` env
+/// var, comma-separated, or falling back to [`DEFAULT_ALLOWED_PROJECT_IDS`]).
+static ALLOWED_PROJECT_IDS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+fn load_allowed_project_ids() -> Vec<String> {
+    if let Ok(val) = std::env::var("ALLOWED_PROJECT_IDS") {
+        let ids: Vec<String> = val
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !ids.is_empty() {
+            tracing::info!(count = ids.len(), "loaded ALLOWED_PROJECT_IDS from env");
+            return ids;
+        }
+    }
+    tracing::info!("using DEFAULT_ALLOWED_PROJECT_IDS (env var not set)");
+    DEFAULT_ALLOWED_PROJECT_IDS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn allowed_project_ids() -> &'static Vec<String> {
+    ALLOWED_PROJECT_IDS.get_or_init(load_allowed_project_ids)
+}
 
 /// Per-account token info, loaded once from env vars.
 struct AccountConfig {
@@ -42,6 +69,24 @@ struct AccountConfig {
     token: String,
     token_kind: String,
     env_id: String,
+}
+
+impl AccountConfig {
+    /// Resolve the correct [`AuthMode`] from the `token_kind` field.
+    ///
+    /// - `"personal"` / `"team"` / `"bearer"` → `AuthMode::Team` (sends
+    ///   `Authorization: Bearer <token>`)
+    /// - `"project"` → `AuthMode::Project` (sends `Project-Access-Token:
+    ///   <token>`)
+    /// - Fallback: UUID-like tokens are treated as project tokens.
+    fn resolve_auth_mode(&self) -> AuthMode {
+        match self.token_kind.as_str() {
+            "team" | "bearer" | "personal" => AuthMode::Team,
+            "project" => AuthMode::Project,
+            _ if is_uuid_like(&self.token) => AuthMode::Project,
+            _ => AuthMode::Team,
+        }
+    }
 }
 
 static ACCOUNTS: std::sync::OnceLock<Vec<AccountConfig>> = std::sync::OnceLock::new();
@@ -422,12 +467,7 @@ impl TriosRailwayMcp {
         let mut healthy_accounts = 0usize;
 
         for acc in accounts() {
-            let auth = match acc.token_kind.as_str() {
-                "team" | "bearer" | "personal" => AuthMode::Team,
-                "project" => AuthMode::Project,
-                _ if is_uuid_like(&acc.token) => AuthMode::Project,
-                _ => AuthMode::Team,
-            };
+            let auth = acc.resolve_auth_mode();
             let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
                 results.push(json!({
                     "account": acc.project_id,
@@ -480,12 +520,7 @@ impl TriosRailwayMcp {
         let mut all_seeds = Vec::new();
 
         for acc in accounts() {
-            let auth = match acc.token_kind.as_str() {
-                "team" | "bearer" | "personal" => AuthMode::Team,
-                "project" => AuthMode::Project,
-                _ if is_uuid_like(&acc.token) => AuthMode::Project,
-                _ => AuthMode::Team,
-            };
+            let auth = acc.resolve_auth_mode();
             let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
                 continue;
             };
@@ -607,12 +642,7 @@ impl TriosRailwayMcp {
             .get(params.account as usize)
             .ok_or_else(|| McpError::invalid_params(format!("Account index {} not found (0-3)", params.account), None))?;
 
-        let auth = match acc.token_kind.as_str() {
-            "team" | "bearer" | "personal" => AuthMode::Team,
-            "project" => AuthMode::Project,
-            _ if is_uuid_like(&acc.token) => AuthMode::Project,
-            _ => AuthMode::Team,
-        };
+        let auth = acc.resolve_auth_mode();
         let client = Client::with_token_and_mode(&acc.token, auth).map_err(internal_err)?;
         let pid = ProjectId::from(acc.project_id.as_str());
         let eid = EnvironmentId::from(acc.env_id.as_str());
@@ -728,14 +758,15 @@ fn build_client() -> Result<Client, McpError> {
 }
 
 /// Build a client with the correct token for the given project ID.
-/// Looks up `RAILWAY_TOKEN_ACC{0..3}` env vars to find a matching account.
+/// Looks up `RAILWAY_TOKEN_ACC{0..7}` env vars to find a matching account.
 /// Falls back to `build_client()` if no match found.
 fn build_client_for_project(project: &str) -> Result<Client, McpError> {
     // Validate project is in whitelist
-    if !ALLOWED_PROJECT_IDS.contains(&project) {
+    let allowed = allowed_project_ids();
+    if !allowed.iter().any(|id| id == project) {
         return Err(McpError::invalid_params(
             format!(
-                "project {project} not in ALLOWED_PROJECT_IDS. Allowed: {ALLOWED_PROJECT_IDS:?}"
+                "project {project} not in ALLOWED_PROJECT_IDS. Allowed: {allowed:?}"
             ),
             None,
         ));
@@ -743,12 +774,7 @@ fn build_client_for_project(project: &str) -> Result<Client, McpError> {
     // Find matching account
     for acc in accounts() {
         if acc.project_id == project {
-            let auth = match acc.token_kind.as_str() {
-                "team" | "bearer" | "personal" => AuthMode::Team,
-                "project" => AuthMode::Project,
-                _ if is_uuid_like(&acc.token) => AuthMode::Project,
-                _ => AuthMode::Team,
-            };
+            let auth = acc.resolve_auth_mode();
             return Client::with_token_and_mode(&acc.token, auth).map_err(|e| {
                 McpError::internal_error(
                     format!("token error for project {project}: {e}"),
