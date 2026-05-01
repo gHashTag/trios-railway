@@ -561,7 +561,7 @@ impl TriosRailwayMcp {
         let client = db_connect().await?;
         let rows = client
             .query(
-                "SELECT status, account, COUNT(*) as cnt FROM experiment_queue GROUP BY status, account ORDER BY status, account",
+                "SELECT status, account, COUNT(*) as cnt FROM strategy_queue GROUP BY status, account ORDER BY status, account",
                 &[],
             )
             .await
@@ -579,7 +579,7 @@ impl TriosRailwayMcp {
         // Also get totals
         let total_rows = client
             .query(
-                "SELECT status, COUNT(*) as cnt FROM experiment_queue GROUP BY status ORDER BY status",
+                "SELECT status, COUNT(*) as cnt FROM strategy_queue GROUP BY status ORDER BY status",
                 &[],
             )
             .await
@@ -611,7 +611,7 @@ impl TriosRailwayMcp {
                     COUNT(*) FILTER (WHERE last_heartbeat > now() - interval '5 minutes') as alive_5m,
                     COUNT(*) FILTER (WHERE last_heartbeat BETWEEN now() - interval '30 minutes' AND now() - interval '5 minutes') as stale,
                     COUNT(*) FILTER (WHERE last_heartbeat < now() - interval '30 minutes') as dead
-                 FROM workers GROUP BY railway_acc ORDER BY railway_acc",
+                 FROM scarabs GROUP BY railway_acc ORDER BY railway_acc",
                 &[],
             )
             .await
@@ -695,8 +695,8 @@ impl TriosRailwayMcp {
         let config_str = serde_json::to_string(&params.config_json).map_err(internal_err)?;
         let rows = client
             .query_one(
-                "INSERT INTO experiment_queue (canon_name, config_json, priority, seed, steps_budget, account, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'mcp-gateway')
+                "INSERT INTO strategy_queue (canon_name, config_json, priority, seed, steps_budget, account, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'human')
                  RETURNING id",
                 &[&params.canon_name, &config_str, &params.priority, &params.seed, &params.steps_budget, &params.account],
             )
