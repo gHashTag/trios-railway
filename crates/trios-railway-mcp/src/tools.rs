@@ -164,6 +164,10 @@ pub struct RedeployRequest {
     /// Environment UUID. Defaults to IGLA `production`.
     #[serde(default)]
     pub environment: Option<String>,
+    /// Project UUID. Required for multi-account token dispatch.
+    /// Falls back to global RAILWAY_TOKEN if not provided.
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -172,6 +176,10 @@ pub struct DeleteRequest {
     pub service: String,
     /// Must be `true` (R9 safety): the call refuses to proceed otherwise.
     pub confirm: bool,
+    /// Project UUID. Required for multi-account token dispatch.
+    /// Falls back to global RAILWAY_TOKEN if not provided.
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -359,7 +367,10 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<RedeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = match &req.project {
+            Some(p) => build_client_for_project(p)?,
+            None => build_client()?,
+        };
         let env = req
             .environment
             .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
@@ -390,7 +401,10 @@ impl TriosRailwayMcp {
                 None,
             ));
         }
-        let client = build_client()?;
+        let client = match &req.project {
+            Some(p) => build_client_for_project(p)?,
+            None => build_client()?,
+        };
         let sid = ServiceId::from(req.service);
         M::service_delete(&client, &sid)
             .await
@@ -696,7 +710,7 @@ impl TriosRailwayMcp {
         let rows = client
             .query_one(
                 "INSERT INTO strategy_queue (canon_name, config_json, priority, seed, steps_budget, account, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'human')
+                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, 'human')
                  RETURNING id",
                 &[&params.canon_name, &config_str, &params.priority, &params.seed, &params.steps_budget, &params.account],
             )
