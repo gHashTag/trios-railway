@@ -33,6 +33,7 @@ const ALLOWED_PROJECT_IDS: &[&str] = &[
     "da1fb0c7-199f-42b0-9f08-a84d122feb5b", // acc0 — woody
     "f3350520-8aff-4ebf-8618-c041bd17e6d0", // acc2
     "8ab06401-aa28-4af7-9faf-39a1548b7008", // acc3
+    "475a2290-d990-426a-af57-594a934cf6f4", // acc6/acc7 — robust-radiance
 ];
 
 /// Per-account token info, loaded once from env vars.
@@ -47,7 +48,7 @@ static ACCOUNTS: std::sync::OnceLock<Vec<AccountConfig>> = std::sync::OnceLock::
 
 fn load_accounts() -> Vec<AccountConfig> {
     let mut accounts = Vec::new();
-    for i in 0..4 {
+    for i in 0..8 {
         let Ok(token) = std::env::var(format!("RAILWAY_TOKEN_ACC{i}")) else {
             continue;
         };
