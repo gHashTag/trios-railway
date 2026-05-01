@@ -706,13 +706,12 @@ impl TriosRailwayMcp {
         Parameters(params): Parameters<ExperimentInsertRequest>,
     ) -> Result<CallToolResult, McpError> {
         let client = db_connect().await?;
-        let config_str = serde_json::to_string(&params.config_json).map_err(internal_err)?;
         let rows = client
             .query_one(
                 "INSERT INTO strategy_queue (canon_name, config_json, priority, seed, steps_budget, account, created_by)
-                 VALUES ($1, $2::jsonb, $3, $4, $5, $6, 'human')
+                 VALUES ($1, $2, $3, $4, $5, $6, 'human')
                  RETURNING id",
-                &[&params.canon_name, &config_str, &params.priority, &params.seed, &params.steps_budget, &params.account],
+                &[&params.canon_name, &params.config_json, &params.priority, &params.seed, &params.steps_budget, &params.account],
             )
             .await
             .map_err(internal_err)?;
