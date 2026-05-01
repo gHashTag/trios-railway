@@ -9,3 +9,5 @@ data/docs_selected.jsonl
 .mypy_cache/
 .venv
 logs/
+*.sh
+# R1 enforcement: no shell scripts in Rust-only repo
