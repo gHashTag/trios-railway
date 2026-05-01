@@ -25,6 +25,7 @@ schemars    = "1.0"
 tokio-util  = "0.7"
 rmcp        = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server", "transport-sse-server"] }
 tokio-postgres = "0.7"
+postgres-types = { version = "0.2", features = ["with-serde_json-1"] }
 rustls       = { version = "0.23", features = ["aws_lc_rs"] }
 tokio-postgres-rustls = "0.13"
 webpki-roots = "0.26"
