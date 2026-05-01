@@ -367,10 +367,16 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<RedeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = match &req.project {
-            Some(p) => build_client_for_project(p)?,
-            None => build_client()?,
+        // Fix #15: auto-resolve project if not provided
+        let project = if let Some(p) = req.project {
+            p
+        } else {
+            match find_project_for_service(&req.service).await {
+                Some(pid) => pid,
+                None => IGLA_PROJECT_ID.to_string(),
+            }
         };
+        let client = build_client_for_project(&project)?;
         let env = req
             .environment
             .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
@@ -808,6 +814,26 @@ fn env_for_project(project: &str) -> String {
         }
     }
     IGLA_PROD_ENV_ID.to_string()
+}
+
+/// Find project ID for a service by checking all accounts.
+/// Returns None if service not found in any configured project.
+async fn find_project_for_service(service_id: &str) -> Option<String> {
+    let sid = service_id.to_lowercase();
+    for acc in accounts() {
+        let auth = acc.resolve_auth_mode();
+        let Ok(client) = Client::with_token_and_mode(&acc.token, auth) else {
+            continue;
+        };
+        let pid = ProjectId::from(acc.project_id.as_str());
+        let Ok(pv) = Q::project_view(&client, &pid).await else {
+            continue;
+        };
+        if pv.services().iter().any(|s| s.id.to_lowercase() == sid) {
+            return Some(acc.project_id.clone());
+        }
+    }
+    None
 }
 
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
