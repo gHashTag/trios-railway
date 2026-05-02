@@ -1,0 +1,20 @@
+{
+  "repos": {
+    "gHashTag/trios-railway": {
+      "owner": "gHashTag",
+      "name": "trios-railway",
+      "branch": "pr-igla-1",
+      "lastAnalyzed": "2026-05-01T18:16:53.131Z",
+      "metrics": {
+        "commits": 205,
+        "branches": 61,
+        "contributors": 47,
+        "openIssues": 0,
+        "openPRs": 0
+      }
+    }
+  },
+  "prs": {},
+  "issues": {},
+  "version": "3.0.0"
+}

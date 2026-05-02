@@ -1,0 +1,19 @@
+[package]
+name = "sr-01-scarab-ring"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+trios-igla-race-hack = { path = "../.." }
+sr-00-scarab-types = { path = "../SR-00-scarab-types" }
+sr-01-scarab-lane = { path = "../SR-02-scarab-lane" }
+sr-02-scarab-soul = { path = "../SR-03-scarab-soul" }
+sr-03-scarab-gate = { path = "../SR-04-scarab-gate" }
+sr-04-scarab-gate = { path = "../SR-04-scarab-gate" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"

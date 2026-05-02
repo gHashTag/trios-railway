@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/trios-trainer-igla",
+    "crates/trios-igla-race-hack",
+]
+resolver = "2"

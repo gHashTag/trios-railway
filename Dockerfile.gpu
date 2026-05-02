@@ -1,0 +1,61 @@
+# GPU Training Image for Parameter Golf Challenge
+# Uses NVIDIA CUDA 12.1 runtime with Candle framework
+
+FROM nvidia/cuda:12.1-devel-ubuntu22.04 AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    pkg-config \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN rustup default 1.91
+
+# Set working directory
+WORKDIR /build
+
+# Copy source code
+COPY . .
+
+# Build with GPU features enabled
+# Note: We build only trios-train binary with gpu feature
+RUN cargo build --release --features gpu --bin trios-train
+
+# Runtime stage with CUDA 12.1 runtime
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 AS runtime
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+
+# Copy built binary from builder stage
+COPY --from=builder /build/target/release/trios-train /usr/local/bin/
+
+# Copy training data (tiny_shakespeare)
+COPY --from=builder /build/data /work/data
+
+# Environment variables
+ENV RUST_LOG=info
+
+# Default training parameters (can be overridden)
+ENV TRIOS_SEED=43
+ENV TRIOS_STEPS=81000
+ENV TRIOS_LR=0.003
+ENV TRIOS_HIDDEN=828
+ENV TRIOS_OPTIMIZER=adamw
+ENV TRIOS_CTX=6
+
+# Verify GPU is available
+RUN nvidia-smi
+
+# Entry point
+ENTRYPOINT ["trios-train"]

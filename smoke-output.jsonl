@@ -1,0 +1,7 @@
+error: unexpected argument '--neon-url' found
+
+  tip: to pass '--neon-url' as a value, use '-- --neon-url'
+
+Usage: cargo run --package [<SPEC>] --bin [<NAME>] --features <FEATURES> [ARGS]...
+
+For more information, try '--help'.
