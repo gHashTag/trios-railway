@@ -85,10 +85,7 @@ impl PullQueueDb {
         })
     }
 
-    pub async fn query_raw(
-        &self,
-        sql: &str,
-    ) -> Result<Vec<tokio_postgres::Row>> {
+    pub async fn query_raw(&self, sql: &str) -> Result<Vec<tokio_postgres::Row>> {
         let client = self.client.lock().await;
         Ok(client.query(sql, &[]).await?)
     }
@@ -197,7 +194,13 @@ impl PullQueueDb {
                 "INSERT INTO bpb_samples (canon_name, seed, step, bpb, val_bpb_ema, ts) \
                  VALUES ($1, $2, $3, $4, $5, now()) \
                  ON CONFLICT (canon_name, seed, step) DO UPDATE SET bpb=$4, val_bpb_ema=$5",
-                &[&canon_name, &seed, &step, &(bpb as f64), &val_bpb_ema.map(|v| v as f64)],
+                &[
+                    &canon_name,
+                    &seed,
+                    &step,
+                    &(bpb as f64),
+                    &val_bpb_ema.map(|v| v as f64),
+                ],
             )
             .await?;
         Ok(())

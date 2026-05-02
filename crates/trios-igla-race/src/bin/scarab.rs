@@ -56,8 +56,7 @@ async fn claim_next(
 ) -> anyhow::Result<Option<Task>> {
     let row = client.query_opt(CLAIM_SQL, &[&scarab_id]).await?;
     let Some(row) = row else { return Ok(None) };
-    let cfg: ExpConfig = serde_json::from_value(row.get(4))
-        .unwrap_or_default();
+    let cfg: ExpConfig = serde_json::from_value(row.get(4)).unwrap_or_default();
     Ok(Some(Task {
         id: row.get(0),
         canon_name: row.get(1),
@@ -66,19 +65,15 @@ async fn claim_next(
     }))
 }
 
-async fn run_task(
-    client: &tokio_postgres::Client,
-    task: Task,
-    label: &str,
-) -> anyhow::Result<()> {
+async fn run_task(client: &tokio_postgres::Client, task: Task, label: &str) -> anyhow::Result<()> {
     let c = &task.config;
-    let hidden  = c.hidden.unwrap_or(828).to_string();
-    let lr      = c.lr.unwrap_or(0.0004).to_string();
-    let steps   = c.steps.unwrap_or(task.steps_budget as u32).to_string();
-    let ctx     = c.ctx.unwrap_or(12).to_string();
-    let format  = c.format.clone().unwrap_or_else(|| "fp32".into());
-    let seed    = c.seed.unwrap_or(1597).to_string();
-    let neon    = env::var("NEON_DATABASE_URL").unwrap_or_default();
+    let hidden = c.hidden.unwrap_or(828).to_string();
+    let lr = c.lr.unwrap_or(0.0004).to_string();
+    let steps = c.steps.unwrap_or(task.steps_budget as u32).to_string();
+    let ctx = c.ctx.unwrap_or(12).to_string();
+    let format = c.format.clone().unwrap_or_else(|| "fp32".into());
+    let seed = c.seed.unwrap_or(1597).to_string();
+    let neon = env::var("NEON_DATABASE_URL").unwrap_or_default();
 
     println!(
         "[{label}] START id={} name={} hidden={hidden} lr={lr} steps={steps} fmt={format} seed={seed}",
@@ -88,14 +83,22 @@ async fn run_task(
     let exit = Command::new("trios-igla")
         .args([
             "train",
-            "--hidden",   &hidden,
-            "--lr",       &lr,
-            "--steps",    &steps,
-            "--ctx",      &ctx,
-            "--format",   &format,
-            "--seed",     &seed,
-            "--exp-id",   &task.id.to_string(),
-            "--neon-url", &neon,
+            "--hidden",
+            &hidden,
+            "--lr",
+            &lr,
+            "--steps",
+            &steps,
+            "--ctx",
+            &ctx,
+            "--format",
+            &format,
+            "--seed",
+            &seed,
+            "--exp-id",
+            &task.id.to_string(),
+            "--neon-url",
+            &neon,
         ])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -124,12 +127,14 @@ async fn run_task(
 async fn main() -> anyhow::Result<()> {
     let db_url = env::var("NEON_DATABASE_URL").expect("NEON_DATABASE_URL not set");
     // SCARAB_ACCOUNT is a cosmetic log label only. Not a routing key.
-    let label  = env::var("SCARAB_ACCOUNT").unwrap_or_else(|_| "scarab".into());
-    let host   = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
+    let label = env::var("SCARAB_ACCOUNT").unwrap_or_else(|_| "scarab".into());
+    let host = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
     let scarab_id = format!("{label}@{host}");
 
     let (client, conn) = tokio_postgres::connect(&db_url, NoTls).await?;
-    tokio::spawn(async move { let _ = conn.await; });
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
 
     // Register in workers table for heartbeat tracking
     let worker_id: String = client
@@ -175,10 +180,12 @@ async fn main() -> anyhow::Result<()> {
         }
 
         // Heartbeat + sleep until next poll.
-        let _ = client.execute(
-            "UPDATE workers SET last_heartbeat=NOW() WHERE id=$1::uuid",
-            &[&worker_id],
-        ).await;
+        let _ = client
+            .execute(
+                "UPDATE workers SET last_heartbeat=NOW() WHERE id=$1::uuid",
+                &[&worker_id],
+            )
+            .await;
         sleep(Duration::from_secs(10)).await;
     }
 }

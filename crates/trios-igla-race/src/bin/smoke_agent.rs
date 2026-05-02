@@ -42,7 +42,10 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    info!("smoke-agent starting | steps={} | seed={}", cli.steps, cli.seed);
+    info!(
+        "smoke-agent starting | steps={} | seed={}",
+        cli.steps, cli.seed
+    );
 
     #[cfg(feature = "smoke")]
     {
@@ -61,8 +64,10 @@ fn main() -> Result<()> {
         );
 
         if result.jsonl_lines < config.steps as usize {
-            eprintln!("❌ SMOKE TEST FAILED: expected {} lines, got {}",
-                config.steps, result.jsonl_lines);
+            eprintln!(
+                "❌ SMOKE TEST FAILED: expected {} lines, got {}",
+                config.steps, result.jsonl_lines
+            );
             if cli.fail_on_error {
                 std::process::exit(1);
             }

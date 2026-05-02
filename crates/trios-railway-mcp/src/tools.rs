@@ -58,7 +58,7 @@ pub struct DeployRequest {
     pub experience_root: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
@@ -79,6 +79,50 @@ pub struct DeleteRequest {
     pub service: String,
     /// Must be `true` (R9 safety): the call refuses to proceed otherwise.
     pub confirm: bool,
+}
+
+/// Built-in template that expands into N Railway services on a single MCP call.
+///
+/// Currently supported:
+/// - `champion-repro`: champion config (h=384, lr=0.003, adamw, `27_000` steps, `attn_layers=2`,
+///   A-champion-fineweb lane). One service per seed.
+/// - `gate2-final`: gate-2 final config (`30_000` steps, jepa+nca aux objectives).
+///   One service per seed.
+/// - `e2e-ttt-track-10min`: E2E TTT WIN sweep (`track_10min_16mb`, early-stop at 1.07063).
+///   One service per seed; image is the trainer-igla bundle. Useful for RTX-class hosts (Railway
+///   GPU or `RunPod` via the same image).
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct TemplateDeployRequest {
+    /// Template id, see `TemplateDeployRequest` doc-comment.
+    pub template: String,
+    /// One Railway service is created per seed. Service name = `<template>-rng<seed>`.
+    pub seeds: Vec<i64>,
+    /// Optional `canon_name` prefix override.
+    /// Default `canon_name` pattern: `IGLA-<TEMPLATE_UPPER>-rng<seed>`.
+    #[serde(default)]
+    pub canon_prefix: Option<String>,
+    /// Optional Docker image. Defaults to the canonical IGLA trainer image.
+    #[serde(default)]
+    pub image: Option<String>,
+    /// Optional project UUID. Defaults to the MCP project.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// Optional environment UUID. Defaults to the MCP env.
+    #[serde(default)]
+    pub environment: Option<String>,
+    /// Extra/override env-var pairs applied AFTER template defaults.
+    /// Use this to inject `NEON_DATABASE_URL` etc.
+    #[serde(default)]
+    pub vars_override: Vec<KeyValue>,
+    /// Wave name written into the WAVE env var. Auto-generated when omitted.
+    #[serde(default)]
+    pub wave: Option<String>,
+    /// `DOC_ID` for the audit ledger. Auto-generated when omitted.
+    #[serde(default)]
+    pub doc_id: Option<String>,
+    /// Repo root for the L7 experience log. Defaults to `.`.
+    #[serde(default)]
+    pub experience_root: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -328,6 +372,224 @@ impl TriosRailwayMcp {
     }
 
     #[tool(
+        description = "Deploy a built-in IGLA training template across N seeds in one call. \
+                       Supported templates: 'champion-repro' (27K steps), 'gate2-final' (30K steps + jepa/nca), \
+                       'e2e-ttt-track-10min' (WIN sweep with early-stop at 1.07063). \
+                       Creates one Railway service per seed, applies template defaults plus vars_override, \
+                       triggers redeploys, and emits one R7 audit triplet per service. Idempotent on service name."
+    )]
+    async fn railway_template_deploy(
+        &self,
+        Parameters(req): Parameters<TemplateDeployRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        if req.seeds.is_empty() {
+            return Err(McpError::invalid_params(
+                "seeds[] must contain at least one seed".to_string(),
+                None,
+            ));
+        }
+
+        let template = req.template.trim().to_lowercase();
+        let template_defaults: Vec<KeyValue> = match template.as_str() {
+            "champion-repro" => vec![
+                kv("TRIOS_HIDDEN", "384"),
+                kv("TRIOS_LR", "0.003"),
+                kv("TRIOS_OPTIMIZER", "adamw"),
+                kv("TRIOS_STEPS", "27000"),
+                kv("TRIOS_ATTN_LAYERS", "2"),
+                kv("TRIOS_CHECKPOINT_INTERVAL", "100"),
+                kv("TRIOS_LANE", "A-champion-fineweb"),
+                kv("L_R8_SYNTHETIC_FALLBACK", "FORBID"),
+                kv("RUST_LOG", "info"),
+            ],
+            "gate2-final" => vec![
+                kv("TRIOS_HIDDEN", "384"),
+                kv("TRIOS_LR", "0.004"),
+                kv("TRIOS_OPTIMIZER", "adamw"),
+                kv("TRIOS_STEPS", "30000"),
+                kv("TRIOS_ATTN_LAYERS", "3"),
+                kv("TRIOS_CHECKPOINT_INTERVAL", "100"),
+                kv("TRIOS_W_CE", "1.0"),
+                kv("TRIOS_W_JEPA", "0.15"),
+                kv("TRIOS_W_NCA", "0.10"),
+                kv("TRIOS_LANE", "B-gate2-final"),
+                kv("L_R8_SYNTHETIC_FALLBACK", "FORBID"),
+                kv("RUST_LOG", "info"),
+            ],
+            "e2e-ttt-track-10min" => vec![
+                kv("OBJECTIVE", "E2E_TTT"),
+                kv("TRACK", "track_10min_16mb"),
+                kv("TRIOS_CHECKPOINT_INTERVAL", "100"),
+                kv("EARLY_STOP_BPB", "1.07063"),
+                kv("TRIOS_LANE", "C-e2e-ttt-win"),
+                kv("RUST_LOG", "info"),
+            ],
+            other => {
+                return Err(McpError::invalid_params(
+                    format!(
+                        "unknown template '{other}'. supported: champion-repro, gate2-final, e2e-ttt-track-10min"
+                    ),
+                    None,
+                ));
+            }
+        };
+
+        let canon_prefix = req
+            .canon_prefix
+            .clone()
+            .unwrap_or_else(|| format!("IGLA-{}", template.to_uppercase()));
+        let wave = req
+            .wave
+            .clone()
+            .unwrap_or_else(|| format!("EPIC-446-{}", template.to_uppercase()));
+        let doc_id = req
+            .doc_id
+            .clone()
+            .unwrap_or_else(|| format!("EPIC-446-TEMPLATE-{}", template.to_uppercase()));
+
+        let project = req
+            .project
+            .clone()
+            .unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
+        let environment = req
+            .environment
+            .clone()
+            .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
+        let image = req
+            .image
+            .clone()
+            .unwrap_or_else(|| DEFAULT_TRAINER_IMAGE.to_string());
+
+        let client = build_client()?;
+        let token_fp = client.token_fingerprint();
+        let pid = ProjectId::from(project.clone());
+        let eid = EnvironmentId::from(environment.clone());
+
+        let exp_root: PathBuf = req
+            .experience_root
+            .clone()
+            .map_or_else(|| PathBuf::from("."), PathBuf::from);
+
+        let mut deployed: Vec<serde_json::Value> = Vec::with_capacity(req.seeds.len());
+        let mut errors: Vec<serde_json::Value> = Vec::new();
+
+        for seed in &req.seeds {
+            let svc_name = format!("{template}-rng{seed}");
+            let canon_name = format!("{canon_prefix}-rng{seed}");
+
+            // 1. find-or-create service
+            let service_id: ServiceId = match find_service_by_name(&client, &pid, &svc_name).await {
+                Ok(Some(existing)) => existing,
+                Ok(None) => match M::service_create(&client, &pid, &svc_name).await {
+                    Ok(c) => ServiceId::from(c.id),
+                    Err(e) => {
+                        errors.push(json!({"seed": seed, "stage": "create", "err": e.to_string()}));
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    errors.push(json!({"seed": seed, "stage": "lookup", "err": e.to_string()}));
+                    continue;
+                }
+            };
+
+            // 2. pin image
+            if let Err(e) = M::service_instance_set_image(&client, &service_id, &eid, &image).await
+            {
+                errors.push(json!({"seed": seed, "stage": "set_image", "err": e.to_string()}));
+                continue;
+            }
+
+            // 3. assemble env: template defaults + per-seed overrides + caller overrides
+            let mut env: Vec<KeyValue> = template_defaults.clone();
+            env.push(kv("TRIOS_SEED", &seed.to_string()));
+            env.push(kv("CANON_NAME", &canon_name));
+            env.push(kv("WAVE", &wave));
+            env.push(kv("DOC_ID", &doc_id));
+            for kv_pair in &req.vars_override {
+                // override semantics: replace if key exists
+                if let Some(slot) = env.iter_mut().find(|e| e.key == kv_pair.key) {
+                    slot.value.clone_from(&kv_pair.value);
+                } else {
+                    env.push(KeyValue {
+                        key: kv_pair.key.clone(),
+                        value: kv_pair.value.clone(),
+                    });
+                }
+            }
+
+            // 4. upsert env
+            let mut upsert_err = None;
+            for var in &env {
+                if let Err(e) =
+                    M::variable_upsert(&client, &pid, &eid, &service_id, &var.key, &var.value).await
+                {
+                    upsert_err = Some((var.key.clone(), e.to_string()));
+                    break;
+                }
+            }
+            if let Some((key, err)) = upsert_err {
+                errors.push(json!({
+                    "seed": seed,
+                    "stage": "variable_upsert",
+                    "key": key,
+                    "err": err,
+                }));
+                continue;
+            }
+
+            // 5. redeploy
+            let deploy_id = match M::service_redeploy(&client, &service_id, &eid).await {
+                Ok(d) => d,
+                Err(e) => {
+                    errors.push(json!({"seed": seed, "stage": "redeploy", "err": e.to_string()}));
+                    continue;
+                }
+            };
+
+            // 6. R7 audit triplet
+            let hash = RailwayHash::seal("template-deploy", &pid, Some(&service_id), &token_fp);
+            if let Ok(line) = ExperienceLine::from_hash(
+                "GENERAL",
+                "RailRangerOne",
+                "#20",
+                &format!("mcp template-deploy {template} seed={seed} canon={canon_name}"),
+                "OK",
+                "PUSH",
+                &hash,
+            ) {
+                let _ = append_line(&exp_root.join(".trinity"), &line).await;
+            }
+
+            deployed.push(json!({
+                "seed": seed,
+                "service_id": service_id.as_str(),
+                "service_name": svc_name,
+                "canon_name": canon_name,
+                "deploy_id": deploy_id.as_str(),
+                "triplet": hash.triplet(),
+            }));
+        }
+
+        let body = json!({
+            "template": template,
+            "image": image,
+            "project_id": project,
+            "environment_id": environment,
+            "wave": wave,
+            "doc_id": doc_id,
+            "deployed": deployed,
+            "deployed_count": deployed.len(),
+            "errors": errors,
+            "error_count": errors.len(),
+            "anchor": "phi^2 + phi^-2 = 3",
+        });
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&body).unwrap(),
+        )]))
+    }
+
+    #[tool(
         description = "Print the idempotent Neon DDL needed for the railway audit tables (issue #6)."
     )]
     async fn railway_audit_migrate_sql(&self) -> Result<CallToolResult, McpError> {
@@ -376,6 +638,26 @@ fn build_client() -> Result<Client, McpError> {
     Client::from_env().map_err(|e| {
         McpError::internal_error(format!("RAILWAY_TOKEN not set or invalid: {e}"), None)
     })
+}
+
+fn kv(key: &str, value: &str) -> KeyValue {
+    KeyValue {
+        key: key.to_string(),
+        value: value.to_string(),
+    }
+}
+
+async fn find_service_by_name(
+    client: &Client,
+    pid: &ProjectId,
+    name: &str,
+) -> Result<Option<ServiceId>, anyhow::Error> {
+    let pv = Q::project_view(client, pid).await?;
+    Ok(pv
+        .services()
+        .into_iter()
+        .find(|s| s.name == name)
+        .map(|s| ServiceId::from(s.id)))
 }
 
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {

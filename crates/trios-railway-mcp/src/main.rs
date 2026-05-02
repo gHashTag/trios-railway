@@ -27,10 +27,10 @@ use std::net::{Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use rmcp::transport::sse_server::SseServerConfig;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
-use rmcp::transport::sse_server::SseServerConfig;
 use tracing_subscriber::EnvFilter;
 
 use crate::tools::TriosRailwayMcp;
@@ -78,8 +78,7 @@ async fn main() -> Result<()> {
         ct: tokio_util::sync::CancellationToken::new(),
         sse_keep_alive: Some(Duration::from_secs(15)),
     };
-    let (sse_server, sse_router) =
-        rmcp::transport::sse_server::SseServer::new(sse_config);
+    let (sse_server, sse_router) = rmcp::transport::sse_server::SseServer::new(sse_config);
     let _sse_ct = sse_server.with_service(TriosRailwayMcp::new);
 
     // --- Combined router ---
