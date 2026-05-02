@@ -51,6 +51,8 @@ members = [
     "crates/trios-igla-race",
     # L13 — Rainbow Bridge (INV-8 online sync, ONE SHOT trios#267)
     "crates/trios-rainbow-bridge",
+    # GOLD III — Hack layer (issue #468 SR-HACK-00 glossary)
+    "crates/trios-igla-race-hack",
     # Coq proof extractor (L-R1: RUST ONLY)
     "crates/trinity-extract",
     # PhD monograph build / audit / bibliography / coq-map / reproduce (Rust-only, R1)
