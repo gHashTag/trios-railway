@@ -111,7 +111,8 @@ pub struct TemplateDeployRequest {
     #[serde(default)]
     pub environment: Option<String>,
     /// Extra/override env-var pairs applied AFTER template defaults.
-    /// Use this to inject `NEON_DATABASE_URL` etc.
+    /// Only NEON_DATABASE_URL is required — all DSN aliases are derived
+    /// from it automatically (no more TRIOS_NEON_DSN / DATABASE_URL duplication).
     #[serde(default)]
     pub vars_override: Vec<KeyValue>,
     /// Wave name written into the WAVE env var. Auto-generated when omitted.
@@ -376,7 +377,8 @@ impl TriosRailwayMcp {
                        Supported templates: 'champion-repro' (27K steps), 'gate2-final' (30K steps + jepa/nca), \
                        'e2e-ttt-track-10min' (WIN sweep with early-stop at 1.07063). \
                        Creates one Railway service per seed, applies template defaults plus vars_override, \
-                       triggers redeploys, and emits one R7 audit triplet per service. Idempotent on service name."
+                       triggers redeploys, and emits one R7 audit triplet per service. Idempotent on service name. \
+                       Only NEON_DATABASE_URL is required in vars_override — no DSN aliases needed."
     )]
     async fn railway_template_deploy(
         &self,
@@ -400,6 +402,7 @@ impl TriosRailwayMcp {
                 kv("TRIOS_CHECKPOINT_INTERVAL", "100"),
                 kv("TRIOS_LANE", "A-champion-fineweb"),
                 kv("L_R8_SYNTHETIC_FALLBACK", "FORBID"),
+                kv("RAILWAY_ACC", "acc0"),
                 kv("RUST_LOG", "info"),
             ],
             "gate2-final" => vec![
@@ -414,6 +417,7 @@ impl TriosRailwayMcp {
                 kv("TRIOS_W_NCA", "0.10"),
                 kv("TRIOS_LANE", "B-gate2-final"),
                 kv("L_R8_SYNTHETIC_FALLBACK", "FORBID"),
+                kv("RAILWAY_ACC", "acc0"),
                 kv("RUST_LOG", "info"),
             ],
             "e2e-ttt-track-10min" => vec![
@@ -422,6 +426,7 @@ impl TriosRailwayMcp {
                 kv("TRIOS_CHECKPOINT_INTERVAL", "100"),
                 kv("EARLY_STOP_BPB", "1.07063"),
                 kv("TRIOS_LANE", "C-e2e-ttt-win"),
+                kv("RAILWAY_ACC", "acc0"),
                 kv("RUST_LOG", "info"),
             ],
             other => {
@@ -501,9 +506,11 @@ impl TriosRailwayMcp {
             }
 
             // 3. assemble env: template defaults + per-seed overrides + caller overrides
+            //    DSN policy: NEON_DATABASE_URL is the single source of truth.
+            //    TRIOS_CANON_NAME (not CANON_NAME) is what train_loop.rs reads.
             let mut env: Vec<KeyValue> = template_defaults.clone();
             env.push(kv("TRIOS_SEED", &seed.to_string()));
-            env.push(kv("CANON_NAME", &canon_name));
+            env.push(kv("TRIOS_CANON_NAME", &canon_name)); // fix: was CANON_NAME
             env.push(kv("WAVE", &wave));
             env.push(kv("DOC_ID", &doc_id));
             for kv_pair in &req.vars_override {
@@ -625,6 +632,7 @@ impl ServerHandler for TriosRailwayMcp {
             instructions: Some(
                 "Public MCP server controlling the IGLA Railway project. \
                  Set RAILWAY_TOKEN before invoking deploy/redeploy/delete tools. \
+                 Only NEON_DATABASE_URL is needed — no DSN aliases required. \
                  Anchor: phi^2 + phi^-2 = 3."
                     .to_string(),
             ),
