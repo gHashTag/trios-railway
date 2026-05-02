@@ -94,7 +94,10 @@ pub fn run_synthetic_trainer(cfg: &SmokeConfig) -> Vec<StepOutput> {
     }
 
     // Signal completion.
-    println!("done best_bpb={:.4}", outputs.last().map(|o| o.val_bpb).unwrap_or(0.0));
+    println!(
+        "done best_bpb={:.4}",
+        outputs.last().map(|o| o.val_bpb).unwrap_or(0.0)
+    );
     let _ = std::io::stdout().flush();
 
     outputs
@@ -124,10 +127,7 @@ pub fn run_local(cfg: &SmokeConfig) -> SmokeResult {
     let outputs = run_synthetic_trainer(cfg);
 
     // Parse the output lines back.
-    let samples: Vec<(u32, f64)> = outputs
-        .iter()
-        .map(|o| (o.step, o.val_bpb))
-        .collect();
+    let samples: Vec<(u32, f64)> = outputs.iter().map(|o| (o.step, o.val_bpb)).collect();
 
     SmokeResult {
         jsonl_lines: outputs.len(),

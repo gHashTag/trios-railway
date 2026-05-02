@@ -12,8 +12,7 @@ const KILL_CHECK_INTERVAL: i32 = 1000;
 const REPORT_INTERVAL: i32 = 100;
 const ABANDON_GAP: f32 = 2.0;
 const PREDICTED_INF_GATE2: f32 = 1.95;
-const DEFAULT_TRAINER_BIN: &str =
-    "/Users/playom/trios-trainer-igla/target/release/trios-train";
+const DEFAULT_TRAINER_BIN: &str = "/Users/playom/trios-trainer-igla/target/release/trios-train";
 const DEFAULT_WORKDIR: &str = "/Users/playom/trios-trainer-igla";
 
 #[derive(Parser)]
@@ -26,7 +25,11 @@ struct Cli {
     neon_url: String,
     #[arg(long, env = "RAILWAY_ACC", default_value = "acc0")]
     railway_acc: String,
-    #[arg(long, env = "RAILWAY_SERVICE_NAME", default_value = "opencode-seed-agent")]
+    #[arg(
+        long,
+        env = "RAILWAY_SERVICE_NAME",
+        default_value = "opencode-seed-agent"
+    )]
     railway_svc: String,
     #[arg(long, default_value = DEFAULT_TRAINER_BIN)]
     trainer_bin: String,
@@ -51,7 +54,10 @@ async fn main() -> Result<()> {
     db.health_check().await?;
     info!("Neon health check OK");
 
-    let tables_ok = db.check_table_exists("experiment_queue").await.unwrap_or(false);
+    let tables_ok = db
+        .check_table_exists("experiment_queue")
+        .await
+        .unwrap_or(false);
     if !tables_ok {
         error!("experiment_queue table not found — run DDL migration first");
         std::process::exit(1);

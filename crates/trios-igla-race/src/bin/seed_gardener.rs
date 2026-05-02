@@ -162,13 +162,7 @@ async fn gardener_tick(neon_url: &str) -> Result<()> {
                 if let Err(e) = db.mark_killed(*exp_id, &reason).await {
                     warn!("failed to kill {exp_id}: {e}");
                 }
-                let _ = db
-                    .log_gardener_decision(
-                        "prune",
-                        &reason,
-                        &[*exp_id],
-                    )
-                    .await;
+                let _ = db.log_gardener_decision("prune", &reason, &[*exp_id]).await;
             }
             SeedState::Leading => {
                 let exp = running.iter().find(|e| e.id == *exp_id);
@@ -369,12 +363,8 @@ async fn show_status(neon_url: &str) -> Result<()> {
             seed.map(|s| s.to_string()).unwrap_or("-".into()),
             budget.map(|b| b.to_string()).unwrap_or("-".into()),
             account.unwrap_or("-".into()),
-            final_bpb
-                .map(|b| format!("{b:.4}"))
-                .unwrap_or("-".into()),
-            final_step
-                .map(|s| s.to_string())
-                .unwrap_or("-".into()),
+            final_bpb.map(|b| format!("{b:.4}")).unwrap_or("-".into()),
+            final_step.map(|s| s.to_string()).unwrap_or("-".into()),
         );
     }
 
@@ -395,12 +385,12 @@ async fn show_status(neon_url: &str) -> Result<()> {
             svc.unwrap_or("-".into()),
             hb.map(|h| h.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
                 .unwrap_or("-".into()),
-            exp.map(|e| e.to_string())
-                .unwrap_or("-".into()),
+            exp.map(|e| e.to_string()).unwrap_or("-".into()),
         );
     }
 
-    let bpb_count: i64 = db.query_raw("SELECT COUNT(*) FROM bpb_samples")
+    let bpb_count: i64 = db
+        .query_raw("SELECT COUNT(*) FROM bpb_samples")
         .await?
         .into_iter()
         .next()
