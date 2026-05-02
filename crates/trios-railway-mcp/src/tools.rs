@@ -21,8 +21,8 @@ use trios_railway_core::{
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
-const IGLA_PROJECT_ID: &str = "e4fe33bb-3b09-4842-9782-7d2dea1abc9b";
-const IGLA_PROD_ENV_ID: &str = "54e293b9-00a9-4102-814d-db151636d96e";
+const IGLA_PROJECT_ID: &str = "f29aa9dd-ca0b-460f-ad24-c7680c6717fb";
+const IGLA_PROD_ENV_ID: &str = "fade0d77-af80-4d01-bc34-2ce27283d766";
 const DEFAULT_TRAINER_IMAGE: &str = "ghcr.io/ghashtag/trios-trainer-igla:latest";
 
 // -------- request payload structs --------
