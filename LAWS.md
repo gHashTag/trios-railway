@@ -1,8 +1,9 @@
-# LAWS.md — trios Constitutional Document v2.0
+# LAWS.md — trios Constitutional Document v2.1
 
-**LAWS_SCHEMA_VERSION:** 2.0
+**LAWS_SCHEMA_VERSION:** 2.1
 **Created:** 2026-04-22
-**Amended:** 2026-04-22
+**Amended:** 2026-05-02
+**Amendment:** Added §8 Onboarding with Agent Dispatch prompt reference
 
 > *"Every agent is a temporary citizen with bounded authority. Every task has a contract. Every mutation leaves evidence. Every victory must improve the long-term health of the realm."*
 
@@ -370,7 +371,27 @@ loop: DELTA | DONE | L1 compliance verified, 3 files added
 
 ---
 
-## §8 Amendment Process
+## §8 Onboarding — Agent Dispatch
+
+For dispatching agents to any GitHub issue, use the ONE-SHOT prompt:
+
+**Location:** `.trinity/prompts/agent-dispatch.md`
+
+This prompt is self-contained and includes:
+- Full LAWS v2.0 (all 25 core laws)
+- PHI LOOP+ 11-step workflow
+- Nine Kingdoms invariants (I1-I9)
+- HEARTBEAT protocol format
+- Architecture overview
+- DONE checklist
+
+**Usage:** Replace `{{ISSUE_NUMBER}}` and `{{ISSUE_TITLE}}` before dispatching. The agent autonomously chooses its soul-name per L11.
+
+**Validation:** This prompt is validated against Issue #235 (LAWS.md v2.0 implementation).
+
+---
+
+## §9 Amendment Process
 
 6-step procedure for changing LAWS.md:
 
@@ -401,7 +422,7 @@ loop: DELTA | DONE | L1 compliance verified, 3 files added
 
 ---
 
-## §9 Agent Personhood
+## §10 Agent Personhood
 
 **Soul-name rules:**
 - Format: Humorous English name related to task (per L11)
@@ -417,7 +438,7 @@ loop: DELTA | DONE | L1 compliance verified, 3 files added
 
 ---
 
-## §10 Priority Matrix
+## §11 Priority Matrix
 
 | Priority | SLA | Response Time | Examples |
 |----------|-----|---------------|----------|
@@ -428,7 +449,7 @@ loop: DELTA | DONE | L1 compliance verified, 3 files added
 
 ---
 
-## §11 Law Status Dashboard
+## §12 Law Status Dashboard
 
 L1-L25 with current status (live-checked by /tri laws):
 
@@ -462,8 +483,9 @@ L1-L25 with current status (live-checked by /tri laws):
 
 ---
 
-## §12 Closing Clause
+## §13 Closing Clause
 
 This constitution represents the sovereign law of the trios repository. Any violation constitutes a breach of trust between agents and human maintainers. The sanctity of this document is protected by CODEOWNERS, branch protection, CI gates, and cryptographic hash verification. Amendments follow §8 procedure only.
 
-**AMENDMENT TARGET:** LAWS.md v1.x → v2.0
+**AMENDMENT TARGET:** LAWS.md v2.0 → v2.1 (§8 Onboarding added)
+**NEXT TARGET:** Full CI gate implementation for all pending laws

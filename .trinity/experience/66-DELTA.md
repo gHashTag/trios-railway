@@ -1,0 +1,1 @@
+[2026-04-30T08:33:47Z] TASK: #66 Track 4 CI invariant test scaffold | DONE - Created tests/invariant_tests.zig with 42 test points (7 formats × 6 invariants), added GitHub Actions workflow, all tests passing, PR #67 created

@@ -1,0 +1,20 @@
+{
+  "repos": {
+    "gHashTag/zig-golden-float": {
+      "owner": "gHashTag",
+      "name": "zig-golden-float",
+      "branch": "feat/vendor-tri-mcp",
+      "lastAnalyzed": "2026-04-30T08:05:58.992Z",
+      "metrics": {
+        "commits": 701,
+        "branches": 116,
+        "contributors": 29,
+        "openIssues": 34,
+        "openPRs": 5
+      }
+    }
+  },
+  "prs": {},
+  "issues": {},
+  "version": "3.0.0"
+}

@@ -1,0 +1,29 @@
+[package]
+name = "gf-gradient-benchmark"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Use phi numbers from trios-trainer-igla
+trios-trainer-igla = { path = "../trios-trainer-igla" }
+
+# For CSV output
+csv = "1.3"
+
+# For math operations
+nalgebra = "0.33"
+
+# For random number generation
+rand = "0.8"
+
+[dependencies.csv]
+version = "1.3"
+features = ["serde"]
+
+[dependencies.nalgebra]
+version = "0.33"
+features = ["serde-serialize"]
+
+[dependencies.rand]
+version = "0.8"
+features = ["serde1"]
