@@ -2423,6 +2423,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "trios-igla-ops"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
 name = "trios-igla-race"
 version = "0.1.0"
 dependencies = [

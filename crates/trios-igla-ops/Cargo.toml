@@ -1,0 +1,35 @@
+[package]
+name = "trios-igla-ops"
+description = "O(1) operator utilities for the IGLA RACE fleet (7 Railway accounts, 6 lanes, Neon Postgres)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# R1 from trios#143: Rust-only, no .py/.sh. Anchor: phi^2 + phi^-2 = 3.
+
+[[bin]]
+name = "fleet-probe"
+path = "src/bin/fleet_probe.rs"
+
+[[bin]]
+name = "queue-stats"
+path = "src/bin/queue_stats.rs"
+
+[[bin]]
+name = "queue-victory-hunt"
+path = "src/bin/queue_victory_hunt.rs"
+
+[dependencies]
+anyhow.workspace      = true
+serde.workspace       = true
+serde_json.workspace  = true
+tokio.workspace       = true
+tokio-postgres.workspace        = true
+tokio-postgres-rustls.workspace = true
+rustls.workspace      = true
+webpki-roots.workspace = true
+chrono.workspace      = true
+reqwest.workspace     = true
