@@ -40,7 +40,8 @@ struct ExpConfig {
     ctx: Option<u32>,
     format: Option<String>,
     seed: Option<u64>,
-    acc: Option<String>, // legacy field, ignored for routing
+    #[allow(dead_code)] // legacy field, kept for backward-compat deserialization
+    acc: Option<String>,
 }
 
 struct Task {
