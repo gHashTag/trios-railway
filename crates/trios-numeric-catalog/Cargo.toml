@@ -1,0 +1,14 @@
+[package]
+name = "trios-numeric-catalog"
+description = "Single source of truth (SSOT) for the 63 numeric formats swept by the IGLA RACE / WAVE-GF-001 experiments."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Anchor: phi^2 + phi^-2 = 3. R1: Rust-only.
+
+[dependencies]
+serde = { workspace = true }
