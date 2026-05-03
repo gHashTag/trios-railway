@@ -2443,6 +2443,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trios-numeric-catalog"
+version = "0.0.1"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "trios-railway-audit"
 version = "0.0.1"
 dependencies = [
