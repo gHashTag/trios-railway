@@ -111,8 +111,8 @@ pub struct TemplateDeployRequest {
     #[serde(default)]
     pub environment: Option<String>,
     /// Extra/override env-var pairs applied AFTER template defaults.
-    /// Only NEON_DATABASE_URL is required — all DSN aliases are derived
-    /// from it automatically (no more TRIOS_NEON_DSN / DATABASE_URL duplication).
+    /// Only `NEON_DATABASE_URL` is required — all DSN aliases are derived
+    /// from it automatically (no more `TRIOS_NEON_DSN` / `DATABASE_URL` duplication).
     #[serde(default)]
     pub vars_override: Vec<KeyValue>,
     /// Wave name written into the WAVE env var. Auto-generated when omitted.

@@ -7,7 +7,7 @@
 //! - Real trainer binary
 //!
 //! Usage:
-//!   cargo run --example smoke_in_memory
+//!   cargo run --example `smoke_in_memory`
 
 use trios_railway_smoke::{run_local, SmokeConfig};
 
