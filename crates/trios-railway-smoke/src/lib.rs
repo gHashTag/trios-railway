@@ -65,6 +65,7 @@ pub struct StepOutput {
 ///
 /// This is the "trainer" side of the smoke test — it produces
 /// `step=N val_bpb=F` lines to stdout, exactly like `trios-train`.
+#[must_use]
 pub fn run_synthetic_trainer(cfg: &SmokeConfig) -> Vec<StepOutput> {
     // Install panic hook to ensure JSONL output on crash.
     let _ = std::panic::take_hook();
@@ -75,6 +76,8 @@ pub fn run_synthetic_trainer(cfg: &SmokeConfig) -> Vec<StepOutput> {
 
     for step in 1..=cfg.steps {
         // Deterministic BPB: starts at ~3.0, decays by 0.99 per step.
+        // step is u32 ≤ cfg.steps (small training counter), wrap to i32 is safe.
+        #[allow(clippy::cast_possible_wrap)]
         let bpb = base_bpb * decay.powi(step as i32);
         let loss = bpb * 0.8; // loss ≈ 80% of BPB
 
@@ -96,14 +99,14 @@ pub fn run_synthetic_trainer(cfg: &SmokeConfig) -> Vec<StepOutput> {
     // Signal completion.
     println!(
         "done best_bpb={:.4}",
-        outputs.last().map(|o| o.val_bpb).unwrap_or(0.0)
+        outputs.last().map_or(0.0, |o| o.val_bpb)
     );
     let _ = std::io::stdout().flush();
 
     outputs
 }
 
-/// Parse `step=N val_bpb=F` lines (mirrors seed-agent's parse_step_output).
+/// Parse `step=N val_bpb=F` lines (mirrors seed-agent's `parse_step_output`).
 pub fn parse_step_line(line: &str) -> Option<(u32, f64)> {
     let step_marker = "step=";
     let step_pos = line.find(step_marker)?;
@@ -123,6 +126,7 @@ pub fn parse_step_line(line: &str) -> Option<(u32, f64)> {
 }
 
 /// Run the full smoke pipeline locally (no DB).
+#[must_use]
 pub fn run_local(cfg: &SmokeConfig) -> SmokeResult {
     let outputs = run_synthetic_trainer(cfg);
 
