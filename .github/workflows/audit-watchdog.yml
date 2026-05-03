@@ -70,12 +70,60 @@ jobs:
       - name: Build tri-railway
         run: cargo build --release --bin tri-railway --locked
 
+      - name: Pre-probe Acc1 token (auth sanity)
+        id: acc1_probe
+        env:
+          RAILWAY_TOKEN: ${{ env.ACC1_TOKEN }}
+        run: |
+          # Honest pre-probe: hit Railway GraphQL `me` endpoint with the
+          # configured token BEFORE running tri-railway. This separates a
+          # genuine DRIFT verdict (services found, divergence detected)
+          # from PROBE_FAILED (token invalid / rotated / scope wrong),
+          # which previously masqueraded as DRIFT via the hardcoded
+          # ledger_rows:0 fallback.
+          if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
+            echo 'probe=missing_token' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          http=$(curl -sS -o /tmp/acc1_probe.json -w '%{http_code}' \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --max-time 10 \
+              -d '{"query":"query{me{id}}"}' \
+              https://backboard.railway.com/graphql/v2)
+          rc=$?
+          if [[ $rc -ne 0 ]]; then
+            echo 'probe=network_error' >> "$GITHUB_OUTPUT"
+          elif jq -e '.errors[0].message | test("Not Authorized")' /tmp/acc1_probe.json >/dev/null 2>&1; then
+            echo 'probe=not_authorized' >> "$GITHUB_OUTPUT"
+          elif [[ "$http" != "200" ]]; then
+            echo "probe=http_$http" >> "$GITHUB_OUTPUT"
+          elif jq -e '.data.me.id' /tmp/acc1_probe.json >/dev/null 2>&1; then
+            echo 'probe=ok' >> "$GITHUB_OUTPUT"
+          else
+            echo 'probe=unknown_response' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Audit Acc1 / IGLA
         id: acc1
         env:
           RAILWAY_TOKEN: ${{ env.ACC1_TOKEN }}
+          PROBE: ${{ steps.acc1_probe.outputs.probe }}
         run: |
           set +e
+          # If the pre-probe failed, do NOT run tri-railway and do NOT
+          # emit a synthetic DRIFT verdict. Emit PROBE_FAILED with the
+          # exact probe reason — this is honest reporting (R5).
+          if [[ "$PROBE" != "ok" ]]; then
+            jq -n --arg p "$PROBE" --arg proj "$ACC1_PROJECT" --argjson t $TARGET \
+              '{error:("pre-probe failed: "+$p),verdict:"PROBE_FAILED",exit_code:3,services:null,events:[],ledger_rows:null,target:$t,project:$proj,project_name:"unknown",probe_reason:$p}' \
+              > /tmp/acc1.json
+            echo 'exit=3' >> "$GITHUB_OUTPUT"
+            echo "verdict=PROBE_FAILED" >> "$GITHUB_OUTPUT"
+            cat /tmp/acc1.json
+            exit 0
+          fi
           # tri-railway prints its text summary AND a single-line JSON
           # blob (with --json) to stdout, plus tracing-subscriber lines
           # on stderr. Capture stdout to acc1.txt and stderr to acc1.log;
@@ -96,19 +144,64 @@ jobs:
           # against text summary above and tracing being merged in.
           grep -E '^\s*\{' /tmp/acc1.txt | tail -n 1 > /tmp/acc1.json
           if [[ ! -s /tmp/acc1.json ]]; then
-            echo '{"error":"no JSON line in audit run output","verdict":"DRIFT","exit_code":1,"services":0,"events":[],"ledger_rows":0,"target":'"$TARGET"',"project":"'"$ACC1_PROJECT"'","project_name":"unknown"}' > /tmp/acc1.json
+            # Honest fallback: tri-railway ran (token was OK at probe)
+            # but produced no JSON line. Mark as TOOL_ERROR, not DRIFT.
+            # ledger_rows is NULL (unknown), not 0 (which would imply
+            # the writer is silent — different failure mode).
+            jq -n --arg proj "$ACC1_PROJECT" --argjson t $TARGET \
+              '{error:"no JSON line in audit run output",verdict:"TOOL_ERROR",exit_code:4,services:null,events:[],ledger_rows:null,target:$t,project:$proj,project_name:"unknown"}' \
+              > /tmp/acc1.json
           fi
           V=$(jq -r '.verdict // "?"' /tmp/acc1.json 2>/dev/null || echo '?')
           # GitHub Actions outputs need key=value (no spaces in value
           # without explicit format), so encode the verdict.
           printf 'verdict=%s\n' "${V// /_}" >> "$GITHUB_OUTPUT"
 
+      - name: Pre-probe Acc2 token (auth sanity)
+        id: acc2_probe
+        env:
+          RAILWAY_TOKEN: ${{ env.ACC2_TOKEN }}
+        run: |
+          if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
+            echo 'probe=missing_token' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          http=$(curl -sS -o /tmp/acc2_probe.json -w '%{http_code}' \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --max-time 10 \
+              -d '{"query":"query{me{id}}"}' \
+              https://backboard.railway.com/graphql/v2)
+          rc=$?
+          if [[ $rc -ne 0 ]]; then
+            echo 'probe=network_error' >> "$GITHUB_OUTPUT"
+          elif jq -e '.errors[0].message | test("Not Authorized")' /tmp/acc2_probe.json >/dev/null 2>&1; then
+            echo 'probe=not_authorized' >> "$GITHUB_OUTPUT"
+          elif [[ "$http" != "200" ]]; then
+            echo "probe=http_$http" >> "$GITHUB_OUTPUT"
+          elif jq -e '.data.me.id' /tmp/acc2_probe.json >/dev/null 2>&1; then
+            echo 'probe=ok' >> "$GITHUB_OUTPUT"
+          else
+            echo 'probe=unknown_response' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Audit Acc2 / IGLA-MIRROR-2
         id: acc2
         env:
           RAILWAY_TOKEN: ${{ env.ACC2_TOKEN }}
+          PROBE: ${{ steps.acc2_probe.outputs.probe }}
         run: |
           set +e
+          if [[ "$PROBE" != "ok" ]]; then
+            jq -n --arg p "$PROBE" --arg proj "$ACC2_PROJECT" --argjson t $TARGET \
+              '{error:("pre-probe failed: "+$p),verdict:"PROBE_FAILED",exit_code:3,services:null,events:[],ledger_rows:null,target:$t,project:$proj,project_name:"unknown",probe_reason:$p}' \
+              > /tmp/acc2.json
+            echo 'exit=3' >> "$GITHUB_OUTPUT"
+            echo "verdict=PROBE_FAILED" >> "$GITHUB_OUTPUT"
+            cat /tmp/acc2.json
+            exit 0
+          fi
           ./target/release/tri-railway audit run \
               --project "$ACC2_PROJECT" \
               --target "$TARGET" \
@@ -121,7 +214,9 @@ jobs:
           cat /tmp/acc2.log || true
           grep -E '^\s*\{' /tmp/acc2.txt | tail -n 1 > /tmp/acc2.json
           if [[ ! -s /tmp/acc2.json ]]; then
-            echo '{"error":"no JSON line in audit run output","verdict":"DRIFT","exit_code":1,"services":0,"events":[],"ledger_rows":0,"target":'"$TARGET"',"project":"'"$ACC2_PROJECT"'","project_name":"unknown"}' > /tmp/acc2.json
+            jq -n --arg proj "$ACC2_PROJECT" --argjson t $TARGET \
+              '{error:"no JSON line in audit run output",verdict:"TOOL_ERROR",exit_code:4,services:null,events:[],ledger_rows:null,target:$t,project:$proj,project_name:"unknown"}' \
+              > /tmp/acc2.json
           fi
           V=$(jq -r '.verdict // "?"' /tmp/acc2.json 2>/dev/null || echo '?')
           printf 'verdict=%s\n' "${V// /_}" >> "$GITHUB_OUTPUT"
@@ -130,19 +225,30 @@ jobs:
         id: digest
         run: |
           ts=$(date -u +%Y-%m-%dT%H:%MZ)
+          # Honest digest: render `null` ledger_rows / services as '?' instead
+          # of '0'. '0' has a specific meaning (writer is silent, table is
+          # empty); '?' means "we couldn't even ask". Conflating the two
+          # is what made the watchdog lie for 5 days straight (issue #143
+          # comments 2026-04-27..2026-05-03).
+          fmt() { jq -r 'if . == null then "?" else tostring end' <<<"$1"; }
           a1v=$(jq -r '.verdict      // "?"' /tmp/acc1.json)
-          a1s=$(jq -r '.services     // 0'   /tmp/acc1.json)
+          a1s=$(fmt "$(jq -r '.services'    /tmp/acc1.json)")
           a1e=$(jq -r '.events|length // 0'  /tmp/acc1.json)
-          a1l=$(jq -r '.ledger_rows  // 0'   /tmp/acc1.json)
+          a1l=$(fmt "$(jq -r '.ledger_rows' /tmp/acc1.json)")
+          a1p=$(jq -r '.probe_reason // ""'  /tmp/acc1.json)
           a2v=$(jq -r '.verdict      // "?"' /tmp/acc2.json)
-          a2s=$(jq -r '.services     // 0'   /tmp/acc2.json)
+          a2s=$(fmt "$(jq -r '.services'    /tmp/acc2.json)")
           a2e=$(jq -r '.events|length // 0'  /tmp/acc2.json)
-          a2l=$(jq -r '.ledger_rows  // 0'   /tmp/acc2.json)
+          a2l=$(fmt "$(jq -r '.ledger_rows' /tmp/acc2.json)")
+          a2p=$(jq -r '.probe_reason // ""'  /tmp/acc2.json)
           x1=${{ steps.acc1.outputs.exit }}
           x2=${{ steps.acc2.outputs.exit }}
 
-          # Combined exit. PASS only when both clusters agree.
-          if [[ "$x1" == "1" || "$x2" == "1" ]]; then combined=1
+          # Combined exit. PASS only when both clusters agree on PASS.
+          # PROBE_FAILED (3) and TOOL_ERROR (4) are NOT folded into DRIFT.
+          if [[ "$x1" == "3" || "$x2" == "3" ]]; then combined=3
+          elif [[ "$x1" == "4" || "$x2" == "4" ]]; then combined=4
+          elif [[ "$x1" == "1" || "$x2" == "1" ]]; then combined=1
           elif [[ "$x1" == "0" && "$x2" == "0" ]]; then combined=0
           else combined=2
           fi
@@ -151,13 +257,17 @@ jobs:
           {
             echo "## 🛰️ Audit Watchdog — $ts (target BPB $TARGET)"
             echo ""
-            echo "| Cluster | Project | Services | Ledger rows | Drift events | Verdict | Exit |"
-            echo "|---|---|---:|---:|---:|---|---:|"
-            echo "| Acc1 / IGLA           | $ACC1_PROJECT | $a1s | $a1l | $a1e | $a1v | $x1 |"
-            echo "| Acc2 / IGLA-MIRROR-2  | $ACC2_PROJECT | $a2s | $a2l | $a2e | $a2v | $x2 |"
+            echo "| Cluster | Project | Services | Ledger rows | Drift events | Verdict | Exit | Probe |"
+            echo "|---|---|---:|---:|---:|---|---:|---|"
+            echo "| Acc1 / IGLA           | $ACC1_PROJECT | $a1s | $a1l | $a1e | $a1v | $x1 | $a1p |"
+            echo "| Acc2 / IGLA-MIRROR-2  | $ACC2_PROJECT | $a2s | $a2l | $a2e | $a2v | $x2 | $a2p |"
             echo ""
-            echo "**Combined exit:** $combined  (0 = GATE-2 PASS · 1 = DRIFT · 2 = NOT YET)"
+            echo "**Combined exit:** $combined  (0 = GATE-2 PASS · 1 = DRIFT · 2 = NOT YET · 3 = PROBE_FAILED · 4 = TOOL_ERROR)"
             echo ""
+            if [[ "$combined" == "3" ]]; then
+              echo "> ⚠️ One or both Railway tokens failed the auth pre-probe. This is **not** a DRIFT — services and ledger state are unknown until the token is repaired (see [#61 RailwayMultiClient P0](https://github.com/gHashTag/trios-railway/issues/61))."
+              echo ""
+            fi
             echo "_Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}_"
             echo ""
             echo "phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP"
@@ -188,3 +298,14 @@ jobs:
         run: |
           echo "::error::DRIFT detected on at least one cluster (acc1=${{ steps.acc1.outputs.exit }}, acc2=${{ steps.acc2.outputs.exit }})"
           exit 1
+
+      - name: Warn on PROBE_FAILED (do not fail)
+        if: ${{ steps.digest.outputs.combined == '3' }}
+        run: |
+          echo "::warning::Pre-probe failed on at least one cluster — token repair required, NOT a DRIFT (acc1=${{ steps.acc1.outputs.exit }}, acc2=${{ steps.acc2.outputs.exit }})"
+
+      - name: Warn on TOOL_ERROR (do not fail)
+        if: ${{ steps.digest.outputs.combined == '4' }}
+        run: |
+          echo "::warning::tri-railway produced no JSON output on at least one cluster — tool bug, NOT a DRIFT (acc1=${{ steps.acc1.outputs.exit }}, acc2=${{ steps.acc2.outputs.exit }})"
+
