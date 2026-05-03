@@ -292,6 +292,106 @@ pub fn check_smoke_seed_range(plan: &SmokePlan) -> Acceptance {
     Acceptance::Pass("smoke seed range")
 }
 
+// ---------------------------------------------------------------------
+// #15 — corpus=fineweb assertion (closes #109 P0).
+//
+// The fleet was historically trained on tiny_shakespeare without anyone
+// noticing — every BPB threshold below 1.85 is therefore meaningless
+// against the real FineWeb target. Smoke MUST refuse to GO unless
+// every deployed service has emitted a `corpus=<name>` line within
+// `CORPUS_LOG_DEADLINE_SECONDS` of deploy AND that name equals the
+// expected corpus.
+//
+// This check is pure: the caller (`tri smoke-race` driver) collects
+// `(canon, observed_corpus, seconds_since_deploy)` triples from
+// Railway logs and feeds them to `check_15_corpus_fineweb_logged`.
+// We never reach out to the network here.
+// ---------------------------------------------------------------------
+
+/// Hard deadline (in seconds) by which every deployed service must
+/// have logged a `corpus=...` line. Operator's brief: 2 minutes.
+pub const CORPUS_LOG_DEADLINE_SECONDS: u32 = 120;
+
+/// The exact corpus name every smoke service must report.
+pub const SMOKE_REQUIRED_CORPUS: &str = "fineweb";
+
+/// One row of operator-collected evidence for criterion #15.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorpusObservation {
+    /// The canonical name as it appears in `SmokePlanEntry.canon`.
+    pub canon: String,
+    /// What the service actually emitted via `corpus=<name>` in stdout.
+    /// `None` means "the deadline elapsed without any corpus line" —
+    /// that is itself a hard fail (the service is silent or wrong).
+    pub observed_corpus: Option<String>,
+    /// Wall-clock seconds between deploy ack and the FIRST `corpus=`
+    /// line being captured (or between deploy and the deadline if no
+    /// line was ever observed).
+    pub seconds_since_deploy: u32,
+}
+
+/// **#15** — every entry in the plan must have a matching observation
+/// whose `observed_corpus == "fineweb"` AND whose
+/// `seconds_since_deploy <= 120`. Closes #109 P0.
+///
+/// Three failure modes are reported with distinct reasons so the
+/// operator can diagnose the pipe:
+///   * `missing observation` — the orchestrator never saw a row for
+///     this canon (the smoke-race driver dropped it).
+///   * `wrong corpus` — the service logged something other than
+///     `fineweb` (tiny_shakespeare, openwebtext, ...).
+///   * `late corpus log` — the service logged the right name but
+///     after the 2-minute deadline (slow startup, suspicious).
+///   * `no corpus log` — the deadline elapsed silently.
+pub fn check_15_corpus_fineweb_logged(
+    plan: &SmokePlan,
+    observations: &BTreeMap<String, CorpusObservation>,
+) -> Acceptance {
+    for entry in &plan.entries {
+        let key = entry.canon.to_string();
+        let obs = match observations.get(&key) {
+            Some(o) => o,
+            None => {
+                return Acceptance::Fail {
+                    criterion: "#15 corpus=fineweb logged",
+                    reason: format!("{key}: missing observation (smoke-race driver did not report)"),
+                };
+            }
+        };
+        match &obs.observed_corpus {
+            None => {
+                return Acceptance::Fail {
+                    criterion: "#15 corpus=fineweb logged",
+                    reason: format!(
+                        "{key}: no corpus log within {}s deadline",
+                        CORPUS_LOG_DEADLINE_SECONDS
+                    ),
+                };
+            }
+            Some(name) if name != SMOKE_REQUIRED_CORPUS => {
+                return Acceptance::Fail {
+                    criterion: "#15 corpus=fineweb logged",
+                    reason: format!(
+                        "{key}: wrong corpus={name}, expected {SMOKE_REQUIRED_CORPUS} (closes #109 P0)"
+                    ),
+                };
+            }
+            Some(_) => {
+                if obs.seconds_since_deploy > CORPUS_LOG_DEADLINE_SECONDS {
+                    return Acceptance::Fail {
+                        criterion: "#15 corpus=fineweb logged",
+                        reason: format!(
+                            "{key}: late corpus log {}s > {}s deadline",
+                            obs.seconds_since_deploy, CORPUS_LOG_DEADLINE_SECONDS
+                        ),
+                    };
+                }
+            }
+        }
+    }
+    Acceptance::Pass("#15 corpus=fineweb logged")
+}
+
 /// Build the L-METRIC loss-kinds map that the smoke config commits to:
 /// every JEPA-T / NCA entry pins `"bpb"` as the primary loss.
 pub fn smoke_default_loss_kinds(plan: &SmokePlan) -> BTreeMap<String, String> {
@@ -323,6 +423,19 @@ pub fn run_pure_acceptance(plan: &SmokePlan, current_max_exp_id: u32) -> Vec<Acc
         check_12_exp_id_monotonic(plan),
         check_smoke_seed_range(plan),
     ]
+}
+
+/// Plan-level run including the live-infra-derived #15 corpus check.
+/// Caller passes the observation map after the smoke-race driver has
+/// finished the 2-minute warm-up window.
+pub fn run_pure_acceptance_with_corpus(
+    plan: &SmokePlan,
+    current_max_exp_id: u32,
+    corpus_observations: &BTreeMap<String, CorpusObservation>,
+) -> Vec<Acceptance> {
+    let mut out = run_pure_acceptance(plan, current_max_exp_id);
+    out.push(check_15_corpus_fineweb_logged(plan, corpus_observations));
+    out
 }
 
 #[cfg(test)]
@@ -486,5 +599,122 @@ mod tests {
     fn first_smoke_exp_id_strictly_above_champion_locks() {
         // Champions hold E0001..E0004; smoke must start strictly above.
         assert!(SMOKE_FIRST_EXP_ID > 4);
+    }
+
+    // ----- #15 corpus=fineweb tests (closes #109 P0) -----
+
+    fn corpus_obs_all(plan: &SmokePlan, name: &str, secs: u32) -> BTreeMap<String, CorpusObservation> {
+        let mut m = BTreeMap::new();
+        for entry in &plan.entries {
+            let k = entry.canon.to_string();
+            m.insert(
+                k.clone(),
+                CorpusObservation {
+                    canon: k,
+                    observed_corpus: Some(name.to_string()),
+                    seconds_since_deploy: secs,
+                },
+            );
+        }
+        m
+    }
+
+    #[test]
+    fn acceptance_15_passes_when_every_service_logs_fineweb_within_deadline() {
+        let plan = fixture_plan();
+        let obs = corpus_obs_all(&plan, "fineweb", 30);
+        assert!(check_15_corpus_fineweb_logged(&plan, &obs).is_pass());
+    }
+
+    #[test]
+    fn acceptance_15_fails_when_any_service_logs_tiny_shakespeare() {
+        let plan = fixture_plan();
+        let mut obs = corpus_obs_all(&plan, "fineweb", 30);
+        // Poison one observation with the historical bug.
+        let bad_key = plan.entries[3].canon.to_string();
+        obs.insert(
+            bad_key.clone(),
+            CorpusObservation {
+                canon: bad_key,
+                observed_corpus: Some("tiny_shakespeare".to_string()),
+                seconds_since_deploy: 30,
+            },
+        );
+        let r = check_15_corpus_fineweb_logged(&plan, &obs);
+        assert!(!r.is_pass(), "expected fail on tiny_shakespeare, got {r:?}");
+        if let Acceptance::Fail { reason, .. } = r {
+            assert!(reason.contains("wrong corpus=tiny_shakespeare"), "reason={reason}");
+            assert!(reason.contains("#109"), "reason={reason}");
+        }
+    }
+
+    #[test]
+    fn acceptance_15_fails_when_observation_missing() {
+        let plan = fixture_plan();
+        let mut obs = corpus_obs_all(&plan, "fineweb", 30);
+        let drop_key = plan.entries[5].canon.to_string();
+        obs.remove(&drop_key);
+        let r = check_15_corpus_fineweb_logged(&plan, &obs);
+        assert!(!r.is_pass());
+        if let Acceptance::Fail { reason, .. } = r {
+            assert!(reason.contains("missing observation"), "reason={reason}");
+        }
+    }
+
+    #[test]
+    fn acceptance_15_fails_on_silent_service_at_deadline() {
+        let plan = fixture_plan();
+        let mut obs = corpus_obs_all(&plan, "fineweb", 30);
+        let silent_key = plan.entries[7].canon.to_string();
+        obs.insert(
+            silent_key.clone(),
+            CorpusObservation {
+                canon: silent_key,
+                observed_corpus: None,
+                seconds_since_deploy: CORPUS_LOG_DEADLINE_SECONDS,
+            },
+        );
+        let r = check_15_corpus_fineweb_logged(&plan, &obs);
+        assert!(!r.is_pass());
+        if let Acceptance::Fail { reason, .. } = r {
+            assert!(reason.contains("no corpus log"), "reason={reason}");
+        }
+    }
+
+    #[test]
+    fn acceptance_15_fails_when_corpus_logged_after_deadline() {
+        let plan = fixture_plan();
+        let mut obs = corpus_obs_all(&plan, "fineweb", 30);
+        let slow_key = plan.entries[10].canon.to_string();
+        obs.insert(
+            slow_key.clone(),
+            CorpusObservation {
+                canon: slow_key,
+                observed_corpus: Some("fineweb".to_string()),
+                seconds_since_deploy: CORPUS_LOG_DEADLINE_SECONDS + 1,
+            },
+        );
+        let r = check_15_corpus_fineweb_logged(&plan, &obs);
+        assert!(!r.is_pass());
+        if let Acceptance::Fail { reason, .. } = r {
+            assert!(reason.contains("late corpus log"), "reason={reason}");
+        }
+    }
+
+    #[test]
+    fn run_pure_acceptance_with_corpus_yields_ten_results() {
+        let plan = fixture_plan();
+        let obs = corpus_obs_all(&plan, "fineweb", 30);
+        let results = run_pure_acceptance_with_corpus(&plan, 4, &obs);
+        assert_eq!(results.len(), 10, "9 pure + 1 corpus = 10");
+        for r in &results {
+            assert!(r.is_pass(), "criterion failed: {r:?}");
+        }
+    }
+
+    #[test]
+    fn corpus_constants_match_operator_brief() {
+        assert_eq!(CORPUS_LOG_DEADLINE_SECONDS, 120);
+        assert_eq!(SMOKE_REQUIRED_CORPUS, "fineweb");
     }
 }

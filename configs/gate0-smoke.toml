@@ -33,8 +33,18 @@ h512    = { model = "HYBRID", rng_seeds = [550, 551, 552] }
 h768    = { model = "HYBRID", rng_seeds = [560, 561, 562] }
 
 [smoke.acceptance]
-# 14-criterion gate. Pure-logic checks live in tri-gardener crate as
+# 15-criterion gate. Pure-logic checks live in tri-gardener crate as
 # Rust tests; live-infra ones are documented stubs for the operator's
-# tri smoke-race driver.
-pure_logic_count = 9
+# tri smoke-race driver. #15 closes #109 P0 (tiny_shakespeare bug).
+pure_logic_count = 10
 live_infra_count = 5
+
+[smoke.acceptance.corpus]
+# Criterion #15 — every deployed service must emit a `corpus=<name>`
+# stdout line whose value equals `required` within `deadline_seconds`
+# of deploy ack. Closes #109 P0 (the entire fleet was historically
+# trained on tiny_shakespeare without anyone noticing). Smoke is
+# NO-GO if any of the 21 services logs anything other than fineweb.
+required = "fineweb"
+deadline_seconds = 120
+stdout_pattern = "corpus=([a-z_][a-z0-9_]*)"
