@@ -515,13 +515,13 @@ mod tests {
     #[test]
     fn external_trainer_reads_text_stream_from_subprocess() {
         let shim = write_shim(
-            r#"#!/bin/sh
+            r"#!/bin/sh
 echo 'step=1 val_bpb=3.40'
 echo 'step=2 val_bpb=3.30'
 echo 'step=3 val_bpb=3.20'
 echo 'step=4 val_bpb=3.10'
 echo 'DONE: bpb=3.10'
-"#,
+",
         );
         let cfg = json!({"hidden": 384, "lr": 0.001});
         let mut tr = ExternalTrainer::with_trainer_path("IGLA-T-INT", 42, 100, &cfg, shim.clone())
@@ -552,10 +552,10 @@ echo 'DONE: bpb=3.10'
     #[test]
     fn external_trainer_handles_subprocess_crash() {
         let shim = write_shim(
-            r#"#!/bin/sh
+            r"#!/bin/sh
 echo 'step=1 val_bpb=2.99'
 exit 7
-"#,
+",
         );
         let cfg = json!({});
         let mut tr =
@@ -573,12 +573,12 @@ exit 7
     #[test]
     fn external_trainer_skips_garbage_lines() {
         let shim = write_shim(
-            r#"#!/bin/sh
+            r"#!/bin/sh
 echo 'not-a-step-line-at-all'
 echo ''
 echo 'step=1 val_bpb=2.50'
 echo 'DONE: bpb=2.50'
-"#,
+",
         );
         let cfg = json!({});
         let mut tr =
