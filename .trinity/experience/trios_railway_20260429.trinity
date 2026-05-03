@@ -1,0 +1,37 @@
+{"ts":"2026-04-29T08:48:33.066724+00:00","agent":"GENERAL","soul_name":"RailRangerOne","issue":"#81","task":"MCP tool test — verifying all 6 tools work correctly","status":"OK","phi_step":"EXPERIENCE","triplet":"RAIL=experience @ project=e4fe33bb service=- sha=3207c4d473b2b812 ts=2026-04-29T08:48:33.066331+00:00"}
+{"ts":"2026-04-29T08:48:34.139399+00:00","agent":"GENERAL","soul_name":"RailRangerOne","issue":"#20","task":"mcp deploy mcp-test-cleanup-me image=alpine:latest","status":"OK","phi_step":"PUSH","triplet":"RAIL=deploy @ project=e4fe33bb service=b15a2743 sha=5b5405437c452e72 ts=2026-04-29T08:48:34.139392+00:00"}
+{"ts":"2026-04-29T08:49:38.270554+00:00","agent":"GENERAL","soul_name":"RailRangerOne","issue":"#81","task":"MCP tool test — verifying all 6 tools","status":"OK","phi_step":"EXPERIENCE","triplet":"RAIL=experience @ project=e4fe33bb service=- sha=3207c4d473b2b812 ts=2026-04-29T08:49:38.270528+00:00"}
+{"ts":"2026-04-29T08:49:39.309616+00:00","agent":"GENERAL","soul_name":"RailRangerOne","issue":"#20","task":"mcp deploy mcp-test-cleanup image=alpine:latest","status":"OK","phi_step":"PUSH","triplet":"RAIL=deploy @ project=e4fe33bb service=649e3fde sha=5e7441cedb65db99 ts=2026-04-29T08:49:39.309612+00:00"}
+AGENT=GENERAL|SOUL=RailRangerOne|ISSUE=#81|PHI_STEP=EXPERIENCE|TASK=Tick #18 R5-deep: TWO seed-agent binaries exist. bin/seed-agent/ (trios-railway) is mock-only PR-1 scaffold — TRAINER_KIND=external bails at worker.rs:95. crates/trios-igla-race/src/bin/seed_agent.rs is THE REAL worker that shells out to trios-train. Railway services run the mock-only binary. All 123 "done" experiments are mock results (E0058 BPB=1.8618 matches MockTrainer default target_bpb=1.85). Real trainer never deployed to Railway. Attention backward pass reverted 3d25cfb. Trainer repo frozen 24h.|STATUS=OK|VERB=experience
+## BENCH-007b r_clean + fp16 reconciliation
+- ts: 2026-04-29T13:47:00Z
+- agent: OPERATOR
+- task: BENCH-007b R5 corrections per gardener ORDER
+- results:
+    - r_clean (n=4, GF64/GF32/fp16/GF16) = -0.7284 (inversion strengthens without saturating formats)
+    - r_all (n=6, all formats) = -0.6020
+    - Filed zgf#29: fp16 [-100,100] MSE discrepancy (BENCH-007b: 0.000592 vs BENCH-008b: 184, 5 orders magnitude)
+    - Whitepaper §1.1 HELD until reconciliation
+- commits: d569c6c (zgf r_clean computation)
+- issues: zgf#29 (fp16 reconciliation)
+- phi_step: φ² + φ⁻² = 3
+
+## zgf PR #30 CI fix — 2026-04-29
+- task: Fix 4 pre-existing CI failures in zig-golden-float PR #30 (test-bindings.yml)
+- root_causes:
+  - Rust: gf16_t FFI type violates non_camel_case_types lint (promoted to error by -D warnings)
+  - C++: CMakeCache.txt committed with local macOS path /Users/playra/trinity-w1/...
+  - Python: zig build shared compiles but doesn't install to zig-out/lib (shared_step depends on compile step, not install step)
+  - Go: cgo disabled by default in go test (needs CGO_ENABLED=1)
+- fixes:
+  - Rust: #[allow(non_camel_case_types)] on gf16_t struct (FFI naming convention)
+  - C++: git rm --cached cpp/build/ + add cpp/build/ to .gitignore
+  - Python: zig build shared → zig build (triggers default install step)
+  - Go: env: CGO_ENABLED: 1 in test step
+- commits: d0825f0 (zgf PR #30 CI fix), e802e6f (cpp/build purge by co-agent)
+- issues: zgf#28 (setup-zig typo), zgf#30 (this PR)
+- phi_step: φ² + φ⁻² = 3
+RAIL=fleet-auth-fix @ project=4acc sha=3a8ffda ts=2026-04-29T17:49:39Z kind=project-token-header-fix services=48
+{"ts":"2026-04-29T17:57:30.838088+00:00","agent":"GENERAL","soul_name":"RailRangerOne","issue":"#5","task":"deploy igla-smoke-test image=ghcr.io/ghashtag/trios-trainer-igla:latest","status":"OK","phi_step":"PUSH","triplet":"RAIL=deploy @ project=da1fb0c7 service=3016040d sha=b71e5e4ea6155291 ts=2026-04-29T17:57:30.838019+00:00"}
+RAIL=fix @ file=Dockerfile.mcp ts=2026-04-29T19:47Z what=added_libssl_dev_for_openssl_sys agent=GENERAL
+RAIL=fix @ crate=trios-railway-audit ts=2026-04-29T20:14Z what=openssl_to_rustls_tls_migration agent=GENERAL

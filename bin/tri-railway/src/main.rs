@@ -89,13 +89,15 @@ enum SnapshotCmd {
         #[arg(long, default_value = "disaster-recovery/fleet-snapshot.json")]
         out: PathBuf,
         /// Account triples in the form
-        /// `alias=ALIAS,token_env=NAME,project_env=NAME,label=TEXT`.
-        /// Repeatable. Each `token_env`/`project_env` is read from process
-        /// env. Tokens are NEVER written to the snapshot — only the
+        /// `alias=ALIAS,token_env=NAME,project_env=NAME,label=TEXT[,kind_env=NAME]`.
+        /// Repeatable. Each `token_env`/`project_env`/`kind_env` is read from
+        /// process env. `kind_env` should resolve to `team` or `project` and
+        /// controls the auth header (`Bearer` vs `Project-Access-Token`).
+        /// Tokens are NEVER written to the snapshot — only the
         /// secret name (`token_secret`) is recorded.
         #[arg(
             long = "account",
-            value_name = "alias=...,token_env=...,project_env=...,label=..."
+            value_name = "alias=...,token_env=...,project_env=...,label=...[,kind_env=...]"
         )]
         accounts: Vec<String>,
         /// Optional contact email to record alongside each alias.
@@ -188,6 +190,10 @@ enum ServiceCmd {
 enum AuditCmd {
     /// Print idempotent DDL for the Neon schema (issue #6).
     MigrateSql,
+    /// Apply idempotent DDL directly to Neon via `NEON_DATABASE_URL`.
+    /// Every statement is CREATE IF NOT EXISTS / CREATE OR REPLACE, so
+    /// re-running is always safe.
+    Migrate,
     /// Run an online audit pass: list services, detect drift, compute Gate-2
     /// verdict, seal an R7 triplet to the experience log. Exit codes:
     /// 0 = Gate-2 PASS, 1 = drift detected (error severity), 2 = NOT YET.
@@ -289,6 +295,14 @@ async fn main() -> Result<()> {
             for stmt in migrations::ddl_statements() {
                 println!("{stmt};");
             }
+        }
+        Cmd::Audit {
+            sub: AuditCmd::Migrate,
+        } => {
+            let neon_url = std::env::var("NEON_DATABASE_URL")
+                .map_err(|_| anyhow::anyhow!("NEON_DATABASE_URL not set"))?;
+            let count = migrations::run_migrate(&neon_url).await?;
+            println!("applied {count} DDL statements to Neon");
         }
         Cmd::Audit {
             sub:
@@ -743,6 +757,7 @@ struct SnapshotDoc<'a> {
     totals: serde_json::Value,
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_snapshot_fleet(
     out: PathBuf,
     accounts: Vec<String>,
@@ -762,15 +777,24 @@ async fn run_snapshot_fleet(
         let label = kv.get("label").cloned().unwrap_or_else(|| "?".to_string());
         let token_env = kv.get("token_env").cloned().unwrap_or_default();
         let project_env = kv.get("project_env").cloned().unwrap_or_default();
+        let kind_env = kv.get("kind_env").cloned().unwrap_or_default();
 
         let token = std::env::var(&token_env).ok();
         let project = std::env::var(&project_env).ok();
+        let kind = if kind_env.is_empty() {
+            None
+        } else {
+            std::env::var(&kind_env).ok()
+        };
 
         let (project_id, project_name, environments, services) = if let (Some(tok), Some(proj)) =
             (token, project)
         {
             std::env::set_var("RAILWAY_TOKEN", &tok);
-            std::env::set_var("RAILWAY_TOKEN_AUTH", "team");
+            // Respect per-account token kind; default to "project" since most
+            // Railway tokens are project-scoped and use Project-Access-Token header.
+            let auth_val = kind.as_deref().unwrap_or("project");
+            std::env::set_var("RAILWAY_TOKEN_AUTH", auth_val);
             let client = Client::from_env().map_err(|e| anyhow::anyhow!("from_env: {e}"))?;
             let pid = ProjectId::from(proj);
             match Q::project_view(&client, &pid).await {
