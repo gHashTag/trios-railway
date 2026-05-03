@@ -79,11 +79,7 @@ impl Client {
     /// `serviceDelete` is the closest semantics for cull.
     ///
     /// **Caller**: pre-archive any state you want to keep.
-    pub async fn stop(
-        &self,
-        service: &ServiceId,
-        env: &EnvironmentId,
-    ) -> Result<(), ClientError> {
+    pub async fn stop(&self, service: &ServiceId, env: &EnvironmentId) -> Result<(), ClientError> {
         M::service_delete(self, service).await?;
         let _ = RailwayHash::seal(
             "stop",

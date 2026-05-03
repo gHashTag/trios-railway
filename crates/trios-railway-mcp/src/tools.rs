@@ -17,8 +17,9 @@ use serde_json::json;
 
 use trios_railway_core::{
     multiclient::{AccountId, RailwayMultiClient},
-    mutations as M, queries as Q, transport::Client, EnvironmentId, ProjectId, RailwayHash,
-    ServiceId,
+    mutations as M, queries as Q,
+    transport::Client,
+    EnvironmentId, ProjectId, RailwayHash, ServiceId,
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
@@ -675,9 +676,7 @@ fn build_client_for(alias: Option<&str>) -> Result<Client, McpError> {
     };
     let id = AccountId::from_alias(alias).ok_or_else(|| {
         McpError::invalid_params(
-            format!(
-                "unknown account alias {alias:?}; expected acc0/acc1/acc2/acc3"
-            ),
+            format!("unknown account alias {alias:?}; expected acc0/acc1/acc2/acc3"),
             None,
         )
     })?;

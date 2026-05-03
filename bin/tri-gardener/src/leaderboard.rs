@@ -7,9 +7,9 @@
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 
+use crate::bpb_source::BpbSample;
 #[cfg(test)]
 use crate::bpb_source::SourceTag;
-use crate::bpb_source::BpbSample;
 use crate::ledger::ARCHITECTURAL_FLOOR_BPB;
 
 pub const RACE_START_RFC3339: &str = "2026-04-27T18:00:00Z";
@@ -86,7 +86,9 @@ pub fn render_leaderboard(ctx: &LeaderboardCtx) -> String {
     let elapsed = ctx.now.signed_duration_since(race_start);
     let t_hours = elapsed.num_minutes() as f64 / 60.0;
 
-    let local = ctx.now.with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
+    let local = ctx
+        .now
+        .with_timezone(&chrono::FixedOffset::east_opt(7 * 3600).unwrap());
 
     s.push_str(&format!(
         "## LIVE LEADERBOARD — T+{:.2}h ({} +07)\n\n",
@@ -135,10 +137,8 @@ pub fn render_leaderboard(ctx: &LeaderboardCtx) -> String {
     }
 
     // --- tracking rows for expected seeds without samples ---
-    let observed: std::collections::HashSet<(u32, String)> = ranked
-        .iter()
-        .map(|s| (s.seed, s.lane.clone()))
-        .collect();
+    let observed: std::collections::HashSet<(u32, String)> =
+        ranked.iter().map(|s| (s.seed, s.lane.clone())).collect();
     for exp in &ctx.expected {
         if observed.contains(&(exp.seed, exp.lane.clone())) {
             continue;
@@ -183,9 +183,27 @@ pub fn render_leaderboard(ctx: &LeaderboardCtx) -> String {
         ctx.now.format("%Y-%m-%d %H:%MZ"),
         format_t_plus(elapsed)
     ));
-    push_eta(&mut s, race_start, RUNG1_OFFSET_HOURS, "Rung-1 (cull > 2.30)", ctx.now);
-    push_eta(&mut s, race_start, RUNG2_OFFSET_HOURS, "Rung-2 (cull > 2.20)", ctx.now);
-    push_eta(&mut s, race_start, RUNG3_OFFSET_HOURS, "Rung-3 (cull > 2.05)", ctx.now);
+    push_eta(
+        &mut s,
+        race_start,
+        RUNG1_OFFSET_HOURS,
+        "Rung-1 (cull > 2.30)",
+        ctx.now,
+    );
+    push_eta(
+        &mut s,
+        race_start,
+        RUNG2_OFFSET_HOURS,
+        "Rung-2 (cull > 2.20)",
+        ctx.now,
+    );
+    push_eta(
+        &mut s,
+        race_start,
+        RUNG3_OFFSET_HOURS,
+        "Rung-3 (cull > 2.05)",
+        ctx.now,
+    );
     let deadline: DateTime<Utc> = GATE2_DEADLINE_RFC3339.parse().unwrap();
     let dl_elapsed = deadline.signed_duration_since(race_start);
     s.push_str(&format!(
@@ -257,19 +275,67 @@ pub fn default_phase1_expected() -> Vec<ExpectedSeed> {
     };
     vec![
         // train_v2 quorum slots (target Gate-2 OFFICIAL): pending portage
-        mk(42, "train_v2 (h=1024 ctx=12 14-gram WT+resid)", "local Mac champion @ 94.5K BPB=1.8921 — Railway portage pending"),
-        mk(43, "train_v2 (h=1024 ctx=12 14-gram WT+resid)", "Railway portage pending (quorum-3)"),
-        mk(44, "train_v2 (h=1024 ctx=12 14-gram WT+resid)", "Railway portage pending (quorum-3)"),
+        mk(
+            42,
+            "train_v2 (h=1024 ctx=12 14-gram WT+resid)",
+            "local Mac champion @ 94.5K BPB=1.8921 — Railway portage pending",
+        ),
+        mk(
+            43,
+            "train_v2 (h=1024 ctx=12 14-gram WT+resid)",
+            "Railway portage pending (quorum-3)",
+        ),
+        mk(
+            44,
+            "train_v2 (h=1024 ctx=12 14-gram WT+resid)",
+            "Railway portage pending (quorum-3)",
+        ),
         // Old Phase-1 attention/JEPA fleet — architecture lost the race; cull-pending
-        mk(210, "L1 attn-backward (cull-pending: arch lost)", "Acc1 svc a2a24d1c"),
-        mk(211, "L1 attn-backward (cull-pending: arch lost)", "Acc1 svc fcd0cfbe"),
-        mk(212, "L1 attn-backward (cull-pending: arch lost)", "Acc1 svc 861b9501"),
-        mk(220, "L2 JEPA-T (cull-pending: arch lost)", "Acc1 svc eb9d7525"),
-        mk(221, "L2 JEPA-T (cull-pending: arch lost)", "Acc1 svc 05dd3cb0"),
-        mk(222, "L2 JEPA-T (cull-pending: arch lost)", "Acc1 svc e32af244"),
-        mk(240, "L4 h=2000 (cull-pending: arch lost)", "Acc1 svc c9c5324d"),
-        mk(241, "L4 h=2000 (cull-pending: arch lost)", "Acc1 svc 8e64cf14"),
-        mk(242, "L4 h=2000 (cull-pending: arch lost)", "Acc1 svc 3de0f6ad"),
+        mk(
+            210,
+            "L1 attn-backward (cull-pending: arch lost)",
+            "Acc1 svc a2a24d1c",
+        ),
+        mk(
+            211,
+            "L1 attn-backward (cull-pending: arch lost)",
+            "Acc1 svc fcd0cfbe",
+        ),
+        mk(
+            212,
+            "L1 attn-backward (cull-pending: arch lost)",
+            "Acc1 svc 861b9501",
+        ),
+        mk(
+            220,
+            "L2 JEPA-T (cull-pending: arch lost)",
+            "Acc1 svc eb9d7525",
+        ),
+        mk(
+            221,
+            "L2 JEPA-T (cull-pending: arch lost)",
+            "Acc1 svc 05dd3cb0",
+        ),
+        mk(
+            222,
+            "L2 JEPA-T (cull-pending: arch lost)",
+            "Acc1 svc e32af244",
+        ),
+        mk(
+            240,
+            "L4 h=2000 (cull-pending: arch lost)",
+            "Acc1 svc c9c5324d",
+        ),
+        mk(
+            241,
+            "L4 h=2000 (cull-pending: arch lost)",
+            "Acc1 svc 8e64cf14",
+        ),
+        mk(
+            242,
+            "L4 h=2000 (cull-pending: arch lost)",
+            "Acc1 svc 3de0f6ad",
+        ),
     ]
 }
 
@@ -344,7 +410,11 @@ mod tests {
         };
         let ctx = LeaderboardCtx {
             now,
-            samples: vec![mk(43, 2.1919, 81000), mk(44, 2.2024, 81000), mk(45, 2.1944, 81000)],
+            samples: vec![
+                mk(43, 2.1919, 81000),
+                mk(44, 2.2024, 81000),
+                mk(45, 2.1944, 81000),
+            ],
             expected: vec![],
             fleet: empty_fleet(),
         };

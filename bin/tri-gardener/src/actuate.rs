@@ -10,8 +10,8 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use trios_railway_core::{
     Client as RailClient, ClientError, DeployId, EnvironmentId, ProjectId, ServiceId,
@@ -46,11 +46,7 @@ pub trait RailwayActuator: Send + Sync {
         env: &EnvironmentId,
     ) -> Result<DeployId, ClientError>;
 
-    async fn stop(
-        &self,
-        service: &ServiceId,
-        env: &EnvironmentId,
-    ) -> Result<(), ClientError>;
+    async fn stop(&self, service: &ServiceId, env: &EnvironmentId) -> Result<(), ClientError>;
 }
 
 #[async_trait]
@@ -83,11 +79,7 @@ impl RailwayActuator for RailClient {
         RailClient::redeploy(self, service, env).await
     }
 
-    async fn stop(
-        &self,
-        service: &ServiceId,
-        env: &EnvironmentId,
-    ) -> Result<(), ClientError> {
+    async fn stop(&self, service: &ServiceId, env: &EnvironmentId) -> Result<(), ClientError> {
         RailClient::stop(self, service, env).await
     }
 }
@@ -253,7 +245,10 @@ impl RailwayActuator for MockActuator {
             .lock()
             .unwrap()
             .push(format!("deploy_service:{name}"));
-        if matches!(self.fail_on_verb.lock().unwrap().as_deref(), Some("deploy_service")) {
+        if matches!(
+            self.fail_on_verb.lock().unwrap().as_deref(),
+            Some("deploy_service")
+        ) {
             return Err(ClientError::GraphQl("mock-fail".into()));
         }
         Ok(ServiceId::new(format!("svc-{name}")))
@@ -282,11 +277,7 @@ impl RailwayActuator for MockActuator {
             .push(format!("redeploy:{}", service.as_str()));
         Ok(DeployId::new("d-mock".to_string()))
     }
-    async fn stop(
-        &self,
-        service: &ServiceId,
-        _env: &EnvironmentId,
-    ) -> Result<(), ClientError> {
+    async fn stop(&self, service: &ServiceId, _env: &EnvironmentId) -> Result<(), ClientError> {
         self.calls
             .lock()
             .unwrap()
@@ -318,10 +309,7 @@ mod tests {
         };
         let oc = apply_decision(&m, &project(), &env_(), IMG, &d).await;
         assert_eq!(oc, Outcome::Applied);
-        assert_eq!(
-            m.calls(),
-            vec!["deploy_service:trios-train-L4-seed-240"]
-        );
+        assert_eq!(m.calls(), vec!["deploy_service:trios-train-L4-seed-240"]);
     }
 
     #[tokio::test]
@@ -403,7 +391,7 @@ mod tests {
     async fn live_actuation_writes_to_ledger_via_mock_pair() {
         // PR-2 contract test: actuator + ledger + apply_decision_batch
         // compose into a write to MockLedger.
-        use crate::ledger::{build_row, MockLedger, LedgerSink};
+        use crate::ledger::{build_row, LedgerSink, MockLedger};
         use chrono::{TimeZone, Utc};
         let m = MockActuator::default();
         let kill = KillSwitch::new();

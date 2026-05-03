@@ -103,7 +103,9 @@ mod tests {
         // Contract test: tokio's paused clock advances by 3600s 5 times,
         // and the handler should be called 5 times.
         let count = Arc::new(AtomicU64::new(0));
-        let handler = CountingHandler { count: count.clone() };
+        let handler = CountingHandler {
+            count: count.clone(),
+        };
         let stop = Arc::new(AtomicU64::new(0));
         let stop_check = {
             let stop = stop.clone();
@@ -111,9 +113,7 @@ mod tests {
         };
 
         let interval = Duration::from_secs(3600);
-        let drive = tokio::spawn(async move {
-            serve_loop(interval, &handler, stop_check).await
-        });
+        let drive = tokio::spawn(async move { serve_loop(interval, &handler, stop_check).await });
 
         // Drive the clock forward in 3600s steps and bump the counter
         // so the stop predicate eventually fires.
@@ -136,7 +136,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn serve_loop_exits_when_stop_is_true_at_start() {
         let count = Arc::new(AtomicU64::new(0));
-        let handler = CountingHandler { count: count.clone() };
+        let handler = CountingHandler {
+            count: count.clone(),
+        };
         let res = serve_loop(
             Duration::from_secs(60),
             &handler,

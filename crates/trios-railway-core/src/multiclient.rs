@@ -48,7 +48,12 @@ impl AccountId {
     }
 
     pub fn all() -> [AccountId; 4] {
-        [AccountId::Acc0, AccountId::Acc1, AccountId::Acc2, AccountId::Acc3]
+        [
+            AccountId::Acc0,
+            AccountId::Acc1,
+            AccountId::Acc2,
+            AccountId::Acc3,
+        ]
     }
 
     /// Parse `"acc0"`/`"ACC1"`/`"acc-2"` etc. into the enum.
@@ -87,7 +92,10 @@ impl std::fmt::Debug for AccountCreds {
             // Token deliberately redacted. R5: never silent — show the
             // length only, so the operator can confirm a non-empty
             // secret without leaking it.
-            .field("token", &format!("<redacted len={}>", self.token.expose_secret().len()))
+            .field(
+                "token",
+                &format!("<redacted len={}>", self.token.expose_secret().len()),
+            )
             .finish()
     }
 }
@@ -158,11 +166,7 @@ impl RailwayMultiClient {
 
     /// Register an account. Returns `Err` if the credentials cannot be
     /// converted into a `Client` (e.g. empty token, malformed UUID).
-    pub fn register(
-        &mut self,
-        id: AccountId,
-        creds: AccountCreds,
-    ) -> Result<(), RailwayError> {
+    pub fn register(&mut self, id: AccountId, creds: AccountCreds) -> Result<(), RailwayError> {
         let token = creds.token.expose_secret().to_string();
         let client = Client::with_token_and_mode(token, creds.auth)?;
         self.clients.insert(id, (creds, client));
@@ -209,12 +213,9 @@ impl RailwayMultiClient {
                 Ok(t) if !t.is_empty() => t,
                 _ => continue, // slot not configured
             };
-            let project = std::env::var(format!("RAILWAY_PROJECT_ID_{suffix}"))
-                .unwrap_or_default();
-            let env = std::env::var(format!("RAILWAY_ENVIRONMENT_ID_{suffix}"))
-                .unwrap_or_default();
-            let kind = std::env::var(format!("RAILWAY_TOKEN_KIND_{suffix}"))
-                .unwrap_or_default();
+            let project = std::env::var(format!("RAILWAY_PROJECT_ID_{suffix}")).unwrap_or_default();
+            let env = std::env::var(format!("RAILWAY_ENVIRONMENT_ID_{suffix}")).unwrap_or_default();
+            let kind = std::env::var(format!("RAILWAY_TOKEN_KIND_{suffix}")).unwrap_or_default();
             let auth = parse_auth_mode(&token, &kind);
             let creds = AccountCreds {
                 token: SecretString::from(token),
@@ -335,12 +336,21 @@ mod tests {
     fn registered_lists_accounts_in_order() {
         let mut mc = RailwayMultiClient::new();
         // Register in mixed order — registered() must come back sorted.
-        mc.register(AccountId::Acc2, fake_creds("t2", "p2", "e2", AuthMode::Team))
-            .unwrap();
-        mc.register(AccountId::Acc0, fake_creds("t0", "p0", "e0", AuthMode::Team))
-            .unwrap();
-        mc.register(AccountId::Acc1, fake_creds("t1", "p1", "e1", AuthMode::Team))
-            .unwrap();
+        mc.register(
+            AccountId::Acc2,
+            fake_creds("t2", "p2", "e2", AuthMode::Team),
+        )
+        .unwrap();
+        mc.register(
+            AccountId::Acc0,
+            fake_creds("t0", "p0", "e0", AuthMode::Team),
+        )
+        .unwrap();
+        mc.register(
+            AccountId::Acc1,
+            fake_creds("t1", "p1", "e1", AuthMode::Team),
+        )
+        .unwrap();
         assert_eq!(
             mc.registered(),
             vec![AccountId::Acc0, AccountId::Acc1, AccountId::Acc2]

@@ -176,7 +176,14 @@ pub async fn loop_once_live(
         ledger.write_tick(&rows).await?;
         return Ok(decisions
             .into_iter()
-            .map(|d| (d, Outcome::Skipped { reason: "GARDENER_DISABLED".into() }))
+            .map(|d| {
+                (
+                    d,
+                    Outcome::Skipped {
+                        reason: "GARDENER_DISABLED".into(),
+                    },
+                )
+            })
             .collect());
     }
 

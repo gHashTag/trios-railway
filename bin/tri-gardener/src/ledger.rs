@@ -93,8 +93,7 @@ impl PgLedger {
     /// Connect using `NEON_DATABASE_URL`. Three retries with exponential
     /// backoff (250ms, 500ms, 1000ms) before giving up.
     pub async fn from_env() -> Result<Self> {
-        let url = std::env::var("NEON_DATABASE_URL")
-            .context("NEON_DATABASE_URL not set")?;
+        let url = std::env::var("NEON_DATABASE_URL").context("NEON_DATABASE_URL not set")?;
         let mut last_err: Option<anyhow::Error> = None;
         for attempt in 0..3 {
             match tokio_postgres::connect(&url, NoTls).await {
@@ -233,10 +232,7 @@ mod tests {
         assert_eq!(row.lane.as_deref(), Some("L1"));
         assert_eq!(row.seed, Some(210));
         assert_eq!(row.outcome, Outcome::Applied);
-        assert_eq!(
-            row.decision_json["outcome"].as_str(),
-            Some("applied")
-        );
+        assert_eq!(row.decision_json["outcome"].as_str(), Some("applied"));
     }
 
     #[test]
@@ -301,7 +297,13 @@ mod tests {
         let d = Decision::Noop {
             reason: "warmup".into(),
         };
-        let row = build_row(now, &d, Outcome::Skipped { reason: "review".into() });
+        let row = build_row(
+            now,
+            &d,
+            Outcome::Skipped {
+                reason: "review".into(),
+            },
+        );
         mock.write_tick(&[row.clone()]).await.unwrap();
         let rows = mock.rows.lock().unwrap();
         assert_eq!(rows.len(), 1);

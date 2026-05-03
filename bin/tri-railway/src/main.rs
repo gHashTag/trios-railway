@@ -640,11 +640,7 @@ async fn run_service(cmd: ServiceCmd) -> Result<()> {
             let sid = ServiceId::from(service);
             let pairs = parse_var_pairs(&vars)?;
             client.set_vars(&pid, &eid, &sid, &pairs).await?;
-            println!(
-                "set_vars: {} keys upserted on service {}",
-                pairs.len(),
-                sid
-            );
+            println!("set_vars: {} keys upserted on service {}", pairs.len(), sid);
         }
         ServiceCmd::Logs {
             service,

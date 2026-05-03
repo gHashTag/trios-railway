@@ -284,10 +284,22 @@ impl IglaCanon {
 /// rejected (Tripwire #98). Add a new entry here — in the same PR —
 /// the moment a Gate-2 quorum is officially confirmed.
 pub const CHAMPION_LOCKS: &[(u32, &str)] = &[
-    (1, "E0001 — IGLA-HYBRID-FP32 BPB=2.1919 rng43 (locked 2026-04-27T16:38Z)"),
-    (2, "E0002 — IGLA-HYBRID-FP32 BPB=2.1944 rng45 (locked 2026-04-27T16:38Z)"),
-    (3, "E0003 — IGLA-HYBRID-FP32 BPB=2.2024 rng44 (locked 2026-04-27T16:38Z)"),
-    (4, "E0004 — IGLA-TRAIN_V2-FP32 BPB=1.8921 rng42 (NEW CHAMPION 2026-04-28T05:30Z)"),
+    (
+        1,
+        "E0001 — IGLA-HYBRID-FP32 BPB=2.1919 rng43 (locked 2026-04-27T16:38Z)",
+    ),
+    (
+        2,
+        "E0002 — IGLA-HYBRID-FP32 BPB=2.1944 rng45 (locked 2026-04-27T16:38Z)",
+    ),
+    (
+        3,
+        "E0003 — IGLA-HYBRID-FP32 BPB=2.2024 rng44 (locked 2026-04-27T16:38Z)",
+    ),
+    (
+        4,
+        "E0004 — IGLA-TRAIN_V2-FP32 BPB=1.8921 rng42 (NEW CHAMPION 2026-04-28T05:30Z)",
+    ),
 ];
 
 /// Returns the lock reason if `exp_id` is one of the immutable champion

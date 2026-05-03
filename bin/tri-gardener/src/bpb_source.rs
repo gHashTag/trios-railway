@@ -285,10 +285,8 @@ impl GithubIssueComments {
 /// `(seed, step, bpb)` triples in document order.
 pub fn parse_alpha_bpb_block(text: &str) -> Vec<(u32, u64, f64)> {
     use regex::Regex;
-    let re = Regex::new(
-        r"BPB[=\s]+([0-9]+\.[0-9]+)\s*@\s*step[=\s]+(\d+)\s+seed[=\s]+(\d+)",
-    )
-    .unwrap();
+    let re =
+        Regex::new(r"BPB[=\s]+([0-9]+\.[0-9]+)\s*@\s*step[=\s]+(\d+)\s+seed[=\s]+(\d+)").unwrap();
     re.captures_iter(text)
         .filter_map(|c| {
             let bpb = c.get(1)?.as_str().parse::<f64>().ok()?;
