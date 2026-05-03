@@ -697,6 +697,8 @@ fn build_client_for(alias: Option<&str>) -> Result<Client, McpError> {
         )
     })?;
     Ok(client.clone())
+}
+
 fn kv(key: &str, value: &str) -> KeyValue {
     KeyValue {
         key: key.to_string(),
