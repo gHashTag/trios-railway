@@ -1,0 +1,12 @@
+[package]
+name = "trios-numeric-catalog"
+version = "0.1.0"
+edition = "2021"
+description = "SSOT catalog of 63 numeric formats for IGLA fleet experiments"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+strum = { version = "0.26", features = ["derive"] }
+
+[dev-dependencies]

@@ -2,5 +2,6 @@
 members = [
     "crates/trios-trainer-igla",
     "crates/trios-igla-race-hack",
+    "crates/trios-numeric-catalog",
 ]
 resolver = "2"
