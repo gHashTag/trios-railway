@@ -60,7 +60,7 @@ impl AccountId {
     pub fn from_alias(s: &str) -> Option<AccountId> {
         let normalized: String = s
             .chars()
-            .filter(|c| c.is_ascii_alphanumeric())
+            .filter(char::is_ascii_alphanumeric)
             .map(|c| c.to_ascii_lowercase())
             .collect();
         match normalized.as_str() {
@@ -110,7 +110,8 @@ pub enum Scope {
 }
 
 impl Scope {
-    pub fn iter(&self) -> Vec<AccountId> {
+    #[must_use]
+    pub fn to_vec(&self) -> Vec<AccountId> {
         match self {
             Scope::One(a) => vec![*a],
             Scope::All => AccountId::all().to_vec(),
@@ -276,6 +277,14 @@ fn is_uuid_like(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Serialise tests that mutate process-global env vars; cargo runs tests in
+    /// parallel by default and `from_env_*` stomp on each other otherwise.
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn fake_creds(token: &str, project: &str, env: &str, auth: AuthMode) -> AccountCreds {
         AccountCreds {
@@ -323,7 +332,7 @@ mod tests {
     #[test]
     fn debug_format_does_not_leak_token() {
         let creds = fake_creds("super-secret-token-abc-123", "p", "e", AuthMode::Team);
-        let dbg = format!("{:?}", creds);
+        let dbg = format!("{creds:?}");
         assert!(
             !dbg.contains("super-secret-token"),
             "Debug must not leak token, got: {dbg}"
@@ -360,7 +369,7 @@ mod tests {
     #[test]
     fn scope_all_iterates_in_acc0_acc1_acc2_acc3_order() {
         let s = Scope::All;
-        let v = s.iter();
+        let v = s.to_vec();
         assert_eq!(
             v,
             vec![
@@ -375,7 +384,7 @@ mod tests {
     #[test]
     fn scope_one_yields_single_account() {
         let s = Scope::One(AccountId::Acc2);
-        assert_eq!(s.iter(), vec![AccountId::Acc2]);
+        assert_eq!(s.to_vec(), vec![AccountId::Acc2]);
     }
 
     #[test]
@@ -395,6 +404,7 @@ mod tests {
 
     #[test]
     fn from_env_skips_empty_slots() {
+        let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         // Ensure no env vars from other tests leak in. We set Acc0
         // only, leaving Acc1..Acc3 unset.
         let prev: Vec<(String, Option<String>)> = [
@@ -432,6 +442,7 @@ mod tests {
 
     #[test]
     fn from_env_picks_up_four_accounts_when_all_set() {
+        let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
         for (i, suffix) in ["ACC0", "ACC1", "ACC2", "ACC3"].iter().enumerate() {
             std::env::set_var(format!("RAILWAY_TOKEN_{suffix}"), format!("tok-{i}"));
             std::env::set_var(format!("RAILWAY_PROJECT_ID_{suffix}"), format!("p{i}"));

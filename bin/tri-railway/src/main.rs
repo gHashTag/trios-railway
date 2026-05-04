@@ -535,6 +535,7 @@ fn parse_var(s: &str) -> Result<(String, String)> {
     Ok((k.to_string(), v.to_string()))
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_service(cmd: ServiceCmd) -> Result<()> {
     let client =
         Client::from_env().map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?;

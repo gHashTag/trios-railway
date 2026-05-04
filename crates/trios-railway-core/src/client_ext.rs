@@ -103,7 +103,9 @@ mod tests {
     fn method_signatures_present() {
         // Compile-time assertion: methods exist with the expected arity.
         // If this test compiles, the API surface is in place.
+        #[allow(clippy::used_underscore_items)]
         fn _assert_send<T: Send>() {}
+        #[allow(clippy::used_underscore_items)]
         _assert_send::<Client>();
     }
 
@@ -129,7 +131,7 @@ mod tests {
         let p = ProjectId::new("p".to_string());
         let e = EnvironmentId::new("e".to_string());
         let res = c.deploy_service(&p, &e, "x", "img").await;
-        assert!(res.is_err(), "expected http error, got {:?}", res);
+        assert!(res.is_err(), "expected http error, got {res:?}");
     }
 
     #[tokio::test]

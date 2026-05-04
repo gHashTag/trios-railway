@@ -5,7 +5,9 @@
 //! probe-failed accounts, network errors) become rows in the
 //! "tracking" section, not panics or silent skips.
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+#[cfg(test)]
+use chrono::TimeZone;
+use chrono::{DateTime, Duration, Utc};
 
 use crate::bpb_source::BpbSample;
 #[cfg(test)]
