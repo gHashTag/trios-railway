@@ -3,9 +3,17 @@ use trios_igla_race::pull_queue::PullQueueDb;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // R5 / GitGuardian: connection string MUST come from CLI arg or NEON_DATABASE_URL env var.
+    // Hardcoded credentials were redacted (see GitGuardian incident 31559427); rotate the
+    // exposed Neon password before running this tool.
     let neon_url = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "postgresql://neondb_owner:npg_NHBC5hdbM0Kx@ep-curly-math-ao51pquy-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require".to_string());
+        .or_else(|| std::env::var("NEON_DATABASE_URL").ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "reset_queue: pass postgres URL as $1 or set NEON_DATABASE_URL — never hardcode"
+            )
+        })?;
 
     let db = PullQueueDb::connect(&neon_url).await?;
     eprintln!("Connected to Neon");

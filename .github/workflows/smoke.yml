@@ -36,7 +36,7 @@ jobs:
         run: cargo test -p trios-railway-smoke --lib
 
       - name: Run smoke pipeline test
-        run: cargo test -p trios-railway-smoke --features ci --lib
+        run: cargo test -p trios-railway-smoke --lib
 
       - name: Check clippy
         run: cargo clippy -p trios-railway-smoke -- -D warnings
@@ -101,7 +101,7 @@ jobs:
         run: cargo build -p trios-railway-audit
 
       - name: Generate DDL
-        run: cargo run -p trios-igla-race --bin tri-railway audit migrate-sql > /tmp/ddl.sql
+        run: cargo run -p tri-railway --bin tri-railway audit migrate-sql > /tmp/ddl.sql
 
       - name: Verify DDL output
         run: |
