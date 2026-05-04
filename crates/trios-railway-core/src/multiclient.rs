@@ -404,7 +404,9 @@ mod tests {
 
     #[test]
     fn from_env_skips_empty_slots() {
-        let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Ensure no env vars from other tests leak in. We set Acc0
         // only, leaving Acc1..Acc3 unset.
         let prev: Vec<(String, Option<String>)> = [
@@ -442,7 +444,9 @@ mod tests {
 
     #[test]
     fn from_env_picks_up_four_accounts_when_all_set() {
-        let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (i, suffix) in ["ACC0", "ACC1", "ACC2", "ACC3"].iter().enumerate() {
             std::env::set_var(format!("RAILWAY_TOKEN_{suffix}"), format!("tok-{i}"));
             std::env::set_var(format!("RAILWAY_PROJECT_ID_{suffix}"), format!("p{i}"));
