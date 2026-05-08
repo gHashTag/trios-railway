@@ -2,7 +2,8 @@
 # Built from crates/trios-igla-race, single binary.
 #
 # Required:
-#   NEON_DATABASE_URL=postgres://...
+#   RAILWAY_POSTGRES_URL=postgres://...
+#   (legacy NEON_DATABASE_URL accepted as fallback per L-NEON-RENAME)
 # Optional (log label, no routing effect):
 #   SCARAB_ACCOUNT=acc0
 

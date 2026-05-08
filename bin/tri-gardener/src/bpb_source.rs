@@ -77,9 +77,12 @@ pub struct NeonBpbSamples {
 
 impl NeonBpbSamples {
     pub fn from_env() -> Self {
-        Self {
-            database_url: std::env::var("NEON_DATABASE_URL").ok(),
-        }
+        // L-NEON-RENAME: prefer new RAILWAY_POSTGRES_URL; fall back to
+        // legacy NEON_DATABASE_URL so existing deployments keep working.
+        let database_url = std::env::var("RAILWAY_POSTGRES_URL")
+            .or_else(|_| std::env::var("NEON_DATABASE_URL"))
+            .ok();
+        Self { database_url }
     }
 }
 
@@ -90,7 +93,9 @@ impl BpbSource for NeonBpbSamples {
     }
     async fn fetch(&self) -> Result<Vec<BpbSample>> {
         let Some(url) = self.database_url.as_deref() else {
-            tracing::info!("NEON_DATABASE_URL not set; neon source skipped");
+            tracing::info!(
+                "RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set; neon source skipped"
+            );
             return Ok(Vec::new());
         };
         let (client, conn) = match tokio_postgres::connect(url, tokio_postgres::NoTls).await {

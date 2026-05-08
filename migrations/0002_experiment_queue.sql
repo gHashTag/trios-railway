@@ -6,8 +6,8 @@
 -- step 1000.
 --
 -- All statements are idempotent (IF NOT EXISTS / OR REPLACE).
--- Apply via: psql $NEON_DATABASE_URL -f migrations/0002_experiment_queue.sql
---            or: tri-railway audit migrate-sql | psql $NEON_DATABASE_URL
+-- Apply via: psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -f migrations/0002_experiment_queue.sql
+--            or: tri-railway audit migrate-sql | psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
 --            or: tri-railway audit migrate
 
 -- Status enum: pending | claimed | running | pruned | done | failed

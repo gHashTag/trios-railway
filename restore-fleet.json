@@ -20,6 +20,7 @@
     { "key": "TRIOS_STEPS",             "value": "60000" },
     { "key": "TRIOS_ATTN_LAYERS",       "value": "2" },
     { "key": "L_R8_SYNTHETIC_FALLBACK", "value": "FORBID" },
+    { "key": "RAILWAY_POSTGRES_URL",    "value": "${secret:RAILWAY_POSTGRES_URL}" },
     { "key": "NEON_DATABASE_URL",       "value": "${secret:NEON_DATABASE_URL}" }
   ],
 

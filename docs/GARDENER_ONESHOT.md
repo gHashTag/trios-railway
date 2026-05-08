@@ -8,7 +8,7 @@
 ```bash
 cd ~/trios-railway && source .env
 
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT railway_acc, railway_svc_name,
        CASE WHEN last_heartbeat > NOW() - INTERVAL '5 minutes' THEN '✅ ALIVE'
             WHEN last_heartbeat > NOW() - INTERVAL '30 minutes' THEN '⚠️ STALE'
@@ -27,7 +27,7 @@ ORDER BY railway_acc;
 ## 2. Проверить очередь экспериментов
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT status, COUNT(*) FROM experiment_queue GROUP BY status ORDER BY status;
 "
 ```
@@ -41,7 +41,7 @@ SELECT status, COUNT(*) FROM experiment_queue GROUP BY status ORDER BY status;
 ## 3. Добавить эксперимент (одна команда)
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 INSERT INTO experiment_queue (canon_name, config_json, priority, seed, steps_budget, account, status)
 VALUES (
   'ИМЯ-ЭКСПЕРИМЕНТА',
@@ -66,7 +66,7 @@ VALUES (
 
 ```bash
 # Последние 20 завершённых экспериментов
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT id, canon_name, account,
        ROUND(final_bpb::numeric, 4) AS bpb,
        final_step AS steps,
@@ -77,7 +77,7 @@ ORDER BY id DESC LIMIT 20;
 "
 
 # Лучшие результаты (сортировка по BPB — чем меньше тем лучше)
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT canon_name, account,
        ROUND(final_bpb::numeric, 4) AS bpb,
        final_step AS steps
@@ -112,7 +112,7 @@ curl -s -X POST https://backboard.railway.app/graphql/v2 \
 
 ```bash
 # Посмотреть причину
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT id, canon_name, status, failed_reason
 FROM experiment_queue
 WHERE status = 'failed'
@@ -152,11 +152,11 @@ ORDER BY id DESC LIMIT 5;
 # Полный статус за одну команду:
 cd ~/trios-railway && source .env && \
 echo "=== WORKERS ===" && \
-psql "$NEON_DATABASE_URL" -c "SELECT railway_acc, railway_svc_name, CASE WHEN last_heartbeat > NOW() - INTERVAL '5 minutes' THEN '✅' ELSE '❌' END AS st FROM workers ORDER BY railway_acc;" && \
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "SELECT railway_acc, railway_svc_name, CASE WHEN last_heartbeat > NOW() - INTERVAL '5 minutes' THEN '✅' ELSE '❌' END AS st FROM workers ORDER BY railway_acc;" && \
 echo "=== QUEUE ===" && \
-psql "$NEON_DATABASE_URL" -c "SELECT status, COUNT(*) FROM experiment_queue GROUP BY status ORDER BY status;" && \
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "SELECT status, COUNT(*) FROM experiment_queue GROUP BY status ORDER BY status;" && \
 echo "=== LAST RESULTS ===" && \
-psql "$NEON_DATABASE_URL" -c "SELECT id, LEFT(canon_name,40) AS name, account, ROUND(final_bpb::numeric,4) AS bpb, final_step, status FROM experiment_queue WHERE status IN ('done','failed') ORDER BY id DESC LIMIT 10;"
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "SELECT id, LEFT(canon_name,40) AS name, account, ROUND(final_bpb::numeric,4) AS bpb, final_step, status FROM experiment_queue WHERE status IN ('done','failed') ORDER BY id DESC LIMIT 10;"
 ```
 
 ---

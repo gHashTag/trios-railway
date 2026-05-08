@@ -4,14 +4,23 @@ use trios_igla_race::pull_queue::PullQueueDb;
 
 #[derive(Parser)]
 struct Cli {
-    #[arg(long, env = "NEON_DATABASE_URL")]
-    neon_url: String,
+    /// Postgres URL. Reads `RAILWAY_POSTGRES_URL` (primary) with legacy
+    /// `NEON_DATABASE_URL` accepted as fallback (L-NEON-RENAME).
+    #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+    neon_url: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let db = PullQueueDb::connect(&cli.neon_url).await?;
+    // L-NEON-RENAME: legacy fallback for the postgres URL.
+    let neon_url: String = match cli.neon_url {
+        Some(u) if !u.is_empty() => u,
+        _ => std::env::var("NEON_DATABASE_URL").map_err(|_| {
+            anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
+        })?,
+    };
+    let db = PullQueueDb::connect(&neon_url).await?;
     let rows = db
         .raw_query(
             "SELECT id, canon_name, config_json::text, priority, seed, steps_budget, status \

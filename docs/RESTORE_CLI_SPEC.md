@@ -57,10 +57,13 @@ fn restore(args: RestoreArgs) -> Result<()> {
         tracing::info!(service=%svc.name, "restored");
     }
 
-    // 3. Neon DDL (idempotent)
-    if let Ok(neon_url) = env::var("NEON_DATABASE_URL") {
+    // 3. Audit DDL (idempotent). L-NEON-RENAME: prefer the Railway var,
+    //    fall back to the legacy NEON_DATABASE_URL.
+    if let Ok(db_url) = env::var("RAILWAY_POSTGRES_URL")
+        .or_else(|_| env::var("NEON_DATABASE_URL"))
+    {
         let ddl = audit::migrate_sql();
-        psql::run(&neon_url, &ddl)?;
+        psql::run(&db_url, &ddl)?;
     }
 
     // 4. L7 experience seal

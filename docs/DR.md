@@ -46,7 +46,7 @@ Total wall-time on a warm GHCR cache: **< 5 min for 16 services**.
 - [x] `restore-fleet.json` committed in `gHashTag/trios-railway`.
 - [x] `template.json` for the MCP server (1-click GHCR redeploy).
 - [x] `Dockerfile.mcp` already in repo (verified).
-- [x] GitHub Secrets set: `RAILWAY_TOKEN`, `NEON_DATABASE_URL`, `GHCR_PAT`.
+- [x] GitHub Secrets set: `RAILWAY_TOKEN`, `RAILWAY_POSTGRES_URL` (legacy `NEON_DATABASE_URL` honored as fallback per L-NEON-RENAME), `GHCR_PAT`.
 - [x] GHCR image pushed every commit on `main` (via `docker-mcp.yml` for MCP, plus a new `docker-trainer.yml` for trainer).
 - [x] Neon DDL applied; weekly `pg_dump` → S3/B2 backup.
 - [x] Embargo + ledger files mirrored to a 2nd remote (e.g. Codeberg or GitLab) — git push insurance.
@@ -121,7 +121,7 @@ Commit this file → next restore is even cheaper (no projectCreate needed if UU
 After `restore` exits 0:
 
 - `tri-railway service list` shows all 16 names.
-- `psql "$NEON_DATABASE_URL" -c 'select count(*) from igla_race_trials'` returns the pre-ban row count (Neon survived).
+- `psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c 'select count(*) from igla_race_trials'` returns the pre-ban row count (Postgres SoT survived; L-NEON-RENAME prefers the Railway var, legacy honored as fallback).
 - `trios-igla check <champion_sha>` returns OK (embargo intact).
 - `.trinity/experience/<today>.trinity` has the new RAIL=restore line.
 - `cargo test --workspace` GREEN.

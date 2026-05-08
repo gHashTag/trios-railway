@@ -1,7 +1,7 @@
 -- 0001: Railway audit base tables + drift view.
 -- All statements are idempotent (IF NOT EXISTS / OR REPLACE).
--- Apply via: psql $NEON_DATABASE_URL -f migrations/0001_railway_audit.sql
---            or: tri-railway audit migrate-sql | psql $NEON_DATABASE_URL
+-- Apply via: psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -f migrations/0001_railway_audit.sql
+--            or: tri-railway audit migrate-sql | psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
 --            or: tri-railway audit migrate
 
 CREATE TABLE IF NOT EXISTS railway_projects (

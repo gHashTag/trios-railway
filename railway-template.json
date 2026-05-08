@@ -2,7 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "_comment": "IGLA fleet disaster-recovery template. Anchor: phi^2 + phi^-2 = 3. Maintained by scripts/snapshot-fleet.sh and disaster-recovery/fleet-snapshot.json. After publishing on Railway template marketplace, the operator gets a single Deploy on Railway button at https://railway.com/deploy/igla-fleet.",
   "name": "IGLA Fleet — DR template",
-  "description": "One-click disaster recovery for the IGLA RACE training fleet (3-seed champion + audit MCP + watchdog). Deploys 6 services pinned to a known-good GHCR image SHA, all environment variables placeholder-substituted at deploy time. After the dashboard creates the project, run `tri-railway audit migrate-sql | psql $NEON_DATABASE_URL` once to seed the audit ledger. Source: https://github.com/gHashTag/trios-railway",
+  "description": "One-click disaster recovery for the IGLA RACE training fleet (3-seed champion + audit MCP + watchdog). Deploys 6 services pinned to a known-good GHCR image SHA, all environment variables placeholder-substituted at deploy time. After the dashboard creates the project, run `tri-railway audit migrate-sql | psql \"${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}\"` once to seed the audit ledger (RAILWAY_POSTGRES_URL primary, legacy NEON_DATABASE_URL accepted as fallback per L-NEON-RENAME). Source: https://github.com/gHashTag/trios-railway",
 
   "services": [
     {
@@ -20,7 +20,8 @@
       "variables": {
         "RAILWAY_TOKEN":          { "description": "Personal API token for this account, from https://railway.com/account/tokens",                              "isOptional": false },
         "RAILWAY_TOKEN_AUTH":     { "description": "Auth mode: 'team' (Bearer, default for personal API tokens) or 'project' (Project-Access-Token)",          "default": "team" },
-        "NEON_DATABASE_URL":      { "description": "Postgres URL with sslmode=require for the IGLA audit ledger.",                                              "isOptional": false },
+        "RAILWAY_POSTGRES_URL":   { "description": "Postgres URL with sslmode=require for the IGLA audit ledger (primary; L-NEON-RENAME).",                       "isOptional": true },
+        "NEON_DATABASE_URL":      { "description": "Legacy Postgres URL — fallback if RAILWAY_POSTGRES_URL is unset (L-NEON-RENAME).",                            "isOptional": true },
         "RUST_LOG":               { "description": "tracing-subscriber filter.",                                                                                 "default": "info" },
         "PORT":                   { "description": "HTTP port (Railway convention).",                                                                            "default": "8080" }
       }
@@ -40,7 +41,8 @@
         "TRIOS_LANE":             { "default": "A-champion-fineweb" },
         "L_R8_SYNTHETIC_FALLBACK":{ "default": "FORBID" },
         "RUST_LOG":               { "default": "info" },
-        "NEON_DATABASE_URL":      { "description": "Same Neon URL as the MCP service. The trainer writes one row per ASHA rung.", "isOptional": false }
+        "RAILWAY_POSTGRES_URL":   { "description": "Postgres URL (primary; L-NEON-RENAME). Trainer writes one row per ASHA rung.", "isOptional": true },
+        "NEON_DATABASE_URL":      { "description": "Legacy Postgres URL — fallback if RAILWAY_POSTGRES_URL is unset (L-NEON-RENAME).", "isOptional": true }
       }
     },
     {
@@ -58,7 +60,8 @@
         "TRIOS_LANE":             { "default": "A-champion-fineweb" },
         "L_R8_SYNTHETIC_FALLBACK":{ "default": "FORBID" },
         "RUST_LOG":               { "default": "info" },
-        "NEON_DATABASE_URL":      { "isOptional": false }
+        "RAILWAY_POSTGRES_URL":   { "description": "Postgres URL (primary; L-NEON-RENAME).",                                                                "isOptional": true },
+        "NEON_DATABASE_URL":      { "description": "Legacy Postgres URL — fallback if RAILWAY_POSTGRES_URL is unset (L-NEON-RENAME).",                       "isOptional": true }
       }
     },
     {
@@ -76,7 +79,8 @@
         "TRIOS_LANE":             { "default": "A-champion-fineweb" },
         "L_R8_SYNTHETIC_FALLBACK":{ "default": "FORBID" },
         "RUST_LOG":               { "default": "info" },
-        "NEON_DATABASE_URL":      { "isOptional": false }
+        "RAILWAY_POSTGRES_URL":   { "description": "Postgres URL (primary; L-NEON-RENAME).",                                                                "isOptional": true },
+        "NEON_DATABASE_URL":      { "description": "Legacy Postgres URL — fallback if RAILWAY_POSTGRES_URL is unset (L-NEON-RENAME).",                       "isOptional": true }
       }
     },
     {
@@ -85,9 +89,10 @@
       "source": { "image": "ghcr.io/ghashtag/trios-dwagent:latest" },
       "deploy":  { "restartPolicyType": "ON_FAILURE", "numReplicas": 1 },
       "variables": {
-        "RAILWAY_TOKEN":      { "isOptional": false },
-        "NEON_DATABASE_URL":  { "isOptional": false },
-        "RUST_LOG":           { "default": "info" }
+        "RAILWAY_TOKEN":         { "isOptional": false },
+        "RAILWAY_POSTGRES_URL":  { "description": "Postgres URL (primary; L-NEON-RENAME).",                                                              "isOptional": true },
+        "NEON_DATABASE_URL":     { "description": "Legacy Postgres URL — fallback if RAILWAY_POSTGRES_URL is unset (L-NEON-RENAME).",                     "isOptional": true },
+        "RUST_LOG":              { "default": "info" }
       }
     },
     {
@@ -103,7 +108,7 @@
       "variables": {
         "SCHEDULE":              { "default": "@hourly" },
         "BACKUP_KEEP_DAYS":      { "default": "14" },
-        "POSTGRES_HOST":         { "description": "Hostname from NEON_DATABASE_URL (no protocol).",       "isOptional": false },
+        "POSTGRES_HOST":         { "description": "Hostname from RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL — L-NEON-RENAME), no protocol.",       "isOptional": false },
         "POSTGRES_DATABASE":     { "description": "Database name (usually 'neondb').",                    "isOptional": false },
         "POSTGRES_USER":         { "isOptional": false },
         "POSTGRES_PASSWORD":     { "isOptional": false },

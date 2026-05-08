@@ -21,8 +21,10 @@ const DEFAULT_WORKDIR: &str = "/Users/playom/trios-trainer-igla";
     about = "ADR-001: Pull-based self-orchestrating trainer worker"
 )]
 struct Cli {
-    #[arg(long, env = "NEON_DATABASE_URL")]
-    neon_url: String,
+    /// Reads `RAILWAY_POSTGRES_URL` (primary) with legacy `NEON_DATABASE_URL`
+    /// accepted as fallback per L-NEON-RENAME.
+    #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+    neon_url: Option<String>,
     #[arg(long, env = "RAILWAY_ACC", default_value = "acc0")]
     railway_acc: String,
     #[arg(
@@ -45,12 +47,20 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let worker_id = Uuid::new_v4();
 
+    // L-NEON-RENAME: legacy fallback for the postgres URL.
+    let neon_url: String = match cli.neon_url.clone() {
+        Some(u) if !u.is_empty() => u,
+        _ => std::env::var("NEON_DATABASE_URL").map_err(|_| {
+            anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
+        })?,
+    };
+
     info!(
         "seed-agent starting | worker={worker_id} | acc={}",
         cli.railway_acc
     );
 
-    let db = PullQueueDb::connect(&cli.neon_url).await?;
+    let db = PullQueueDb::connect(&neon_url).await?;
     db.health_check().await?;
     info!("Neon health check OK");
 

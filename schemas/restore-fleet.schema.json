@@ -77,7 +77,7 @@
       "additionalProperties": false,
       "properties": {
         "neon_ddl": {
-          "description": "Shell command piped into psql against $NEON_DATABASE_URL. Recommended: `tri-railway audit migrate-sql`.",
+          "description": "Shell command piped into psql against ${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL} (L-NEON-RENAME: prefer new var, fall back to legacy). Recommended: `tri-railway audit migrate-sql`.",
           "type": "string"
         },
         "embargo_check": {

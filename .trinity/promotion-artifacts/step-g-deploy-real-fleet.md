@@ -25,11 +25,18 @@ def deploy_real_fleet():
     Deploy real seed-agent workers across all accounts.
     Each worker uses external trainer (trios-train binary).
     """
-    # Get Neon database URL from gateway secrets
-    neon_url = os.environ.get("NEON_DATABASE_URL")
+    # L-NEON-RENAME: Get Postgres URL from gateway secrets. Prefer the new
+    # RAILWAY_POSTGRES_URL; fall back to the legacy NEON_DATABASE_URL so
+    # in-flight deployments keep working.
+    neon_url = (
+        os.environ.get("RAILWAY_POSTGRES_URL")
+        or os.environ.get("NEON_DATABASE_URL")
+    )
 
     if not neon_url:
-        raise ValueError("NEON_DATABASE_URL not found in environment")
+        raise ValueError(
+            "RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not found in environment"
+        )
 
     deployed = []
 
@@ -46,6 +53,9 @@ def deploy_real_fleet():
                 vars=[
                     ("TRAINER_KIND", "external"),
                     ("TRAINER_BIN", "/usr/local/bin/trios-train"),
+                    # L-NEON-RENAME: pass under both names so the trainer's
+                    # internal fallback resolves either var.
+                    ("RAILWAY_POSTGRES_URL", neon_url),
                     ("NEON_DATABASE_URL", neon_url),
                     ("RUST_LOG", "info"),
                     ("SEED_AGENT_POLL_INTERVAL_MS", "5000"),

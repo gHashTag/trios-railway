@@ -18,8 +18,11 @@ queue.push(SmokeExperiment)
 ## Usage
 
 ```bash
-# Local smoke (needs NEON_DATABASE_URL)
-export NEON_DATABASE_URL="postgresql://..."
+# Local smoke (needs RAILWAY_POSTGRES_URL or legacy NEON_DATABASE_URL).
+# L-NEON-RENAME: RAILWAY_POSTGRES_URL is the new primary; the legacy var
+# remains accepted as a fallback.
+export RAILWAY_POSTGRES_URL="postgresql://..."  # primary
+# export NEON_DATABASE_URL="postgresql://..."   # legacy fallback (optional)
 cargo test -p trios-railway-smoke
 
 # CI smoke (uses mock, no DB)

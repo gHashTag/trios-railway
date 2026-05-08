@@ -17,8 +17,9 @@
 /// The actual pull-to-train pipeline is tested via unit tests in
 /// `trainer::tests`, `worker::tests`, `early_stop::tests`, etc.
 #[tokio::test]
-#[ignore = "Requires NEON_DATABASE_URL and running seed-agent binary"]
+#[ignore = "Requires RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) and running seed-agent binary"]
 async fn smoke_full_cycle_placeholder() {
-    // Requires NEON_DATABASE_URL and a running seed-agent binary.
-    // See unit tests in src/ for the actual test coverage.
+    // Requires RAILWAY_POSTGRES_URL (primary) or legacy NEON_DATABASE_URL
+    // (fallback), and a running seed-agent binary. See unit tests in src/
+    // for the actual test coverage.
 }

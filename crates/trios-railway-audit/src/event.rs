@@ -15,7 +15,8 @@
 //!         1.83,      // bpb
 //!         2000,      // step
 //!         "abc123",  // image sha (first 8 chars is fine)
-//!         &std::env::var("NEON_DATABASE_URL")?,
+//!         &std::env::var("RAILWAY_POSTGRES_URL")
+//!             .or_else(|_| std::env::var("NEON_DATABASE_URL"))?,
 //!     ).await?;
 //!     println!("inserted row_id={row_id}");
 //!     Ok(())
@@ -97,7 +98,9 @@ impl AuditArtifact {
 /// * `bpb`       – bits-per-byte from the trainer log
 /// * `step`      – training step at which BPB was measured
 /// * `image_sha` – Docker image digest / git sha (first 8 chars minimum)
-/// * `neon_url`  – full `postgres://` connection string (`NEON_DATABASE_URL`)
+/// * `neon_url`  – full `postgres://` connection string (read from
+///                 `RAILWAY_POSTGRES_URL`; legacy `NEON_DATABASE_URL`
+///                 accepted as fallback per L-NEON-RENAME)
 ///
 /// # Errors
 ///

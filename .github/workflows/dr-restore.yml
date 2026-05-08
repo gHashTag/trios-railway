@@ -27,10 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      RAILWAY_TOKEN:    ${{ inputs.new_token != '' && inputs.new_token || secrets.RAILWAY_TOKEN }}
-      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-      GHCR_PAT:         ${{ secrets.GHCR_PAT }}
-      RUST_LOG:         info
+      RAILWAY_TOKEN:        ${{ inputs.new_token != '' && inputs.new_token || secrets.RAILWAY_TOKEN }}
+      # L-NEON-RENAME: dual-export both env names so the binary's internal
+      # fallback (RAILWAY_POSTGRES_URL primary, NEON_DATABASE_URL legacy)
+      # works in either case. Either secret may be unset on a given runner.
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      NEON_DATABASE_URL:    ${{ secrets.NEON_DATABASE_URL }}
+      GHCR_PAT:             ${{ secrets.GHCR_PAT }}
+      RUST_LOG:             info
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,9 +59,13 @@ jobs:
             ${{ inputs.champion_sha != '' && format('--champion-sha {0}', inputs.champion_sha) || '' }} \
             --confirm
 
-      - name: Apply Neon audit DDL
-        if: env.NEON_DATABASE_URL != ''
-        run: ./target/release/tri-railway audit migrate-sql | psql "$NEON_DATABASE_URL"
+      - name: Apply audit DDL
+        # L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL; fall back to legacy
+        # NEON_DATABASE_URL. Run only if at least one is set.
+        if: env.RAILWAY_POSTGRES_URL != '' || env.NEON_DATABASE_URL != ''
+        run: |
+          DB_URL="${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
+          ./target/release/tri-railway audit migrate-sql | psql "$DB_URL"
 
       - name: Append L7 experience line
         run: |

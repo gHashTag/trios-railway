@@ -10,8 +10,9 @@
     "numReplicas": 1
   },
   "envVars": {
-    "RAILWAY_TOKEN":      { "description": "Write-capable Railway API token. Required to create/delete services.", "isOptional": false },
-    "NEON_DATABASE_URL":  { "description": "Postgres URL for the IGLA audit ledger.", "isOptional": false },
+    "RAILWAY_TOKEN":         { "description": "Write-capable Railway API token. Required to create/delete services.", "isOptional": false },
+    "RAILWAY_POSTGRES_URL":  { "description": "Postgres URL for the IGLA audit ledger (primary; L-NEON-RENAME).",      "isOptional": true },
+    "NEON_DATABASE_URL":     { "description": "Legacy Postgres URL — fallback if RAILWAY_POSTGRES_URL is unset (L-NEON-RENAME).", "isOptional": true },
     "RUST_LOG":           { "description": "tracing-subscriber filter.", "default": "info" },
     "PORT":               { "description": "HTTP port (Railway convention).", "default": "8080" },
     "IGLA_PROJECT_UUID":  { "description": "Default project UUID. After DR-restore, fill with the new IGLA UUID.", "default": "e4fe33bb-3b09-4842-9782-7d2dea1abc9b" }

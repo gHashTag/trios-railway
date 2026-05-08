@@ -15,7 +15,7 @@ gh secret set RAILWAY_TOKEN_ACC3 --repo gHashTag/trios-railway     # paste token
 # 2. Click the Deploy on Railway button in the README → fill 3 secrets.
 
 # 3. Migrate the audit ledger schema (idempotent).
-./target/release/tri-railway audit migrate-sql | psql "$NEON_DATABASE_URL"
+./target/release/tri-railway audit migrate-sql | psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
 ```
 
 Or if `trios-railway-mcp` is reachable from your chat:
@@ -56,7 +56,7 @@ friction).
 
 The button links to a published template (manifest:
 [`railway-template.json`](../railway-template.json)). Filling in the
-required secrets (`RAILWAY_TOKEN`, `NEON_DATABASE_URL`, R2 credentials)
+required secrets (`RAILWAY_TOKEN`, `RAILWAY_POSTGRES_URL` (legacy `NEON_DATABASE_URL` honored as fallback per L-NEON-RENAME), R2 credentials)
 provisions all 6 control-plane services with `ghcr.io` image pins.
 
 ### B. CLI from a fresh shell (~3 min)
@@ -71,7 +71,8 @@ RAILWAY_TOKEN=<new-acct-token> RAILWAY_TOKEN_AUTH=team \
       --environment <NEW_ENV_UUID> \
       --name trios-mcp-public \
       --image ghcr.io/ghashtag/trios-railway-mcp:latest \
-      --var NEON_DATABASE_URL=<...> \
+      --var RAILWAY_POSTGRES_URL=<...> \
+      --var NEON_DATABASE_URL=<...>           # legacy fallback per L-NEON-RENAME (optional) \
       --var RAILWAY_TOKEN=<same-as-above> \
       --var PORT=8080
 
@@ -161,7 +162,8 @@ Stored in `gHashTag/trios-railway` Actions Secrets (`gh secret list`):
 | `RAILWAY_TOKEN_ACC3`             | Acc3 token (created during recovery)   | new account |
 | `RAILWAY_PROJECT_ACC*_*`         | Project UUIDs (auto-discovered)        | `tri-railway service list` |
 | `RAILWAY_ENV_ACC*_*`             | Environment UUIDs                      | `tri-railway service list` |
-| `NEON_DATABASE_URL`              | `postgres://...?sslmode=require`       | <https://console.neon.tech/> |
+| `RAILWAY_POSTGRES_URL`           | `postgres://...?sslmode=require` (primary, points at Railway service `phd-postgres-ssot`; L-NEON-RENAME) | Railway dashboard → service `phd-postgres-ssot` → variables |
+| `NEON_DATABASE_URL`              | legacy Postgres URL — honored as fallback if `RAILWAY_POSTGRES_URL` is unset (L-NEON-RENAME) | <https://console.neon.tech/> |
 | `TRIOS_REPO_PAT`                 | Fine-grained PAT, `issues:write` on `gHashTag/trios` | <https://github.com/settings/personal-access-tokens> |
 | `R2_ACCESS_KEY_ID`               | Cloudflare R2 access-key               | <https://dash.cloudflare.com/r2> |
 | `R2_SECRET_ACCESS_KEY`           | R2 secret-key                          | same |
@@ -191,7 +193,7 @@ Stored in `gHashTag/trios-railway` Actions Secrets (`gh secret list`):
 5. **Run the audit-ledger migration** (idempotent — safe to re-run):
 
    ```bash
-   ./target/release/tri-railway audit migrate-sql | psql "$NEON_DATABASE_URL"
+   ./target/release/tri-railway audit migrate-sql | psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
    ```
 
 6. **Restore Neon ledger** (only if Neon itself was lost). Pull the
@@ -200,7 +202,7 @@ Stored in `gHashTag/trios-railway` Actions Secrets (`gh secret list`):
    ```bash
    aws s3 cp s3://igla-ledger-backups/igla/audit-ledger/<latest>.sql.gz . \
        --endpoint-url "$R2_ENDPOINT"
-   gunzip -c <latest>.sql.gz | psql "$NEON_DATABASE_URL"
+   gunzip -c <latest>.sql.gz | psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
    ```
 
 7. **Update MCP config.** Point the `trios-perplexity` MCP servers at
