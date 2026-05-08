@@ -99,8 +99,8 @@ impl AuditArtifact {
 /// * `step`      – training step at which BPB was measured
 /// * `image_sha` – Docker image digest / git sha (first 8 chars minimum)
 /// * `neon_url`  – full `postgres://` connection string (read from
-///                 `RAILWAY_POSTGRES_URL`; legacy `NEON_DATABASE_URL`
-///                 accepted as fallback per L-NEON-RENAME)
+///   `RAILWAY_POSTGRES_URL`; legacy `NEON_DATABASE_URL` accepted as
+///   fallback per L-NEON-RENAME)
 ///
 /// # Errors
 ///
