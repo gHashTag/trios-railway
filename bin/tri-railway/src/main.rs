@@ -276,9 +276,7 @@ async fn main() -> Result<()> {
             let neon_url = std::env::var("RAILWAY_POSTGRES_URL")
                 .or_else(|_| std::env::var("NEON_DATABASE_URL"))
                 .map_err(|_| {
-                    anyhow::anyhow!(
-                        "RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set"
-                    )
+                    anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
                 })?;
             let count = migrations::run_migrate(&neon_url).await?;
             println!("applied {count} DDL statements to Neon");

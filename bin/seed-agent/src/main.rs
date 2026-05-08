@@ -110,9 +110,7 @@ async fn main() -> Result<()> {
     let neon_url: String = match cli.neon_url.clone() {
         Some(u) if !u.is_empty() => u,
         _ => std::env::var("NEON_DATABASE_URL").map_err(|_| {
-            anyhow::anyhow!(
-                "RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set"
-            )
+            anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
         })?,
     };
 
