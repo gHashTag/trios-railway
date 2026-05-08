@@ -8,7 +8,7 @@ help:
 	@echo "  smoke          - Run fast smoke test (<60s, synthetic, CPU-only)"
 	@echo "  smoke-ci       - Run smoke test with CI assertions (strict)"
 	@echo "  smoke-verbose  - Run smoke test with verbose logging"
-	@echo "  smoke-full     - Run smoke test with full validation (requires NEON_DATABASE_URL)"
+	@echo "  smoke-full     - Run smoke test with full validation (requires RAILWAY_POSTGRES_URL or legacy NEON_DATABASE_URL)"
 	@echo "  test           - Run all tests"
 	@echo "  lint           - Run clippy and rustfmt checks"
 	@echo "  clean          - Clean build artifacts"
@@ -34,10 +34,11 @@ smoke-agent:
 	@cargo run -p trios-igla-race --features smoke --bin smoke_agent -- \
 		--steps 1 --seed 42 --fail-on-error
 
-# Full smoke test with database (requires NEON_DATABASE_URL)
+# Full smoke test with database (requires RAILWAY_POSTGRES_URL or legacy
+# NEON_DATABASE_URL per L-NEON-RENAME).
 smoke-full:
-	@echo "🚀 Running full smoke test (requires NEON_DATABASE_URL)..."
-	@test -n "$(NEON_DATABASE_URL)" || (echo "ERROR: NEON_DATABASE_URL not set" && exit 1)
+	@echo "🚀 Running full smoke test (requires RAILWAY_POSTGRES_URL or legacy NEON_DATABASE_URL)..."
+	@test -n "$(RAILWAY_POSTGRES_URL)$(NEON_DATABASE_URL)" || (echo "ERROR: RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set" && exit 1)
 	@cargo run -p trios-igla-race --bin seed_agent status
 
 # Run all tests

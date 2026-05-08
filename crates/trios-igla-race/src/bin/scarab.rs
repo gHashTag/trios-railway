@@ -5,8 +5,9 @@
 //! No account affinity. No routing keys.
 //!
 //! ENV:
-//!   NEON_DATABASE_URL  — required
-//!   SCARAB_ACCOUNT     — optional log tag (no scheduling effect)
+//!   RAILWAY_POSTGRES_URL — required (legacy NEON_DATABASE_URL accepted as
+//!                           fallback per L-NEON-RENAME)
+//!   SCARAB_ACCOUNT       — optional log tag (no scheduling effect)
 
 use std::env;
 use std::process::Stdio;
@@ -74,7 +75,10 @@ async fn run_task(client: &tokio_postgres::Client, task: Task, label: &str) -> a
     let ctx = c.ctx.unwrap_or(12).to_string();
     let format = c.format.clone().unwrap_or_else(|| "fp32".into());
     let seed = c.seed.unwrap_or(1597).to_string();
-    let neon = env::var("NEON_DATABASE_URL").unwrap_or_default();
+    // L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL, fall back to legacy.
+    let neon = env::var("RAILWAY_POSTGRES_URL")
+        .or_else(|_| env::var("NEON_DATABASE_URL"))
+        .unwrap_or_default();
 
     println!(
         "[{label}] START id={} name={} hidden={hidden} lr={lr} steps={steps} fmt={format} seed={seed}",
@@ -126,7 +130,10 @@ async fn run_task(client: &tokio_postgres::Client, task: Task, label: &str) -> a
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let db_url = env::var("NEON_DATABASE_URL").expect("NEON_DATABASE_URL not set");
+    // L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL, fall back to legacy.
+    let db_url = env::var("RAILWAY_POSTGRES_URL")
+        .or_else(|_| env::var("NEON_DATABASE_URL"))
+        .expect("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set");
     // SCARAB_ACCOUNT is a cosmetic log label only. Not a routing key.
     let label = env::var("SCARAB_ACCOUNT").unwrap_or_else(|_| "scarab".into());
     let host = env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());

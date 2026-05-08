@@ -36,9 +36,10 @@ mod worker;
 )]
 struct Cli {
     /// Railway account this worker runs in (`acc0..acc3`). Falls back
-    /// to `acc1` so an operator who set only `NEON_DATABASE_URL` (per
-    /// the #81 ONE-SHOT BRIEF) gets a sane default instead of a clap
-    /// panic on boot — root cause of B1 in the 2026-04-28 session.
+    /// to `acc1` so an operator who set only `RAILWAY_POSTGRES_URL` (or
+    /// the legacy `NEON_DATABASE_URL`, per the #81 ONE-SHOT BRIEF) gets
+    /// a sane default instead of a clap panic on boot — root cause of
+    /// B1 in the 2026-04-28 session.
     #[arg(long, env = "RAILWAY_ACC", default_value = "acc1")]
     railway_acc: String,
 
@@ -67,9 +68,14 @@ struct Cli {
     #[arg(long, default_value_t = 2.60)]
     early_stop_bpb_ceiling: f64,
 
-    /// `NEON_DATABASE_URL`. Required.
-    #[arg(long, env = "NEON_DATABASE_URL")]
-    neon_url: String,
+    /// Postgres URL for the IGLA SSOT. Reads `RAILWAY_POSTGRES_URL`
+    /// (primary, points to Railway service `phd-postgres-ssot`
+    /// `c5f37b42-832a-4acd-9749-381761c94957` as of 2026-05) with
+    /// legacy `NEON_DATABASE_URL` accepted as fallback (L-NEON-RENAME).
+    /// Required: at least one of `--neon-url`, `RAILWAY_POSTGRES_URL`,
+    /// or `NEON_DATABASE_URL` must be set.
+    #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+    neon_url: Option<String>,
 
     /// Trainer kind. `external` shells out to the IGLA trainer binary
     /// (`trios-train`). `mock` runs the deterministic in-process simulator
@@ -97,6 +103,16 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // L-NEON-RENAME: resolve postgres URL with legacy fallback.
+    // Order: --neon-url CLI flag > RAILWAY_POSTGRES_URL (clap-bound above) >
+    //        legacy NEON_DATABASE_URL > error.
+    let neon_url: String = match cli.neon_url.clone() {
+        Some(u) if !u.is_empty() => u,
+        _ => std::env::var("NEON_DATABASE_URL").map_err(|_| {
+            anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
+        })?,
+    };
 
     let cfg = worker::WorkerConfig {
         worker_id: Uuid::new_v4(),
@@ -137,13 +153,13 @@ async fn main() -> Result<()> {
         let mut attempt = 0;
         loop {
             let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config.clone());
-            match tokio_postgres::connect(&cli.neon_url, tls).await {
+            match tokio_postgres::connect(&neon_url, tls).await {
                 Ok(pair) => break pair,
                 Err(e) => {
                     attempt += 1;
                     if attempt >= max_attempts {
                         anyhow::bail!(
-                            "connect to NEON_DATABASE_URL failed after {max_attempts} attempts: {e:#}"
+                            "connect to RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) failed after {max_attempts} attempts: {e:#}"
                         );
                     }
                     tracing::warn!(attempt, error = %e, "neon connect failed, retrying in 2s");

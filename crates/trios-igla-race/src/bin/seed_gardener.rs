@@ -4,6 +4,19 @@ use tracing::{info, warn};
 
 use trios_igla_race::pull_queue::{BpbSample, ExperimentConfig, PullQueueDb};
 
+/// L-NEON-RENAME: resolve the postgres URL from the new
+/// `RAILWAY_POSTGRES_URL` (clap-bound) with legacy `NEON_DATABASE_URL`
+/// accepted as fallback. Migration is non-breaking: deployments that
+/// only know NEON_DATABASE_URL keep working.
+fn resolve_neon_url(cli_value: Option<String>) -> Result<String> {
+    match cli_value {
+        Some(u) if !u.is_empty() => Ok(u),
+        _ => std::env::var("NEON_DATABASE_URL").map_err(|_| {
+            anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
+        }),
+    }
+}
+
 const GATE2_BPB: f32 = 1.85;
 const DIVERGING_GAP: f32 = 0.3;
 const MIRROR_COUNT: usize = 3;
@@ -18,12 +31,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum GardenerCommand {
     Tick {
-        #[arg(long, env = "NEON_DATABASE_URL")]
-        neon_url: String,
+        /// Reads `RAILWAY_POSTGRES_URL` (primary); legacy `NEON_DATABASE_URL`
+        /// accepted as fallback per L-NEON-RENAME.
+        #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+        neon_url: Option<String>,
     },
     Seed {
-        #[arg(long, env = "NEON_DATABASE_URL")]
-        neon_url: String,
+        /// Reads `RAILWAY_POSTGRES_URL` (primary); legacy `NEON_DATABASE_URL`
+        /// accepted as fallback per L-NEON-RENAME.
+        #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+        neon_url: Option<String>,
         #[arg(long, default_value = "42")]
         seed: u64,
         #[arg(long, default_value = "1024")]
@@ -38,8 +55,10 @@ enum GardenerCommand {
         priority: f32,
     },
     Enqueue {
-        #[arg(long, env = "NEON_DATABASE_URL")]
-        neon_url: String,
+        /// Reads `RAILWAY_POSTGRES_URL` (primary); legacy `NEON_DATABASE_URL`
+        /// accepted as fallback per L-NEON-RENAME.
+        #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+        neon_url: Option<String>,
         #[arg(long)]
         seed: u64,
         #[arg(long)]
@@ -54,8 +73,10 @@ enum GardenerCommand {
         priority: f32,
     },
     Status {
-        #[arg(long, env = "NEON_DATABASE_URL")]
-        neon_url: String,
+        /// Reads `RAILWAY_POSTGRES_URL` (primary); legacy `NEON_DATABASE_URL`
+        /// accepted as fallback per L-NEON-RENAME.
+        #[arg(long, env = "RAILWAY_POSTGRES_URL")]
+        neon_url: Option<String>,
     },
 }
 
@@ -69,7 +90,10 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        GardenerCommand::Tick { neon_url } => gardener_tick(&neon_url).await,
+        GardenerCommand::Tick { neon_url } => {
+            let url = resolve_neon_url(neon_url)?;
+            gardener_tick(&url).await
+        }
         GardenerCommand::Seed {
             neon_url,
             seed,
@@ -79,7 +103,8 @@ async fn main() -> Result<()> {
             steps,
             priority,
         } => {
-            let db = PullQueueDb::connect(&neon_url).await?;
+            let url = resolve_neon_url(neon_url)?;
+            let db = PullQueueDb::connect(&url).await?;
             let config = serde_json::json!({"seed": seed, "hidden": hidden, "ctx": ctx, "lr": lr, "steps": steps}).to_string();
             let name = format!("h{hidden}-ctx{ctx}-lr{lr:.4}-s{seed}");
             let id = db
@@ -97,7 +122,8 @@ async fn main() -> Result<()> {
             steps,
             priority,
         } => {
-            let db = PullQueueDb::connect(&neon_url).await?;
+            let url = resolve_neon_url(neon_url)?;
+            let db = PullQueueDb::connect(&url).await?;
             let config = serde_json::json!({"seed": seed, "hidden": hidden, "ctx": ctx, "lr": lr, "steps": steps}).to_string();
             let name = format!("q-h{hidden}-ctx{ctx}-lr{lr:.4}-s{seed}");
             let id = db
@@ -106,7 +132,10 @@ async fn main() -> Result<()> {
             info!("enqueued experiment id={id} name={name}");
             Ok(())
         }
-        GardenerCommand::Status { neon_url } => show_status(&neon_url).await,
+        GardenerCommand::Status { neon_url } => {
+            let url = resolve_neon_url(neon_url)?;
+            show_status(&url).await
+        }
     }
 }
 

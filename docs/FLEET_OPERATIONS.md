@@ -38,7 +38,7 @@
 
 ```bash
 source .env
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT status, account, COUNT(*) 
 FROM experiment_queue 
 GROUP BY status, account 
@@ -49,7 +49,7 @@ ORDER BY status, account;
 ### Enqueue an experiment
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 INSERT INTO experiment_queue (canon_name, config_json, priority, seed, steps_budget, account, status)
 VALUES (
   'IGLA-TRAIN_V2-GF16-E0800-H828-C12-LR0004-rng1597',
@@ -62,7 +62,7 @@ VALUES (
 ### Check worker status
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT account, worker_id, 
        COUNT(*) FILTER (WHERE heartbeat > NOW() - INTERVAL '5 minutes') AS alive,
        COUNT(*) FILTER (WHERE heartbeat BETWEEN NOW() - INTERVAL '30 minutes' AND NOW() - INTERVAL '5 minutes') AS stale,
@@ -84,7 +84,8 @@ railway_service_deploy(
   environment: "<env_id>",
   image: "ghcr.io/ghashtag/trios-seed-agent-real:latest",
   vars: [
-    {key: "NEON_DATABASE_URL", value: "<neon_url>"},
+    {key: "RAILWAY_POSTGRES_URL", value: "<postgres_url>"},   // primary; L-NEON-RENAME
+    {key: "NEON_DATABASE_URL", value: "<postgres_url>"},      // legacy fallback (optional)
     {key: "RAILWAY_ACC", value: "acc{N}"},
     {key: "TRAINER_KIND", value: "external"},
     {key: "RAILWAY_SERVICE_NAME", value: "trios-train-v2-acc{N}-s1597"}
@@ -124,7 +125,8 @@ curl -s -X POST https://backboard.railway.app/graphql/v2 \
 
 # Step 3: Set env vars
 for KV in \
-  "NEON_DATABASE_URL=$NEON_DATABASE_URL" \
+  "RAILWAY_POSTGRES_URL=${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" \
+  "NEON_DATABASE_URL=${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" \
   "RAILWAY_ACC=$ACC" \
   "TRAINER_KIND=external" \
   "RAILWAY_SERVICE_NAME=$SVC_NAME"; do
@@ -148,7 +150,7 @@ echo "Deployed $SVC_NAME → $SVC_ID"
 ### Check experiment results
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT id, canon_name, status, final_bpb, final_step, account
 FROM experiment_queue
 WHERE status IN ('done', 'failed')
@@ -160,7 +162,7 @@ LIMIT 20;
 ### View BPB samples for an experiment
 
 ```bash
-psql "$NEON_DATABASE_URL" -c "
+psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}" -c "
 SELECT step, bpb 
 FROM bpb_samples 
 WHERE canon_name = 'IGLA-TRAIN_V2-GF16-E0800-H828-C12-LR0004-rng1597'
@@ -200,7 +202,7 @@ Only these seeds are allowed in the experiment queue:
 
 ### Worker not registering
 - Check Railway deployment logs for `ENETUNREACH` → Neon connection retry handles this
-- Check `channel_binding=require` is NOT in `NEON_DATABASE_URL`
+- Check `channel_binding=require` is NOT in `RAILWAY_POSTGRES_URL` (or legacy `NEON_DATABASE_URL` per L-NEON-RENAME)
 - Verify `RAILWAY_ACC` matches an account in the `workers` table
 
 ### step=0, bpb=NaN

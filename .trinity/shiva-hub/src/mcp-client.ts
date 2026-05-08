@@ -70,8 +70,14 @@ export class McpClient extends EventEmitter {
     // NEON MCP: Use stdio with npx
     // Note: @neondatabase/mcp-server-neon is deprecated
     // Should use mcp.neon.tech instead
+    // L-NEON-RENAME: pass the URL under both names so the spawned MCP can
+    // use either (RAILWAY_POSTGRES_URL primary, legacy NEON_DATABASE_URL).
     this.process = spawn("npx", ["-y", "@neondatabase/mcp-server-neon"], {
-      env: { ...process.env, NEON_DATABASE_URL: config.neonDatabaseUrl },
+      env: {
+        ...process.env,
+        RAILWAY_POSTGRES_URL: config.neonDatabaseUrl,
+        NEON_DATABASE_URL: config.neonDatabaseUrl,
+      },
     });
 
     this.setupStdioHandlers();

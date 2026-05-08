@@ -161,7 +161,8 @@ enum ServiceCmd {
 enum AuditCmd {
     /// Print idempotent DDL for the Neon schema (issue #6).
     MigrateSql,
-    /// Apply idempotent DDL directly to Neon via `NEON_DATABASE_URL`.
+    /// Apply idempotent DDL directly via `RAILWAY_POSTGRES_URL`
+    /// (legacy `NEON_DATABASE_URL` accepted as fallback per L-NEON-RENAME).
     /// Every statement is CREATE IF NOT EXISTS / CREATE OR REPLACE, so
     /// re-running is always safe.
     Migrate,
@@ -270,8 +271,13 @@ async fn main() -> Result<()> {
         Cmd::Audit {
             sub: AuditCmd::Migrate,
         } => {
-            let neon_url = std::env::var("NEON_DATABASE_URL")
-                .map_err(|_| anyhow::anyhow!("NEON_DATABASE_URL not set"))?;
+            // L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL; legacy
+            // NEON_DATABASE_URL kept as fallback so existing deployments work.
+            let neon_url = std::env::var("RAILWAY_POSTGRES_URL")
+                .or_else(|_| std::env::var("NEON_DATABASE_URL"))
+                .map_err(|_| {
+                    anyhow::anyhow!("RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) not set")
+                })?;
             let count = migrations::run_migrate(&neon_url).await?;
             println!("applied {count} DDL statements to Neon");
         }

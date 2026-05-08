@@ -182,7 +182,7 @@ async fn experiment_queue_update(
 **Effort**: 1 hour
 
 ### 2.3 `service_variable_upsert` — Set env vars on existing service
-**Impact**: 🔴 P0 — currently done manually via curl; needed for NEON_DATABASE_URL injection on new services
+**Impact**: 🔴 P0 — currently done manually via curl; needed for `RAILWAY_POSTGRES_URL` (and legacy `NEON_DATABASE_URL` fallback per L-NEON-RENAME) injection on new services
 
 ```rust
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -221,7 +221,7 @@ pub struct BatchDeployRequest {
     pub services: Vec<BatchDeployService>,
 }
 
-#[tool(description = "Create and deploy multiple services in one call. Each service gets NEON_DATABASE_URL auto-injected.")]
+#[tool(description = "Create and deploy multiple services in one call. Each service gets RAILWAY_POSTGRES_URL (and legacy NEON_DATABASE_URL per L-NEON-RENAME) auto-injected.")]
 async fn service_batch_deploy(
     &self,
     Parameters(req): Parameters<BatchDeployRequest>,

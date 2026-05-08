@@ -18,7 +18,12 @@ import {
 
 // Configuration from environment
 const CONFIG = {
-  neonDatabaseUrl: process.env.NEON_DATABASE_URL || process.env.POSTGRES_URL,
+  // L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL; legacy NEON_DATABASE_URL and
+  // POSTGRES_URL accepted as fallback so existing deployments keep working.
+  neonDatabaseUrl:
+    process.env.RAILWAY_POSTGRES_URL ??
+    process.env.NEON_DATABASE_URL ??
+    process.env.POSTGRES_URL,
   railwayToken: process.env.RAILWAY_TOKEN,
   vibeeScript: process.env.VIBEE_SCRIPT || "/Users/playra/vibee/gleam/run_mcp.sh",
   triMcpHost: process.env.TRI_MCP_HOST || "127.0.0.1",

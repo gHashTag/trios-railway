@@ -111,8 +111,9 @@ pub struct TemplateDeployRequest {
     #[serde(default)]
     pub environment: Option<String>,
     /// Extra/override env-var pairs applied AFTER template defaults.
-    /// Only `NEON_DATABASE_URL` is required — all DSN aliases are derived
-    /// from it automatically (no more `TRIOS_NEON_DSN` / `DATABASE_URL` duplication).
+    /// Only `RAILWAY_POSTGRES_URL` (or legacy `NEON_DATABASE_URL` per
+    /// L-NEON-RENAME) is required — all DSN aliases are derived from it
+    /// automatically (no more `TRIOS_NEON_DSN` / `DATABASE_URL` duplication).
     #[serde(default)]
     pub vars_override: Vec<KeyValue>,
     /// Wave name written into the WAVE env var. Auto-generated when omitted.
@@ -378,7 +379,7 @@ impl TriosRailwayMcp {
                        'e2e-ttt-track-10min' (WIN sweep with early-stop at 1.07063). \
                        Creates one Railway service per seed, applies template defaults plus vars_override, \
                        triggers redeploys, and emits one R7 audit triplet per service. Idempotent on service name. \
-                       Only NEON_DATABASE_URL is required in vars_override — no DSN aliases needed."
+                       Only RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL per L-NEON-RENAME) is required in vars_override — no DSN aliases needed."
     )]
     async fn railway_template_deploy(
         &self,
@@ -506,7 +507,8 @@ impl TriosRailwayMcp {
             }
 
             // 3. assemble env: template defaults + per-seed overrides + caller overrides
-            //    DSN policy: NEON_DATABASE_URL is the single source of truth.
+            //    DSN policy: RAILWAY_POSTGRES_URL (or legacy
+            //    NEON_DATABASE_URL per L-NEON-RENAME) is the single source of truth.
             //    TRIOS_CANON_NAME (not CANON_NAME) is what train_loop.rs reads.
             let mut env: Vec<KeyValue> = template_defaults.clone();
             env.push(kv("TRIOS_SEED", &seed.to_string()));
@@ -632,7 +634,7 @@ impl ServerHandler for TriosRailwayMcp {
             instructions: Some(
                 "Public MCP server controlling the IGLA Railway project. \
                  Set RAILWAY_TOKEN before invoking deploy/redeploy/delete tools. \
-                 Only NEON_DATABASE_URL is needed — no DSN aliases required. \
+                 Only RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL per L-NEON-RENAME) is needed — no DSN aliases required. \
                  Anchor: phi^2 + phi^-2 = 3."
                     .to_string(),
             ),

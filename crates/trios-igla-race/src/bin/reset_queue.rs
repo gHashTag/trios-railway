@@ -3,15 +3,18 @@ use trios_igla_race::pull_queue::PullQueueDb;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // R5 / GitGuardian: connection string MUST come from CLI arg or NEON_DATABASE_URL env var.
-    // Hardcoded credentials were redacted (see GitGuardian incident 31559427); rotate the
-    // exposed Neon password before running this tool.
+    // R5 / GitGuardian: connection string MUST come from CLI arg or env.
+    // L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL; legacy NEON_DATABASE_URL
+    // accepted as fallback. Hardcoded credentials were redacted (see
+    // GitGuardian incident 31559427); rotate the exposed Neon password
+    // before running this tool.
     let neon_url = std::env::args()
         .nth(1)
+        .or_else(|| std::env::var("RAILWAY_POSTGRES_URL").ok())
         .or_else(|| std::env::var("NEON_DATABASE_URL").ok())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "reset_queue: pass postgres URL as $1 or set NEON_DATABASE_URL — never hardcode"
+                "reset_queue: pass postgres URL as $1 or set RAILWAY_POSTGRES_URL (or legacy NEON_DATABASE_URL) — never hardcode"
             )
         })?;
 

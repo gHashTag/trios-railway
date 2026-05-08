@@ -61,8 +61,9 @@ cargo build --release
 # Print version
 tri-railway version
 
-# Print idempotent Neon DDL (issue #6)
-tri-railway audit migrate-sql | psql "$NEON_DATABASE_URL"
+# Print idempotent audit DDL (issue #6).
+# L-NEON-RENAME: prefer RAILWAY_POSTGRES_URL; legacy NEON_DATABASE_URL accepted.
+tri-railway audit migrate-sql | psql "${RAILWAY_POSTGRES_URL:-$NEON_DATABASE_URL}"
 
 # Append one L7 experience line
 tri-railway experience append \
