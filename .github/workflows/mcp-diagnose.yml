@@ -1,0 +1,113 @@
+name: MCP diagnose
+
+# Read-only diagnostic for trios-railway-mcp. Pulls:
+#   1. Latest deployment status, createdAt, staticUrl, url
+#   2. All service / custom domains for both candidate services
+#   3. RAILWAY_POSTGRES_URL presence on MCP (key only — no value)
+#   4. Tail of deployment logs (last ~200 lines)
+#
+# Anchor: phi^2 + phi^-2 = 3.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type the word PHI to run."
+        required: true
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-diagnose
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: pull MCP deployment + domains + logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      PROJECT_ID:           "e4fe33bb-3b09-4842-9782-7d2dea1abc9b"
+      MCP_SERVICE_ID:       "db786a4b-5a79-4643-b915-e9184680cf97"   # trios-railway-mcp
+      MCP_PUBLIC_SERVICE_ID: "3abc18da-91d6-4377-8cf2-ebcdd6e6aae4"  # trios-mcp-public
+      RAILWAY_TOKEN:        ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      RAILWAY_TOKEN_AUTH:   team
+
+    steps:
+      - name: Guard
+        run: |
+          if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
+            echo "::error::confirm must be 'PHI'."
+            exit 2
+          fi
+
+      - name: Resolve production env id
+        id: env
+        run: |
+          set -euo pipefail
+          ENV_ID=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$id: String!){ project(id:\$id){ environments { edges { node { id name } } } } }\",\"variables\":{\"id\":\"${PROJECT_ID}\"}}" \
+            | jq -r '.data.project.environments.edges[] | select(.node.name=="production") | .node.id' \
+            | head -n 1)
+          echo "env_id=${ENV_ID}" >> "${GITHUB_OUTPUT}"
+          echo "env_id=${ENV_ID}"
+
+      - name: MCP service summary (domains + latest deployment)
+        run: |
+          set -euo pipefail
+          for SVC in "${MCP_SERVICE_ID}" "${MCP_PUBLIC_SERVICE_ID}"; do
+            echo "===== service ${SVC} ====="
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+              -d "{\"query\":\"query(\$id: String!){ service(id:\$id){ id name } }\",\"variables\":{\"id\":\"${SVC}\"}}" | jq .
+            echo "----- domains via project.services -----"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+              -d "{\"query\":\"query(\$projectId:String!,\$serviceId:String!,\$environmentId:String!){ deployments(input:{projectId:\$projectId,serviceId:\$serviceId,environmentId:\$environmentId}, first:5){ edges { node { id status createdAt staticUrl url meta } } } }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"serviceId\":\"${SVC}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\"}}" | jq .
+            echo "----- domains query -----"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+              -d "{\"query\":\"query(\$serviceId:String!,\$environmentId:String!){ domains(serviceId:\$serviceId, environmentId:\$environmentId){ serviceDomains{ id domain suffix } customDomains{ id domain } } }\",\"variables\":{\"serviceId\":\"${SVC}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\"}}" | jq .
+            echo
+          done
+
+      - name: MCP variable keys (RAILWAY_POSTGRES_URL presence — keys only, no values)
+        run: |
+          set -euo pipefail
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$projectId:String!,\$environmentId:String!,\$serviceId:String!){ variables(projectId:\$projectId,environmentId:\$environmentId,serviceId:\$serviceId) }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\",\"serviceId\":\"${MCP_SERVICE_ID}\"}}" \
+            | jq -r '.data.variables // {} | keys | sort | .[]'
+
+      - name: Tail latest MCP deployment logs (best-effort)
+        run: |
+          set -euo pipefail
+          DEP_ID=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$projectId:String!,\$serviceId:String!,\$environmentId:String!){ deployments(input:{projectId:\$projectId,serviceId:\$serviceId,environmentId:\$environmentId}, first:1){ edges { node { id status } } } }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"serviceId\":\"${MCP_SERVICE_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\"}}" \
+            | jq -r '.data.deployments.edges[0].node.id // empty')
+          echo "latest deployment id = ${DEP_ID}"
+          if [[ -z "${DEP_ID}" ]]; then exit 0; fi
+          echo "----- buildLogs (last 200) -----"
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$id: String!){ buildLogs(deploymentId:\$id, limit:200){ message timestamp severity } }\",\"variables\":{\"id\":\"${DEP_ID}\"}}" \
+            | jq -r '.data.buildLogs[]? | [.timestamp, .severity, .message] | @tsv' | tail -200 || echo "(no build logs)"
+          echo "----- deploymentLogs (last 200) -----"
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$id: String!){ deploymentLogs(deploymentId:\$id, limit:200){ message timestamp severity } }\",\"variables\":{\"id\":\"${DEP_ID}\"}}" \
+            | jq -r '.data.deploymentLogs[]? | [.timestamp, .severity, .message] | @tsv' | tail -200 || echo "(no runtime logs)"
