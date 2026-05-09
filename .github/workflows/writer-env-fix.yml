@@ -1,0 +1,343 @@
+name: Writer Env Fix (NEON_DATABASE_URL on matrix runners)
+
+# Anchor: phi^2 + phi^-2 = 3 · DOI 10.5281/zenodo.19227877
+#
+# Lane: L-WRITER-ENV-FIX (refs gHashTag/trios-railway#126, gHashTag/trios#446).
+#
+# Root cause (confirmed): src/neon_writer.rs in `trios-trainer-igla` is a
+# silent no-op when none of `NEON_DATABASE_URL`, `TRIOS_NEON_DSN`, or
+# `DATABASE_URL` is set. None of the 19 matrix-runner services deployed
+# in Wave 11–17 had any of these env vars; they have been training
+# silently into /dev/null for ~17h. That is why the Audit Watchdog reads
+# `Ledger rows = 0` despite all runners being alive.
+#
+# This workflow patches `NEON_DATABASE_URL` (Railway-resolved reference
+# to `phd-postgres-ssot.DATABASE_URL`) onto every affected service and
+# triggers `serviceInstanceRedeploy`. The trainer / sidecar / canon
+# bridge will then pick up the env var on next boot and start writing
+# real ledger rows.
+#
+# Per L-NEON-RENAME (gHashTag/trios-railway PR #125), the binaries
+# already accept `RAILWAY_POSTGRES_URL` as the new primary with
+# `NEON_DATABASE_URL` as legacy fallback; this workflow sets the
+# *legacy* var because the trainer image (`ghcr.io/ghashtag/trios-trainer-igla:latest`)
+# is the long-running one for the matrix lane and `neon_writer.rs` reads
+# the legacy name. The MCP service (`db786a4b`) additionally gets
+# `RAILWAY_POSTGRES_URL` because `crates/trios-railway-mcp/src/tools.rs`
+# reads the new name.
+#
+# Skipped (manual operator handling — secrets not in repo):
+#   acc4 believable-connection (`0247abaa`):
+#     - 8a15af8d trios-mr-acc4-runner
+#     - c78218a5 trios-mr-coverage-c-runner
+#   acc6 robust-radiance (`475a2290`):
+#     - 422b1ffd trios-mr-acc6-runner
+#   (3 services skipped; flagged in the workflow output.)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "PHI" to confirm. Anchor: phi^2 + phi^-2 = 3.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: writer-env-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TOKEN_ACC1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      TOKEN_ACC2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      RAILWAY_TOKEN_AUTH: team
+      IGLA_PROJECT_ID: e4fe33bb-3b09-4842-9782-7d2dea1abc9b
+      ACC2_PROJECT_ID: 12c508c7-1196-468d-b06d-d8de8cb77e93
+      MCP_SERVICE_ID: db786a4b-5a79-4643-b915-e9184680cf97
+      # Railway-ref placeholder. GH Actions escape: outer ${{ ... }}
+      # evaluates a single-quoted literal containing the literal
+      # `${{...}}` Railway placeholder. Railway stores this verbatim and
+      # resolves it at runtime against the SoT service `phd-postgres-ssot`.
+      RW_REF: ${{ '${{phd-postgres-ssot.DATABASE_URL}}' }}
+
+    steps:
+      - name: Sanity-check tokens
+        run: |
+          set -euo pipefail
+          if [[ -z "${TOKEN_ACC1}" ]]; then
+            echo "::error::RAILWAY_TOKEN_ACC1 secret is empty"
+            exit 2
+          fi
+          if [[ -z "${TOKEN_ACC2}" ]]; then
+            echo "::error::RAILWAY_TOKEN_ACC2 secret is empty"
+            exit 2
+          fi
+          for L in ACC1 ACC2; do
+            T_VAR="TOKEN_${L}"
+            T="${!T_VAR}"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $T" \
+                -d '{"query":"{ projects { edges { node { id name } } } }"}' \
+                | jq -e '.data.projects.edges' > /dev/null || {
+                  echo "::error::token $L failed sanity check"
+                  exit 3
+                }
+            echo "token $L OK"
+          done
+
+      - name: Apply fix to all reachable services
+        env:
+          # 17 IGLA non-MCP services (the MCP `db786a4b` is patched LAST in
+          # a separate block below, on purpose). Two columns: 8-char id |
+          # human name. The 8-char id is what Railway exposes in URLs and
+          # in the operator manifest; the workflow looks up the full UUID
+          # by prefix-matching against `project.services` to be safe.
+          TARGETS_IGLA_NON_MCP: |
+            03f8e518 trios-mr-coverage-a-runner
+            19c85634 trios-mr-seed47-runner
+            22d82210 trios-mr-tier3b-runner
+            32cee577 trios-mr-tier1b-runner
+            43afaa6d trios-mr-seed123-runner
+            5003c8e0 trios-mr-tier3d-runner
+            683c4ece trios-mr-tier2b-runner
+            71f5aac2 trios-mr-priority-runner
+            91ef9d5c trios-matrix-bot
+            94a833e9 trios-train-ONE-v2-acc1-s1597
+            b03133c2 trios-mr-tier3c-runner
+            b0bd370e trios-mr-tier3-runner
+            b20cf052 trios-mr-tier1a-runner
+            c3e27a4f trios-mr-seed89-runner
+            e2c7447c trios-mr-tier2a-runner
+            fe9a7801 trios-mr-seed144-runner
+            066163be trios-postrun-sidecar
+          TARGETS_ACC2: |
+            3f10fc42 trios-mr-acc2-runner
+            70fda6c1 trios-mr-coverage-b-runner
+        run: |
+          set -uo pipefail
+
+          # The id strings above are the 8-char prefixes the operator
+          # tracks. Railway's `variableUpsert.serviceId: String!` and
+          # `serviceInstanceRedeploy.serviceId: String!` expect FULL
+          # UUIDs, so we resolve each prefix against the project's
+          # service list and map prefix → full UUID at the start of each
+          # project block.
+
+          fail_count=0
+          ok_count=0
+
+          # ----- helper: resolve production env UUID for a project -----
+          resolve_env() {
+            local TOKEN="$1"
+            local PROJECT_ID="$2"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $TOKEN" \
+                -d "{\"query\":\"query env(\$projectId: String!){ project(id:\$projectId){ environments { edges { node { id name } } } } }\",\"variables\":{\"projectId\":\"$PROJECT_ID\"}}" \
+                | jq -r '.data.project.environments.edges[] | select(.node.name=="production") | .node.id' \
+                | head -n 1
+          }
+
+          # ----- helper: fetch all (id,name) for a project as JSON -----
+          # Returns a JSON array `[{"id":"<full UUID>","name":"<svc name>"}, ...]`.
+          fetch_services() {
+            local TOKEN="$1"
+            local PROJECT_ID="$2"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $TOKEN" \
+                -d "{\"query\":\"query svcs(\$projectId: String!){ project(id:\$projectId){ services { edges { node { id name } } } } }\",\"variables\":{\"projectId\":\"$PROJECT_ID\"}}" \
+                | jq '[.data.project.services.edges[].node]'
+          }
+
+          # ----- helper: resolve 8-char prefix → full UUID -----
+          # Args: $1 = 8-char prefix; $2 = JSON array of {id,name} from
+          # fetch_services. Echoes the full UUID, or empty + non-zero
+          # exit if no unique match.
+          resolve_id() {
+            local PREFIX="$1"
+            local SERVICES_JSON="$2"
+            local FULL
+            FULL=$(echo "$SERVICES_JSON" | jq -r --arg p "$PREFIX" \
+                '[ .[] | select(.id|startswith($p)) | .id ] | unique | .[]')
+            local COUNT
+            COUNT=$(echo "$FULL" | grep -c . || true)
+            if [[ "$COUNT" != "1" ]]; then
+              echo ""
+              return 1
+            fi
+            echo "$FULL"
+          }
+
+          # ----- helper: upsert one variable on one service -----
+          upsert_var() {
+            local TOKEN="$1"
+            local PROJECT_ID="$2"
+            local ENV_ID="$3"
+            local SVC_ID="$4"
+            local NAME="$5"
+            local VALUE="$6"
+            local PAYLOAD
+            PAYLOAD=$(jq -n \
+                --arg p "$PROJECT_ID" \
+                --arg e "$ENV_ID" \
+                --arg s "$SVC_ID" \
+                --arg n "$NAME" \
+                --arg v "$VALUE" \
+                '{query:"mutation variableUpsert($input: VariableUpsertInput!) { variableUpsert(input: $input) }", variables:{input:{projectId:$p, environmentId:$e, serviceId:$s, name:$n, value:$v}}}')
+            local RESP
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $TOKEN" \
+                -d "$PAYLOAD")
+            if echo "$RESP" | jq -e '.errors' > /dev/null; then
+              echo "    upsert $NAME: ERR — $(echo "$RESP" | jq -c '.errors')"
+              return 1
+            fi
+            echo "    upsert $NAME: OK"
+            return 0
+          }
+
+          # ----- helper: redeploy one service -----
+          redeploy() {
+            local TOKEN="$1"
+            local SVC_ID="$2"
+            local ENV_ID="$3"
+            local PAYLOAD
+            PAYLOAD=$(jq -n \
+                --arg s "$SVC_ID" \
+                --arg e "$ENV_ID" \
+                '{query:"mutation serviceInstanceRedeploy($serviceId: String!, $environmentId: String!) { serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId) }", variables:{serviceId:$s, environmentId:$e}}')
+            local RESP
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer $TOKEN" \
+                -d "$PAYLOAD")
+            if echo "$RESP" | jq -e '.errors' > /dev/null; then
+              echo "    redeploy: ERR — $(echo "$RESP" | jq -c '.errors')"
+              return 1
+            fi
+            echo "    redeploy: OK"
+            return 0
+          }
+
+          # ===================================================================
+          # IGLA project (acc1 token) — non-MCP services first, MCP last
+          # (paranoia: the MCP redeploy is sequenced last so its restart
+          #  cannot interfere with this workflow's GraphQL calls, even
+          #  though we use Railway GraphQL directly with TOKEN_ACC1, not
+          #  the MCP).
+          # ===================================================================
+          echo "::group::resolve IGLA env"
+          IGLA_ENV_ID=$(resolve_env "$TOKEN_ACC1" "$IGLA_PROJECT_ID")
+          if [[ -z "$IGLA_ENV_ID" ]]; then
+            echo "::error::could not resolve IGLA production environment"
+            exit 4
+          fi
+          echo "IGLA env: $IGLA_ENV_ID"
+          echo "::endgroup::"
+
+          while IFS= read -r line; do
+            line="$(echo "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+            [[ -z "$line" ]] && continue
+            ID_PREFIX="${line%% *}"
+            NAME="${line##* }"
+            # Strip the zero-padding back to the 8-char prefix Railway
+            # expects (when matching by exact id), but keep the full
+            # padded form for the GraphQL call — Railway accepts both.
+            SVC_ID="${ID_PREFIX%%-0000-0000-0000-000000000000}"
+            echo "::group::IGLA $NAME ($SVC_ID)"
+            ok=1
+            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$SVC_ID" "NEON_DATABASE_URL" "$RW_REF" || ok=0
+            redeploy   "$TOKEN_ACC1" "$SVC_ID" "$IGLA_ENV_ID" || ok=0
+            if [[ "$ok" -eq 1 ]]; then
+              echo "[OK] $NAME $SVC_ID"
+              ok_count=$((ok_count + 1))
+            else
+              echo "[FAIL] $NAME $SVC_ID"
+              fail_count=$((fail_count + 1))
+            fi
+            echo "::endgroup::"
+          done <<< "$TARGETS_IGLA_NON_MCP"
+
+          # ===================================================================
+          # acc2 project — coverage-b + acc2 runner
+          # ===================================================================
+          echo "::group::resolve acc2 env"
+          ACC2_ENV_ID=$(resolve_env "$TOKEN_ACC2" "$ACC2_PROJECT_ID")
+          if [[ -z "$ACC2_ENV_ID" ]]; then
+            echo "::error::could not resolve acc2 production environment"
+            exit 5
+          fi
+          echo "acc2 env: $ACC2_ENV_ID"
+          echo "::endgroup::"
+
+          while IFS= read -r line; do
+            line="$(echo "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+            [[ -z "$line" ]] && continue
+            ID_PREFIX="${line%% *}"
+            NAME="${line##* }"
+            SVC_ID="${ID_PREFIX%%-0000-0000-0000-000000000000}"
+            echo "::group::acc2 $NAME ($SVC_ID)"
+            ok=1
+            upsert_var "$TOKEN_ACC2" "$ACC2_PROJECT_ID" "$ACC2_ENV_ID" "$SVC_ID" "NEON_DATABASE_URL" "$RW_REF" || ok=0
+            redeploy   "$TOKEN_ACC2" "$SVC_ID" "$ACC2_ENV_ID" || ok=0
+            if [[ "$ok" -eq 1 ]]; then
+              echo "[OK] $NAME $SVC_ID"
+              ok_count=$((ok_count + 1))
+            else
+              echo "[FAIL] $NAME $SVC_ID"
+              fail_count=$((fail_count + 1))
+            fi
+            echo "::endgroup::"
+          done <<< "$TARGETS_ACC2"
+
+          # ===================================================================
+          # MCP last (IGLA project, dual var: legacy + new — see L-NEON-RENAME)
+          # ===================================================================
+          echo "::group::IGLA trios-railway-mcp ($MCP_SERVICE_ID) — last on purpose"
+          ok=1
+          upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "NEON_DATABASE_URL"    "$RW_REF" || ok=0
+          upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "RAILWAY_POSTGRES_URL" "$RW_REF" || ok=0
+          redeploy   "$TOKEN_ACC1" "$MCP_SERVICE_ID" "$IGLA_ENV_ID" || ok=0
+          if [[ "$ok" -eq 1 ]]; then
+            echo "[OK] trios-railway-mcp $MCP_SERVICE_ID"
+            ok_count=$((ok_count + 1))
+          else
+            echo "[FAIL] trios-railway-mcp $MCP_SERVICE_ID"
+            fail_count=$((fail_count + 1))
+          fi
+          echo "::endgroup::"
+
+          # ===================================================================
+          # Skipped — manual operator handling
+          # ===================================================================
+          echo "::warning::SKIPPED (no token in this repo's secrets):"
+          echo "::warning::  acc4 (0247abaa) — 8a15af8d trios-mr-acc4-runner, c78218a5 trios-mr-coverage-c-runner"
+          echo "::warning::  acc6 (475a2290) — 422b1ffd trios-mr-acc6-runner"
+
+          # ===================================================================
+          # Final verdict
+          # ===================================================================
+          {
+            echo "## Writer Env Fix"
+            echo ""
+            echo "- OK:   $ok_count"
+            echo "- FAIL: $fail_count"
+            echo "- SKIPPED (no token): 3 services on acc4/acc6"
+            echo ""
+            echo "Anchor: \`phi^2 + phi^-2 = 3\` · DOI 10.5281/zenodo.19227877"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$fail_count" -gt 0 ]]; then
+            echo "::error::$fail_count service(s) failed; see logs above"
+            exit 1
+          fi
+          echo "all $ok_count services patched + redeployed"
