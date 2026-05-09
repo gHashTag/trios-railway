@@ -45,7 +45,12 @@ jobs:
       PROJECT_ID:           "e4fe33bb-3b09-4842-9782-7d2dea1abc9b"  # IGLA project on acc1
       MCP_SERVICE_ID:       "db786a4b-5a79-4643-b915-e9184680cf97"  # trios-railway-mcp
       SSOT_SERVICE_ID:      "c5f37b42-832a-4acd-9749-381761c94957"  # phd-postgres-ssot
-      SSOT_VARIABLE_NAME:   "DATABASE_URL"
+      # Candidate keys are tried in order. The first non-empty value wins.
+      # Railway Postgres legacy services sometimes only expose DATABASE_PUBLIC_URL
+      # / DATABASE_PRIVATE_URL when the canonical DATABASE_URL hasn't been set
+      # explicitly. The fallback chain keeps the workflow from dying on naming
+      # drift between environments.
+      SSOT_KEY_CANDIDATES:  "DATABASE_URL DATABASE_PUBLIC_URL DATABASE_PRIVATE_URL POSTGRES_URL PGURL"
       MCP_VARIABLE_NAME:    "RAILWAY_POSTGRES_URL"
       RAILWAY_TOKEN:        ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       RAILWAY_TOKEN_AUTH:   team
@@ -89,30 +94,43 @@ jobs:
           echo "env_id=${ENV_ID}" >> "${GITHUB_OUTPUT}"
           echo "production environment = ${ENV_ID}"
 
-      - name: Fetch SSOT DATABASE_URL from phd-postgres-ssot
+      - name: Fetch SSOT Postgres URL from phd-postgres-ssot
         id: ssot
         run: |
           set -euo pipefail
-          # variables(...) returns the raw value strings; we filter to the
-          # DATABASE_URL key. Mask it in logs immediately.
-          SSOT_DB_URL=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+          # 1. Pull the full variables map once.
+          VARS_JSON=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
-            -d "{\"query\":\"query(\$projectId:String!,\$environmentId:String!,\$serviceId:String!){ variables(projectId:\$projectId,environmentId:\$environmentId,serviceId:\$serviceId) }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\",\"serviceId\":\"${SSOT_SERVICE_ID}\"}}" \
-            | jq -r --arg k "${SSOT_VARIABLE_NAME}" '.data.variables[$k] // empty')
+            -d "{\"query\":\"query(\$projectId:String!,\$environmentId:String!,\$serviceId:String!){ variables(projectId:\$projectId,environmentId:\$environmentId,serviceId:\$serviceId) }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\",\"serviceId\":\"${SSOT_SERVICE_ID}\"}}")
+          # Diagnostic — dump the *keys only* (never the values) so we can see
+          # what Railway exposes for this Postgres service.
+          KEY_LIST=$(echo "${VARS_JSON}" | jq -r '.data.variables // {} | keys | join(",")')
+          echo "phd-postgres-ssot variable keys: ${KEY_LIST}"
+          # 2. Walk the candidate chain.
+          SSOT_DB_URL=""
+          MATCHED_KEY=""
+          for K in ${SSOT_KEY_CANDIDATES}; do
+            V=$(echo "${VARS_JSON}" | jq -r --arg k "${K}" '.data.variables[$k] // empty')
+            if [[ -n "${V}" && "${V}" != "null" ]]; then
+              SSOT_DB_URL="${V}"
+              MATCHED_KEY="${K}"
+              break
+            fi
+          done
           if [[ -z "${SSOT_DB_URL}" ]]; then
-            echo "::error::DATABASE_URL not found on phd-postgres-ssot service ${SSOT_SERVICE_ID}"
+            echo "::error::no Postgres URL key found on phd-postgres-ssot service ${SSOT_SERVICE_ID}. Tried: ${SSOT_KEY_CANDIDATES}. Available keys: ${KEY_LIST}"
             exit 5
           fi
-          # Mask the full URL and the password fragment (between : and @ after the last //) before any echo.
+          # 3. Mask before any echo.
           echo "::add-mask::${SSOT_DB_URL}"
-          # Persist via the masked output channel.
           {
             echo "ssot_db_url<<__EOT__"
             echo "${SSOT_DB_URL}"
             echo "__EOT__"
           } >> "${GITHUB_OUTPUT}"
-          echo "SSOT DATABASE_URL fetched (masked)."
+          echo "matched_key=${MATCHED_KEY}" >> "${GITHUB_OUTPUT}"
+          echo "SSOT Postgres URL fetched from key '${MATCHED_KEY}' (masked)."
 
       - name: variableUpsert RAILWAY_POSTGRES_URL on MCP service
         run: |
