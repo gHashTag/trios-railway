@@ -1,0 +1,205 @@
+name: MCP emergency redeploy
+
+# Manually-dispatched recovery workflow for the trios-railway-mcp service
+# (db786a4b-5a79-4643-b915-e9184680cf97) when the deployed instance loses
+# its `RAILWAY_POSTGRES_URL` env or enters a crash-loop. Two GraphQL
+# mutations against backboard.railway.com:
+#   1. variableUpsert  RAILWAY_POSTGRES_URL = phd-postgres-ssot DATABASE_URL
+#   2. serviceInstanceRedeploy on the latest deployment of the production env
+#
+# Guarded by a `confirm == 'PHI'` input so an accidental run-workflow click
+# can never re-deploy a Trinity-Queen-Hive service. Anchor: phi^2 + phi^-2 = 3.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type the word PHI to confirm. No other value redeploys."
+        required: true
+        type: string
+        default: ""
+      account_alias:
+        description: "Railway token alias (acc1 only — MCP lives there)."
+        required: true
+        type: choice
+        default: acc1
+        options:
+          - acc1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-emergency-redeploy
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    name: variableUpsert + serviceInstanceRedeploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    env:
+      # --- Trinity service coordinates (do NOT change without re-validating
+      # both project IDs and service IDs against `tri-railway` fleet output).
+      PROJECT_ID:           "e4fe33bb-3b09-4842-9782-7d2dea1abc9b"  # IGLA project on acc1
+      MCP_SERVICE_ID:       "db786a4b-5a79-4643-b915-e9184680cf97"  # trios-railway-mcp
+      SSOT_SERVICE_ID:      "c5f37b42-832a-4acd-9749-381761c94957"  # phd-postgres-ssot
+      SSOT_VARIABLE_NAME:   "DATABASE_URL"
+      MCP_VARIABLE_NAME:    "RAILWAY_POSTGRES_URL"
+      RAILWAY_TOKEN:        ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      RAILWAY_TOKEN_AUTH:   team
+
+    steps:
+      - name: Guard — confirm == 'PHI'
+        run: |
+          if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
+            echo "::error::confirm input must be exactly 'PHI' (got '${{ inputs.confirm }}'). Aborting per Trinity safety guard."
+            exit 2
+          fi
+          if [[ -z "${RAILWAY_TOKEN}" ]]; then
+            echo "::error::secret RAILWAY_TOKEN_ACC1 is empty. Set it in repo secrets before running."
+            exit 3
+          fi
+          echo "Guard cleared. Anchor: phi^2 + phi^-2 = 3."
+
+      - name: Probe Railway GraphQL auth
+        run: |
+          set -euo pipefail
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d '{"query":"{ projects { edges { node { id name } } } }"}' \
+            | jq -e '.data.projects.edges' > /dev/null
+
+      - name: Resolve production environment id
+        id: env
+        run: |
+          set -euo pipefail
+          ENV_ID=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$id: String!){ project(id:\$id){ environments { edges { node { id name } } } } }\",\"variables\":{\"id\":\"${PROJECT_ID}\"}}" \
+            | jq -r '.data.project.environments.edges[] | select(.node.name=="production") | .node.id' \
+            | head -n 1)
+          if [[ -z "${ENV_ID}" || "${ENV_ID}" == "null" ]]; then
+            echo "::error::could not resolve production environment id for project ${PROJECT_ID}"
+            exit 4
+          fi
+          echo "env_id=${ENV_ID}" >> "${GITHUB_OUTPUT}"
+          echo "production environment = ${ENV_ID}"
+
+      - name: Fetch SSOT DATABASE_URL from phd-postgres-ssot
+        id: ssot
+        run: |
+          set -euo pipefail
+          # variables(...) returns the raw value strings; we filter to the
+          # DATABASE_URL key. Mask it in logs immediately.
+          SSOT_DB_URL=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$projectId:String!,\$environmentId:String!,\$serviceId:String!){ variables(projectId:\$projectId,environmentId:\$environmentId,serviceId:\$serviceId) }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\",\"serviceId\":\"${SSOT_SERVICE_ID}\"}}" \
+            | jq -r --arg k "${SSOT_VARIABLE_NAME}" '.data.variables[$k] // empty')
+          if [[ -z "${SSOT_DB_URL}" ]]; then
+            echo "::error::DATABASE_URL not found on phd-postgres-ssot service ${SSOT_SERVICE_ID}"
+            exit 5
+          fi
+          # Mask the full URL and the password fragment (between : and @ after the last //) before any echo.
+          echo "::add-mask::${SSOT_DB_URL}"
+          # Persist via the masked output channel.
+          {
+            echo "ssot_db_url<<__EOT__"
+            echo "${SSOT_DB_URL}"
+            echo "__EOT__"
+          } >> "${GITHUB_OUTPUT}"
+          echo "SSOT DATABASE_URL fetched (masked)."
+
+      - name: variableUpsert RAILWAY_POSTGRES_URL on MCP service
+        run: |
+          set -euo pipefail
+          # variableUpsert mutation: { projectId, environmentId, serviceId, name, value }
+          # Returns Boolean (true on success). We assert .data.variableUpsert == true.
+          PAYLOAD=$(jq -n \
+            --arg projectId "${PROJECT_ID}" \
+            --arg environmentId "${{ steps.env.outputs.env_id }}" \
+            --arg serviceId "${MCP_SERVICE_ID}" \
+            --arg name "${MCP_VARIABLE_NAME}" \
+            --arg value "${{ steps.ssot.outputs.ssot_db_url }}" \
+            '{ query: "mutation($input: VariableUpsertInput!){ variableUpsert(input:$input) }", variables: { input: { projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId, name: $name, value: $value } } }')
+          RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "${PAYLOAD}")
+          OK=$(echo "${RESP}" | jq -r '.data.variableUpsert // false')
+          if [[ "${OK}" != "true" ]]; then
+            echo "::error::variableUpsert failed: $(echo "${RESP}" | jq -c '.errors // .')"
+            exit 6
+          fi
+          echo "variableUpsert ${MCP_VARIABLE_NAME} on ${MCP_SERVICE_ID} OK"
+
+      - name: Resolve latest deployment id for MCP production
+        id: dep
+        run: |
+          set -euo pipefail
+          DEPLOY_ID=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "{\"query\":\"query(\$projectId:String!,\$serviceId:String!,\$environmentId:String!){ deployments(input:{projectId:\$projectId,serviceId:\$serviceId,environmentId:\$environmentId}, first: 1){ edges { node { id status createdAt } } } }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"serviceId\":\"${MCP_SERVICE_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\"}}" \
+            | jq -r '.data.deployments.edges[0].node.id // empty')
+          if [[ -z "${DEPLOY_ID}" ]]; then
+            echo "::error::could not resolve any deployment for MCP service ${MCP_SERVICE_ID}"
+            exit 7
+          fi
+          echo "deployment_id=${DEPLOY_ID}" >> "${GITHUB_OUTPUT}"
+          echo "latest deployment id = ${DEPLOY_ID}"
+
+      - name: serviceInstanceRedeploy on MCP service
+        run: |
+          set -euo pipefail
+          # serviceInstanceRedeploy(serviceId, environmentId) is the canonical
+          # mutation for forcing a re-roll without a new build. Falls back to
+          # deploymentRedeploy(id) if the first form is unavailable on this
+          # API version.
+          PAYLOAD=$(jq -n \
+            --arg serviceId "${MCP_SERVICE_ID}" \
+            --arg environmentId "${{ steps.env.outputs.env_id }}" \
+            '{ query: "mutation($serviceId: String!, $environmentId: String!){ serviceInstanceRedeploy(serviceId:$serviceId, environmentId:$environmentId) }", variables: { serviceId: $serviceId, environmentId: $environmentId } }')
+          RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "${PAYLOAD}")
+          OK=$(echo "${RESP}" | jq -r '.data.serviceInstanceRedeploy // empty')
+          if [[ -n "${OK}" && "${OK}" != "null" && "${OK}" != "false" ]]; then
+            echo "serviceInstanceRedeploy OK: ${OK}"
+            exit 0
+          fi
+          echo "serviceInstanceRedeploy primary path failed; falling back to deploymentRedeploy on ${{ steps.dep.outputs.deployment_id }}"
+          FB=$(jq -n --arg id "${{ steps.dep.outputs.deployment_id }}" \
+            '{ query: "mutation($id: String!){ deploymentRedeploy(id:$id){ id status } }", variables: { id: $id } }')
+          FB_RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -d "${FB}")
+          FB_ID=$(echo "${FB_RESP}" | jq -r '.data.deploymentRedeploy.id // empty')
+          if [[ -z "${FB_ID}" ]]; then
+            echo "::error::both serviceInstanceRedeploy and deploymentRedeploy failed: $(echo "${FB_RESP}" | jq -c '.errors // .')"
+            exit 8
+          fi
+          echo "deploymentRedeploy OK: ${FB_ID}"
+
+      - name: Post-redeploy health probe (60s soak)
+        run: |
+          set -euo pipefail
+          # Best-effort: poll the public mcp endpoint a few times and report
+          # without failing the job — the redeploy itself is the goal, the
+          # /healthz probe is only an SLO indicator.
+          ENDPOINT="https://trios-railway-mcp.up.railway.app/healthz"
+          for i in 1 2 3 4 5 6; do
+            sleep 10
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' "${ENDPOINT}" || echo "000")
+            echo "probe ${i}/6 ${ENDPOINT} -> ${CODE}"
+            if [[ "${CODE}" == "200" ]]; then
+              echo "::notice::MCP /healthz reachable after redeploy."
+              break
+            fi
+          done
