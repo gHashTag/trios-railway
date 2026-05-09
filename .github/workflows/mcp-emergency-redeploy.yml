@@ -94,7 +94,7 @@ jobs:
           echo "env_id=${ENV_ID}" >> "${GITHUB_OUTPUT}"
           echo "production environment = ${ENV_ID}"
 
-      - name: Fetch SSOT Postgres URL from phd-postgres-ssot
+      - name: Fetch / assemble SSOT Postgres URL from phd-postgres-ssot
         id: ssot
         run: |
           set -euo pipefail
@@ -103,11 +103,10 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
             -d "{\"query\":\"query(\$projectId:String!,\$environmentId:String!,\$serviceId:String!){ variables(projectId:\$projectId,environmentId:\$environmentId,serviceId:\$serviceId) }\",\"variables\":{\"projectId\":\"${PROJECT_ID}\",\"environmentId\":\"${{ steps.env.outputs.env_id }}\",\"serviceId\":\"${SSOT_SERVICE_ID}\"}}")
-          # Diagnostic — dump the *keys only* (never the values) so we can see
-          # what Railway exposes for this Postgres service.
+          # Diagnostic — dump key names (never values).
           KEY_LIST=$(echo "${VARS_JSON}" | jq -r '.data.variables // {} | keys | join(",")')
           echo "phd-postgres-ssot variable keys: ${KEY_LIST}"
-          # 2. Walk the candidate chain.
+          # 2. Try direct URL keys first.
           SSOT_DB_URL=""
           MATCHED_KEY=""
           for K in ${SSOT_KEY_CANDIDATES}; do
@@ -118,19 +117,39 @@ jobs:
               break
             fi
           done
+          # 3. If no URL key, assemble from POSTGRES_USER / POSTGRES_PASSWORD /
+          # POSTGRES_DB / RAILWAY_PRIVATE_DOMAIN. This matches the standard
+          # Railway Postgres template — the canonical DATABASE_URL is purely
+          # an alias of these four parts.
           if [[ -z "${SSOT_DB_URL}" ]]; then
-            echo "::error::no Postgres URL key found on phd-postgres-ssot service ${SSOT_SERVICE_ID}. Tried: ${SSOT_KEY_CANDIDATES}. Available keys: ${KEY_LIST}"
+            PG_USER=$(echo "${VARS_JSON}" | jq -r '.data.variables.POSTGRES_USER // empty')
+            PG_PASS=$(echo "${VARS_JSON}" | jq -r '.data.variables.POSTGRES_PASSWORD // empty')
+            PG_DB=$(echo "${VARS_JSON}"   | jq -r '.data.variables.POSTGRES_DB // "railway"')
+            PG_HOST=$(echo "${VARS_JSON}" | jq -r '.data.variables.RAILWAY_PRIVATE_DOMAIN // empty')
+            PG_PORT="5432"
+            if [[ -n "${PG_USER}" && -n "${PG_PASS}" && -n "${PG_HOST}" ]]; then
+              SSOT_DB_URL="postgresql://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}"
+              MATCHED_KEY="<assembled from POSTGRES_USER/PASSWORD/DB + RAILWAY_PRIVATE_DOMAIN>"
+            fi
+          fi
+          if [[ -z "${SSOT_DB_URL}" ]]; then
+            echo "::error::no Postgres URL key found on phd-postgres-ssot service ${SSOT_SERVICE_ID}. Tried: ${SSOT_KEY_CANDIDATES} + POSTGRES_USER/POSTGRES_PASSWORD/RAILWAY_PRIVATE_DOMAIN assembly. Available keys: ${KEY_LIST}"
             exit 5
           fi
-          # 3. Mask before any echo.
+          # 4. Mask the assembled value (and the password fragment) before any echo.
           echo "::add-mask::${SSOT_DB_URL}"
+          # Also mask the password by itself in case it leaks into another step.
+          PG_PASS_FOR_MASK=$(echo "${VARS_JSON}" | jq -r '.data.variables.POSTGRES_PASSWORD // empty')
+          if [[ -n "${PG_PASS_FOR_MASK}" ]]; then
+            echo "::add-mask::${PG_PASS_FOR_MASK}"
+          fi
           {
             echo "ssot_db_url<<__EOT__"
             echo "${SSOT_DB_URL}"
             echo "__EOT__"
           } >> "${GITHUB_OUTPUT}"
           echo "matched_key=${MATCHED_KEY}" >> "${GITHUB_OUTPUT}"
-          echo "SSOT Postgres URL fetched from key '${MATCHED_KEY}' (masked)."
+          echo "SSOT Postgres URL resolved via '${MATCHED_KEY}' (masked)."
 
       - name: variableUpsert RAILWAY_POSTGRES_URL on MCP service
         run: |
