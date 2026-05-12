@@ -13,18 +13,12 @@ jobs:
           echo "starts with postgres? $(echo $RAILWAY_POSTGRES_URL | head -c10 | sed 's/[:0-9].*//')"
           which psql
           psql --version
-      - name: psql probe last 30 min
+      - name: introspect schema
         run: |
           set -e
-          echo "::group::all rows last 30 min"
-          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, created_at AT TIME ZONE 'UTC' AS ts_utc FROM ssot.bpb_samples WHERE created_at > NOW() - INTERVAL '30 minutes' ORDER BY created_at DESC LIMIT 40;"
+          echo "::group::columns of ssot.bpb_samples"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='ssot' AND table_name='bpb_samples' ORDER BY ordinal_position;"
           echo "::endgroup::"
-          echo "::group::rows matching smoke-raise"
-          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, created_at FROM ssot.bpb_samples WHERE run_id LIKE 'smoke-raise%' ORDER BY created_at DESC LIMIT 20;"
-          echo "::endgroup::"
-          echo "::group::rows for scarab-muon"
-          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, created_at FROM ssot.bpb_samples WHERE canon_name LIKE '%muon%' AND created_at > NOW() - INTERVAL '2 hours' ORDER BY created_at DESC LIMIT 20;"
-          echo "::endgroup::"
-          echo "::group::total rows + last ts"
-          psql "$RAILWAY_POSTGRES_URL" -c "SELECT count(*) AS total, max(created_at) AS last_write FROM ssot.bpb_samples;"
+          echo "::group::sample row (any)"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT * FROM ssot.bpb_samples LIMIT 1;"
           echo "::endgroup::"
