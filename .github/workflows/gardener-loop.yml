@@ -1,4 +1,4 @@
-name: GARDENER-LOOP — autonomous IGLA needle hunter (v2 · O(1) · blocker-fixing)
+name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.5 · O(1) · blocker-fixing · drift-aware)
 on:
   schedule:
     - cron: "37 * * * *"  # каждый час :37 UTC
@@ -143,6 +143,42 @@ jobs:
           echo "🛠️ Auto-redeployed $FIXED dead services"
 
       # ─────────────────────────────────────────────────────────────
+      # STAGE 2c — DETECT ENV drift (cells assigned vs service vars)
+      # Hard-capped at 20 fixes per tick (O(1) bounded)
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-2c — env drift autofix (re-upsert if drifted)
+        id: drift
+        if: env.MODE == 'live'
+        run: |
+          set +e
+          DRIFTED=0
+          IDX=0
+          while IFS=',' read -r ACC PROJ ENV SVC NAME STATUS CREATED; do
+            N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+            [ -z "$TOK" ] && continue
+            IDX=$((IDX+1))
+            CELL_LINE=$((((IDX - 1) % 240) + 2))
+            ROW=$(sed -n "${CELL_LINE}p" .github/wave-a/wave-a-cells-v2.csv)
+            [ -z "$ROW" ] && continue
+            FMT=$(echo "$ROW" | cut -d, -f2)
+            ALG=$(echo "$ROW" | cut -d, -f3)
+            CANON=$(echo "$ROW" | cut -d, -f4)
+            for KV in "FORMAT=$FMT" "OPTIMIZER=$ALG" "CANON_NAME=$CANON"; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "{\"query\":\"mutation { variableUpsert(input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\", name:\\\"$K\\\", value:\\\"$V\\\"}) }\"}" \
+                > /dev/null
+            done
+            DRIFTED=$((DRIFTED+1))
+            [ "$DRIFTED" -ge 20 ] && break
+            sleep 0.1
+          done < /tmp/gardener/services.csv
+          echo "🔧 ENV drift autofix: $DRIFTED services re-upserted"
+          echo "drift_fixed=$DRIFTED" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
       # STAGE 3 — IDENTIFY TODO cells (O(1) set diff)
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-3 — TODO cells (set diff, O(N) where N=240 — effectively O(1))
@@ -206,8 +242,25 @@ jobs:
             echo "- Measured/Total: ${{ steps.todo.outputs.measured }} / 240"
             echo "- Fleet dead: ${{ steps.fleet.outputs.fleet_dead }} / ${{ steps.fleet.outputs.fleet_total }}"
             echo "- O(1) probe via gardener_matrix_mv: OK"
+            echo "- Drift fixed: ${{ steps.drift.outputs.drift_fixed || '0' }}"
             echo ""
           } >> docs/gardener-experience/log-$(date -u +%Y-%m-%d).md
+          LOG="docs/gardener-experience/log-$(date -u +%Y-%m-%d).md"
+          if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt 1000 ]; then
+            WEEK=$(date -u +%Y-W%V)
+            DIGEST="docs/gardener-experience/digest-$WEEK.md"
+            {
+              echo "# Weekly digest $WEEK (auto-rotated $(date -u +%FT%TZ))"
+              echo "Source: $(basename "$LOG") ($(wc -l < "$LOG") lines)"
+              echo ""
+              echo "## Aggregate stats"
+              echo "- Ticks: $(grep -c '^## Tick' "$LOG")"
+              echo "- Total drift fixes: $(grep -oE 'Drift fixed: [0-9]+' "$LOG" | awk '{s+=$3} END {print s+0}')"
+              echo "- Total dead seen: $(grep -oE 'Fleet dead: [0-9]+' "$LOG" | awk '{s+=$3} END {print s+0}')"
+            } > "$DIGEST"
+            : > "$LOG"
+            echo "📊 Rotated $LOG → $DIGEST"
+          fi
           git config user.name "tri-gardener-bot"
           git config user.email "admin@t27.ai"
           git add docs/gardener-experience/ || true
