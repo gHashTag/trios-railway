@@ -1,7 +1,7 @@
-name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.5 · O(1) · blocker-fixing · drift-aware)
+name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.6 · O(1) · 4x cadence · night-mode)
 on:
   schedule:
-    - cron: "37 * * * *"  # каждый час :37 UTC
+    - cron: "7,22,37,52 * * * *"  # каждые 15 минут — ночной режим 4x x
   workflow_dispatch:
     inputs:
       mode:
@@ -229,6 +229,36 @@ jobs:
           "
 
       # ─────────────────────────────────────────────────────────────
+      # STAGE 4b — champion history CSV + hourly matrix snapshot
+      - name: STAGE-4b — champion-history + matrix snapshot
+        run: |
+          set +e
+          mkdir -p docs/gardener-experience
+          SNAP=docs/gardener-experience/champion-history.csv
+          [ -f "$SNAP" ] || echo "ts,measured,total,best_bpb,fmt,algo" > "$SNAP"
+          MEASURED="${{ steps.todo.outputs.measured }}"
+          CHAMP=$(awk -F',' '$4+0 >= 5000 {print $3","$1","$2}' /tmp/gardener/measured.csv | sort -g | head -1)
+          CB=$(echo "$CHAMP" | cut -d, -f1)
+          CF=$(echo "$CHAMP" | cut -d, -f2)
+          CA=$(echo "$CHAMP" | cut -d, -f3)
+          DT=$(date -u +%FT%TZ)
+          echo "$DT,$MEASURED,240,$CB,$CF,$CA" >> "$SNAP"
+          MIN=$(date -u +%M)
+          if [ "$MIN" = "37" ]; then
+            MS="docs/gardener-experience/matrix-$(date -u +%Y-%m-%dT%H).md"
+            {
+              echo "# Matrix snapshot $(date -u +%FT%TZ)"
+              echo
+              echo "- Measured: $MEASURED / 240"
+              echo "- Champion: $CF × $CA = $CB BPB"
+              echo
+              echo "| Format | Algo | Best BPB | Steps | Samples |"
+              echo "|---|---|---|---|---|"
+              awk -F',' '$4+0 >= 5000 {print "| "$1" | "$2" | "$3" | "$4" | "$5" |"}' /tmp/gardener/measured.csv | sort -t'|' -k4 -g
+            } > "$MS"
+            echo "📊 Matrix snapshot: $MS"
+          fi
+
       # STAGE 5 — SELF-IMPROVE (commit any skill refinements)
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-5 — self-improvement log
