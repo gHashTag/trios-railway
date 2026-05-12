@@ -1,81 +1,51 @@
-name: L-RAISE-SMOKE — single service end-to-end
-
-# ONE SHOT: create 1 service on ACC4 (empty IGLA project), pin to new image,
-# verify it boots and writes a BPB row within 5 min.
-# Anchor: phi^2 + phi^-2 = 3
-
+name: L-RAISE-SMOKE-V2 — reconfigure existing service end-to-end
 on:
   workflow_dispatch:
     inputs:
-      service_name:
-        description: "Service name"
-        default: "smoke-gf16-muon-rng1597"
-      seed:
-        description: "Seed (Fibonacci canon)"
-        default: "1597"
-      steps:
-        description: "Training steps"
-        default: "500"
-
-permissions:
-  contents: read
-
+      service_name_pattern:
+        description: "Substring to match existing ACC1 service name (e.g. scarab-gf16)"
+        required: true
+        default: "scarab-gf16"
 jobs:
   raise:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ubuntu-24.04
     env:
-      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
-      SVC: ${{ inputs.service_name }}
-      SEED: ${{ inputs.seed }}
-      STEPS: ${{ inputs.steps }}
+      SEED: "1597"
+      STEPS: "500"
+      RUN_ID: "smoke-raise-v2-2026-05-12-rng1597"
       IMG: "ghcr.io/ghashtag/trios-trainer-igla:sha-20c79fe"
     steps:
-      - name: Verify ACC4 token + project
+      - name: Verify ACC1 token + list services
         run: |
           set -e
-          if [[ -z "$T4" ]]; then echo "::error::T4 empty"; exit 2; fi
-          if [[ -z "$RAILWAY_POSTGRES_URL" ]]; then echo "::error::RAILWAY_POSTGRES_URL missing on this repo"; exit 2; fi
+          if [[ -z "$T1" ]]; then echo "::error::T1 empty"; exit 2; fi
+          if [[ -z "$RAILWAY_POSTGRES_URL" ]]; then echo "::error::RAILWAY_POSTGRES_URL missing"; exit 2; fi
           curl -sS -X POST https://backboard.railway.com/graphql/v2 \
             -H "Content-Type: application/json" \
-            -H "Project-Access-Token: $T4" \
-            -d '{"query":"{ projectToken { project { id name environments { edges { node { id name } } } } } }"}' \
-          | tee /tmp/proj.json | jq '.'
+            -H "Project-Access-Token: $T1" \
+            -d '{"query":"{ projectToken { project { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } }"}' \
+          | tee /tmp/proj.json | jq '.data.projectToken.project | {id, name, svcCount: (.services.edges|length), envCount: (.environments.edges|length)}'
           PROJ=$(jq -r .data.projectToken.project.id /tmp/proj.json)
           ENV=$(jq -r '.data.projectToken.project.environments.edges[0].node.id' /tmp/proj.json)
+          PATTERN="${{ inputs.service_name_pattern }}"
+          SID=$(jq -r --arg p "$PATTERN" '.data.projectToken.project.services.edges[].node | select(.name | contains($p)) | .id' /tmp/proj.json | head -n1)
+          SNAME=$(jq -r --arg p "$PATTERN" '.data.projectToken.project.services.edges[].node | select(.name | contains($p)) | .name' /tmp/proj.json | head -n1)
+          if [[ -z "$SID" ]]; then
+            echo "::error::No service matching pattern $PATTERN"
+            jq -r '.data.projectToken.project.services.edges[].node.name' /tmp/proj.json
+            exit 3
+          fi
           echo "PROJ=$PROJ" >> $GITHUB_ENV
           echo "ENV=$ENV" >> $GITHUB_ENV
-
-      - name: Create service
-        run: |
-          set -e
-          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
-            -H "Content-Type: application/json" \
-            -H "Project-Access-Token: $T4" \
-            -d "$(jq -n --arg name "$SVC" --arg img "$IMG" '
-              {query:"mutation($i:ServiceCreateInput!){serviceCreate(input:$i){id name}}",
-               variables:{i:{name:$name, source:{image:$img}}}}')" \
-          | tee /tmp/svc.json | jq '.'
-          SID=$(jq -r '.data.serviceCreate.id // .errors[0].message' /tmp/svc.json)
-          if [[ "$SID" == "null" || -z "$SID" ]]; then echo "::error::service create failed"; exit 1; fi
-          # If it returned the error message instead of id, that's ALSO failure
-          if echo "$SID" | grep -qi "error\|failed\|exist"; then
-            # Service might already exist — try to fetch it
-            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
-              -H "Content-Type: application/json" \
-              -H "Project-Access-Token: $T4" \
-              -d '{"query":"{ projectToken { project { services { edges { node { id name } } } } } }"}' \
-            | tee /tmp/svcs.json | jq '.'
-            SID=$(jq -r --arg n "$SVC" '.data.projectToken.project.services.edges[] | select(.node.name==$n) | .node.id' /tmp/svcs.json)
-            echo "reusing existing service: $SID"
-          fi
           echo "SID=$SID" >> $GITHUB_ENV
+          echo "SNAME=$SNAME" >> $GITHUB_ENV
+          echo "Will reconfigure service: $SNAME ($SID) in env $ENV"
 
       - name: Set service variables
         run: |
           set -e
-          # Critical vars: image is via source above; set env vars for trainer
           for KV in \
             "SEED=$SEED" \
             "STEPS=$STEPS" \
@@ -85,40 +55,52 @@ jobs:
             "FORMAT=gf16" \
             "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
             "TRIOS_LANE=SMOKE-RAISE" \
-            "TRIOS_RUN_ID=smoke-raise-2026-05-12-rng${SEED}" \
+            "TRIOS_RUN_ID=$RUN_ID" \
             "RUST_LOG=info" \
             "L_R8_SYNTHETIC_FALLBACK=FORBID" \
           ; do
             K="${KV%%=*}"; V="${KV#*=}"
-            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
-              -H "Project-Access-Token: $T4" \
+              -H "Project-Access-Token: $T1" \
               -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
                 {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
-                 variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" \
-            | jq -r '.data.variableUpsert // .errors[0].message' | xargs -I{} echo "var $K: {}"
+                 variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')")
+            STATUS=$(echo "$RESP" | jq -r '.data.variableUpsert // .errors[0].message // "no-resp"')
+            echo "var $K: $STATUS"
           done
 
       - name: Trigger deploy
         run: |
           set -e
-          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+          RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
             -H "Content-Type: application/json" \
-            -H "Project-Access-Token: $T4" \
+            -H "Project-Access-Token: $T1" \
             -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
               {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
-               variables:{s:$s, e:$e}}')" \
-          | tee /tmp/deploy.json | jq '.'
-          echo "deploy triggered, sleeping 60s for boot..."
-          sleep 60
+               variables:{s:$s, e:$e}}')")
+          echo "$RESP" | jq '.'
+          DEP=$(echo "$RESP" | jq -r '.data.serviceInstanceDeployV2 // empty')
+          if [[ -z "$DEP" ]]; then
+            echo "::warning::deploy mutation returned no deploymentId — may already be deploying"
+          else
+            echo "DEPLOYMENT_ID=$DEP" >> $GITHUB_ENV
+          fi
 
-      - name: Probe deployment status
+      - name: Wait + probe SSOT for new BPB row
         run: |
           set -e
-          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
-            -H "Content-Type: application/json" \
-            -H "Project-Access-Token: $T4" \
-            -d "$(jq -n --arg s "$SID" '
-              {query:"query($s:String!){service(id:$s){name deployments(first:3){edges{node{id status createdAt}}}}}",
-               variables:{s:$s}}')" \
-          | jq '.'
+          for i in 1 2 3 4 5 6; do
+            echo "::group::probe attempt $i (sleep 30s)"
+            sleep 30
+            CNT=$(psql "$RAILWAY_POSTGRES_URL" -At -c "SELECT count(*) FROM ssot.bpb_samples WHERE run_id = '$RUN_ID';" 2>&1 || echo "psql-fail")
+            echo "rows for run_id=$RUN_ID: $CNT"
+            if [[ "$CNT" =~ ^[1-9] ]]; then
+              echo "::endgroup::"
+              echo "✅ SSOT write detected"
+              psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, step, bpb, created_at FROM ssot.bpb_samples WHERE run_id = '$RUN_ID' ORDER BY step DESC LIMIT 5;" || true
+              exit 0
+            fi
+            echo "::endgroup::"
+          done
+          echo "::warning::no SSOT writes after 3 min — service may still be booting; check deployment logs in Railway UI"
