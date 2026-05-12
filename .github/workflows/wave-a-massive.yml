@@ -1,0 +1,111 @@
+name: WAVE-A-MASSIVE — create 109 new services on ACC4-7 + dispatch
+on:
+  workflow_dispatch:
+jobs:
+  massive:
+    runs-on: ubuntu-24.04
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      IMG: "ghcr.io/ghashtag/trios-trainer-igla:sha-20c79fe"
+      P4: "0dc36fab-0201-46dc-9de2-43ca5008a405"
+      E4: "074f1a55-a202-499f-8ad1-5ab2af7d79b5"
+      P5: "fa333a5e-0151-4bf2-bc5f-9b32c4e762a9"
+      P6: "f4d7b9fb-33c5-418b-b29c-6dfb1794db49"
+      P7: "19e35d90-e2ae-47a2-8777-6ae5c6c2ba2a"
+    steps:
+      - uses: actions/checkout@v4
+      - name: discover env IDs for ACC5-7
+        run: |
+          for N in 5 6 7; do
+            VAR="T$N"; TOK="${!VAR}"
+            R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d '{"query":"{ projectToken { project { environments { edges { node { id name } } } } } }"}')
+            EID=$(echo "$R" | jq -r '.data.projectToken.project.environments.edges[0].node.id')
+            echo "E$N=$EID" >> $GITHUB_ENV
+            echo "ACC$N env: $EID"
+          done
+      - name: create 109 services across ACC4-7 (cells 44..152)
+        run: |
+          set +e
+          CELLS_CSV=.github/wave-a/wave-a-cells.csv
+          # cells 44..152 = 109 entries
+          # ACC4: 28, ACC5: 28, ACC6: 28, ACC7: 25
+          mkdir -p /tmp/new-services
+          IDX=0
+          for LINE_NUM in $(seq 45 153); do  # +1 because header at line 1; cells 44..152
+            CELL=$(sed -n "${LINE_NUM}p" "$CELLS_CSV")
+            if [[ -z "$CELL" ]]; then continue; fi
+            CELL_IDX=$(echo "$CELL" | cut -d, -f1)
+            FMT=$(echo "$CELL" | cut -d, -f2)
+            ALGO=$(echo "$CELL" | cut -d, -f3)
+            CANON=$(echo "$CELL" | cut -d, -f4)
+            RUN_ID=$(echo "$CELL" | cut -d, -f5)
+            # Route by IDX modulo 4
+            case $((IDX % 4)) in
+              0) ACC="ACC4"; TOK="$T4"; PROJ="$P4"; ENV_ID="$E4";;
+              1) ACC="ACC5"; TOK="$T5"; PROJ="$P5"; ENV_ID="$E5";;
+              2) ACC="ACC6"; TOK="$T6"; PROJ="$P6"; ENV_ID="$E6";;
+              3) ACC="ACC7"; TOK="$T7"; PROJ="$P7"; ENV_ID="$E7";;
+            esac
+            # Sanitize service name (Railway only allows [a-z0-9-])
+            SNAME=$(echo "wave-${FMT}-${ALGO}-rng1597" | tr '_' '-' | tr 'A-Z' 'a-z')
+            echo "::group::cell $CELL_IDX [$ACC] $SNAME"
+            # Create service
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg p "$PROJ" --arg n "$SNAME" '{query:"mutation($i:ServiceCreateInput!){serviceCreate(input:$i){id name}}", variables:{i:{projectId:$p, name:$n}}}')")
+            SID=$(echo "$RESP" | jq -r '.data.serviceCreate.id // empty')
+            if [[ -z "$SID" ]]; then
+              echo "::warning::create failed: $(echo $RESP | jq -c '.errors[0].message')"
+              echo "::endgroup::"; IDX=$((IDX+1)); continue
+            fi
+            echo "created SID=$SID"
+            # Save mapping
+            echo "$ACC,$PROJ,$ENV_ID,$SID,$SNAME,$FMT,$ALGO,$CANON,$RUN_ID" >> /tmp/new-services/map.csv
+            # Set source image — needed BEFORE deploy
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg img "$IMG" '
+                {query:"mutation($i:ServiceInstanceUpdateInput!,$s:String!,$e:String){serviceInstanceUpdate(serviceId:$s, environmentId:$e, input:$i)}",
+                 variables:{s:$s, e:null, i:{source:{image:$img}}}}')" > /dev/null
+            # Set env vars
+            for KV in "SEED=1597" "STEPS=500" "LR=0.0001" "HIDDEN=128" \
+              "OPTIMIZER=$ALGO" "FORMAT=$FMT" \
+              "TRIOS_LANE=SHORT-WAVE-MATRIX" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" "L_R8_SYNTHETIC_FALLBACK=FORBID" ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV_ID" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            # Trigger deploy
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV_ID" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" > /dev/null
+            echo "deploy triggered"
+            echo "::endgroup::"
+            IDX=$((IDX+1))
+          done
+          echo "=== MASSIVE: created $IDX services ==="
+          wc -l /tmp/new-services/map.csv || echo "no map yet"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: massive-map
+          path: /tmp/new-services/
