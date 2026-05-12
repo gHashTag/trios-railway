@@ -1,0 +1,34 @@
+name: DISCOVER-ACC47 — live snapshot
+on:
+  workflow_dispatch:
+jobs:
+  discover:
+    runs-on: ubuntu-24.04
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+    steps:
+      - run: |
+          mkdir -p /tmp/discover
+          for N in 4 5 6 7; do
+            VAR="T$N"; TOK="${!VAR}"
+            R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d '{"query":"{ projectToken { project { id environments { edges { node { id name } } } services { edges { node { id name } } } } } }"}')
+            PROJ=$(echo "$R" | jq -r '.data.projectToken.project.id')
+            ENV=$(echo "$R" | jq -r '.data.projectToken.project.environments.edges[0].node.id')
+            echo "=== ACC$N project=$PROJ env=$ENV ==="
+            echo "$R" | jq -r --arg acc "ACC$N" --arg proj "$PROJ" --arg env "$ENV" \
+              '.data.projectToken.project.services.edges[] | "\($acc),\($proj),\($env),\(.node.id),\(.node.name)"' >> /tmp/discover/services.csv
+          done
+          echo "=== TOTAL ==="
+          wc -l /tmp/discover/services.csv
+          echo "=== BY ACC ==="
+          cut -d, -f1 /tmp/discover/services.csv | sort | uniq -c
+      - uses: actions/upload-artifact@v4
+        with:
+          name: services-snapshot
+          path: /tmp/discover/services.csv
