@@ -1,0 +1,34 @@
+name: INVENTORY — list services on ACC1+2+3
+on:
+  workflow_dispatch:
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: List all services
+        env:
+          T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+          T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+          T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+        run: |
+          set -e
+          mkdir -p inventory
+          for N in 1 2 3; do
+            VAR="T$N"; TOK="${!VAR}"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d '{"query":"{ projectToken { project { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } }"}' \
+              | jq --arg n "ACC$N" '{acc:$n, project:.data.projectToken.project.id, project_name:.data.projectToken.project.name, env_id:.data.projectToken.project.environments.edges[0].node.id, services:[.data.projectToken.project.services.edges[].node]}' \
+              > inventory/acc$N.json
+            echo "ACC$N: $(jq '.services|length' inventory/acc$N.json) services in $(jq -r .project_name inventory/acc$N.json)"
+          done
+          # Flat CSV: acc,project,env_id,service_id,service_name (filter only trainer-shaped names)
+          jq -s -r '.[] | .acc as $a | .project as $p | .env_id as $e | .services[] | [$a,$p,$e,.id,.name] | @csv' inventory/acc*.json > inventory/all-services.csv
+          echo "TOTAL: $(wc -l < inventory/all-services.csv)"
+          cat inventory/all-services.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inventory
+          path: inventory/
