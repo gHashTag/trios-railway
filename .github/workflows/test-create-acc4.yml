@@ -1,0 +1,29 @@
+name: TEST-CREATE-ACC4 — try different mutations
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      PROJ: "0dc36fab-0201-46dc-9de2-43ca5008a405"
+      ENV: "074f1a55-a202-499f-8ad1-5ab2af7d79b5"
+    steps:
+      - name: variant 1 - serviceCreate with branch input
+        run: |
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Project-Access-Token: $T4" \
+            -d '{"query":"mutation($i:ServiceCreateInput!){serviceCreate(input:$i){id name}}","variables":{"i":{"projectId":"'$PROJ'","name":"smoke-fp32-adamw-rng1597-v1"}}}' | jq '.'
+      - name: variant 2 - templateDeploy
+        run: |
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Project-Access-Token: $T4" \
+            -d '{"query":"mutation($i:TemplateDeployV2Input!){templateDeployV2(input:$i){workflowId}}","variables":{"i":{"projectId":"'$PROJ'","environmentId":"'$ENV'","templateCode":"","serializedConfig":{"services":{"smoke-test":{"name":"smoke-test","source":{"image":"ghcr.io/ghashtag/trios-trainer-igla:sha-20c79fe"}}}}}}' | jq '.'
+      - name: variant 3 - serviceCreate w/ source.image
+        run: |
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" \
+            -H "Project-Access-Token: $T4" \
+            -d '{"query":"mutation($i:ServiceCreateInput!){serviceCreate(input:$i){id name}}","variables":{"i":{"projectId":"'$PROJ'","name":"smoke-v3","environmentId":"'$ENV'","source":{"image":"ghcr.io/ghashtag/trios-trainer-igla:sha-20c79fe"}}}}' | jq '.'
