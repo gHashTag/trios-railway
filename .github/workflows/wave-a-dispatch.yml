@@ -1,0 +1,122 @@
+name: WAVE-A — dispatch matrix cycle
+on:
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: "Cycle index 1..4 (1=cells 1-43, 2=44-86, 3=87-129, 4=130-152)"
+        required: true
+        default: "1"
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      CYCLE: ${{ inputs.cycle }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute slice
+        run: |
+          set -e
+          CYCLE_NUM=${CYCLE:-1}
+          SLOTS=43  # number of trainer-services rows
+          START=$(( (CYCLE_NUM - 1) * SLOTS + 1 ))
+          END=$(( CYCLE_NUM * SLOTS ))
+          if (( END > 152 )); then END=152; fi
+          COUNT=$(( END - START + 1 ))
+          echo "CYCLE=$CYCLE_NUM START=$START END=$END COUNT=$COUNT"
+          echo "START=$START" >> $GITHUB_ENV
+          echo "END=$END" >> $GITHUB_ENV
+          echo "COUNT=$COUNT" >> $GITHUB_ENV
+
+      - name: Reconfigure and deploy
+        run: |
+          set -e
+          # Read services (skip header)
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          # Read cells (skip header) — pick lines START..END from cells CSV (cells has header at line 1)
+          CELLS_CSV=.github/wave-a/wave-a-cells.csv
+          PROCESSED=0
+          DEPLOYED=0
+          FAILED=0
+          for ((i=0; i<COUNT; i++)); do
+            SVC_LINE="${SERVICES[$i]}"
+            CELL_LINE_NUM=$(( START + i + 1 ))   # +1 because header
+            CELL_LINE=$(sed -n "${CELL_LINE_NUM}p" "$CELLS_CSV")
+            if [[ -z "$SVC_LINE" || -z "$CELL_LINE" ]]; then
+              echo "skip i=$i (empty line)"
+              continue
+            fi
+            # Parse service: "ACC1","proj","env","sid","sname"
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            # Parse cell: idx,format,algo,canon_name,run_id
+            FMT=$(echo "$CELL_LINE" | awk -F',' '{print $2}')
+            ALGO=$(echo "$CELL_LINE" | awk -F',' '{print $3}')
+            CANON=$(echo "$CELL_LINE" | awk -F',' '{print $4}')
+            RUN_ID=$(echo "$CELL_LINE" | awk -F',' '{print $5}')
+            # Pick token
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::cell $((START+i)) [$ACC] $SNAME -> $FMT/$ALGO"
+            # Set env vars
+            for KV in \
+              "SEED=1597" "STEPS=500" "LR=0.0001" "HIDDEN=128" \
+              "OPTIMIZER=$ALGO" "FORMAT=$FMT" \
+              "TRIOS_LANE=SHORT-WAVE-MATRIX" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            # Trigger deploy
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" ]]; then
+              echo "::warning::deploy failed for $SNAME"
+              FAILED=$((FAILED+1))
+            else
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+          done
+          echo "=== CYCLE $CYCLE: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED ==="
+
+      - name: Wait 4 min for trainers to write
+        run: |
+          for i in 1 2 3 4 5 6 7 8; do
+            sleep 30
+            CNT=$(psql "$RAILWAY_POSTGRES_URL" -At -c "SELECT count(*) FROM ssot.bpb_samples WHERE run_id LIKE 'wave-a-2026-05-12-%' AND ts > NOW() - INTERVAL '10 minutes';")
+            echo "[probe $i/8] wave-a rows last 10 min: $CNT"
+          done
+
+      - name: Final SSOT snapshot for this cycle
+        run: |
+          set -e
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, ts FROM ssot.bpb_samples WHERE run_id LIKE 'wave-a-2026-05-12-%' AND ts > NOW() - INTERVAL '15 minutes' ORDER BY ts DESC LIMIT 80;"
+          echo "::group::count by run_id"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT run_id, count(*) FROM ssot.bpb_samples WHERE run_id LIKE 'wave-a-2026-05-12-%' GROUP BY run_id ORDER BY run_id LIMIT 200;"
+          echo "::endgroup::"
