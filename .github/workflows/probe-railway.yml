@@ -1,0 +1,42 @@
+name: L-RAILWAY-TOKEN-PROBE
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe all 7 Railway tokens
+        env:
+          T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+          T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+          T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+          T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+          T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+          T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+          T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+        run: |
+          for N in 1 2 3 4 5 6 7; do
+            VAR="T$N"
+            TOKEN="${!VAR}"
+            if [[ -z "$TOKEN" ]]; then
+              echo "ACC$N: token EMPTY"
+              continue
+            fi
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $TOKEN" \
+              -d '{"query":"{ projects { edges { node { id name } } } }"}' \
+              -w "\n__HTTP__%{http_code}")
+            CODE=$(echo "$RESP" | grep '__HTTP__' | sed 's/__HTTP__//')
+            BODY=$(echo "$RESP" | grep -v '__HTTP__')
+            COUNT=$(echo "$BODY" | jq -r '.data.projects.edges | length' 2>/dev/null || echo "ERR")
+            NAMES=$(echo "$BODY" | jq -r '.data.projects.edges[].node.name' 2>/dev/null | head -5 | paste -sd ',' || echo "-")
+            ERR=$(echo "$BODY" | jq -r '.errors[0].message // "ok"' 2>/dev/null)
+            echo "ACC$N: http=$CODE projects=$COUNT names=[$NAMES] err=$ERR"
+          done
