@@ -1,0 +1,24 @@
+name: SSOT-PROBE — read recent BPB rows
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    env:
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+    steps:
+      - name: psql probe last 30 min
+        run: |
+          set -e
+          echo "::group::all rows last 30 min"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, created_at AT TIME ZONE 'UTC' AS ts_utc FROM ssot.bpb_samples WHERE created_at > NOW() - INTERVAL '30 minutes' ORDER BY created_at DESC LIMIT 40;"
+          echo "::endgroup::"
+          echo "::group::rows matching smoke-raise"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, created_at FROM ssot.bpb_samples WHERE run_id LIKE 'smoke-raise%' ORDER BY created_at DESC LIMIT 20;"
+          echo "::endgroup::"
+          echo "::group::rows for scarab-muon"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, created_at FROM ssot.bpb_samples WHERE canon_name LIKE '%muon%' AND created_at > NOW() - INTERVAL '2 hours' ORDER BY created_at DESC LIMIT 20;"
+          echo "::endgroup::"
+          echo "::group::total rows + last ts"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT count(*) AS total, max(created_at) AS last_write FROM ssot.bpb_samples;"
+          echo "::endgroup::"
