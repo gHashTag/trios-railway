@@ -1,4 +1,4 @@
-name: L-RAILWAY-TOKEN-PROBE-V2
+name: L-RAILWAY-TOKEN-PROBE-V3
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe — try projectToken header AND me{} query
+      - name: Enumerate services per project token
         env:
           T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
           T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
@@ -20,35 +20,21 @@ jobs:
           T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
           T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
           T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
-          P1: ${{ secrets.RAILWAY_PROJECT_ACC1_IGLA }}
         run: |
-          echo "=== A. me{} via Authorization Bearer ==="
-          for N in 1 2 3 4 5 6 7; do
-            VAR="T$N"; TOKEN="${!VAR}"
-            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $TOKEN" \
-              -d '{"query":"{ me { id email name } }"}')
-            EMAIL=$(echo "$RESP" | jq -r '.data.me.email // .errors[0].message // "?"')
-            echo "ACC$N me: $EMAIL"
-          done
-          echo "=== B. project query via Project-Access-Token header ==="
+          set -e
+          TOTAL=0
           for N in 1 2 3 4 5 6 7; do
             VAR="T$N"; TOKEN="${!VAR}"
             RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Project-Access-Token: $TOKEN" \
-              -d '{"query":"{ projectToken { project { id name } } }"}')
-            NAME=$(echo "$RESP" | jq -r '.data.projectToken.project.name // .errors[0].message // "?"')
-            echo "ACC$N projectToken.name: $NAME"
+              -d '{"query":"{ projectToken { project { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } }"}')
+            PNAME=$(echo "$RESP" | jq -r '.data.projectToken.project.name // "?"')
+            PID=$(echo "$RESP" | jq -r '.data.projectToken.project.id // "?"')
+            SVC_COUNT=$(echo "$RESP" | jq -r '.data.projectToken.project.services.edges | length')
+            SVC_NAMES=$(echo "$RESP" | jq -r '.data.projectToken.project.services.edges[].node.name' | head -8 | paste -sd ',')
+            ENV_NAMES=$(echo "$RESP" | jq -r '.data.projectToken.project.environments.edges[].node.name' | paste -sd ',')
+            echo "ACC$N: project=$PNAME (id=$PID) svc_count=$SVC_COUNT names=[$SVC_NAMES] envs=[$ENV_NAMES]"
+            TOTAL=$((TOTAL + SVC_COUNT))
           done
-          echo "=== C. ACC1 — try IGLA project ID direct ==="
-          if [[ -n "$P1" ]]; then
-            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $T1" \
-              -d "{\"query\":\"query Q(\$id: String!){ project(id: \$id){ name services { edges { node { id name } } } } }\",\"variables\":{\"id\":\"$P1\"}}" \
-            | jq '.'
-          else
-            echo "P1 (RAILWAY_PROJECT_ACC1_IGLA) is empty"
-          fi
+          echo "=== FLEET TOTAL: $TOTAL services across 7 project tokens ==="
