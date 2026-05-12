@@ -1,4 +1,4 @@
-name: L-RAILWAY-TOKEN-PROBE
+name: L-RAILWAY-TOKEN-PROBE-V2
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe all 7 Railway tokens
+      - name: Probe — try projectToken header AND me{} query
         env:
           T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
           T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
@@ -20,23 +20,35 @@ jobs:
           T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
           T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
           T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+          P1: ${{ secrets.RAILWAY_PROJECT_ACC1_IGLA }}
         run: |
+          echo "=== A. me{} via Authorization Bearer ==="
           for N in 1 2 3 4 5 6 7; do
-            VAR="T$N"
-            TOKEN="${!VAR}"
-            if [[ -z "$TOKEN" ]]; then
-              echo "ACC$N: token EMPTY"
-              continue
-            fi
+            VAR="T$N"; TOKEN="${!VAR}"
             RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $TOKEN" \
-              -d '{"query":"{ projects { edges { node { id name } } } }"}' \
-              -w "\n__HTTP__%{http_code}")
-            CODE=$(echo "$RESP" | grep '__HTTP__' | sed 's/__HTTP__//')
-            BODY=$(echo "$RESP" | grep -v '__HTTP__')
-            COUNT=$(echo "$BODY" | jq -r '.data.projects.edges | length' 2>/dev/null || echo "ERR")
-            NAMES=$(echo "$BODY" | jq -r '.data.projects.edges[].node.name' 2>/dev/null | head -5 | paste -sd ',' || echo "-")
-            ERR=$(echo "$BODY" | jq -r '.errors[0].message // "ok"' 2>/dev/null)
-            echo "ACC$N: http=$CODE projects=$COUNT names=[$NAMES] err=$ERR"
+              -d '{"query":"{ me { id email name } }"}')
+            EMAIL=$(echo "$RESP" | jq -r '.data.me.email // .errors[0].message // "?"')
+            echo "ACC$N me: $EMAIL"
           done
+          echo "=== B. project query via Project-Access-Token header ==="
+          for N in 1 2 3 4 5 6 7; do
+            VAR="T$N"; TOKEN="${!VAR}"
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOKEN" \
+              -d '{"query":"{ projectToken { project { id name } } }"}')
+            NAME=$(echo "$RESP" | jq -r '.data.projectToken.project.name // .errors[0].message // "?"')
+            echo "ACC$N projectToken.name: $NAME"
+          done
+          echo "=== C. ACC1 — try IGLA project ID direct ==="
+          if [[ -n "$P1" ]]; then
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $T1" \
+              -d "{\"query\":\"query Q(\$id: String!){ project(id: \$id){ name services { edges { node { id name } } } } }\",\"variables\":{\"id\":\"$P1\"}}" \
+            | jq '.'
+          else
+            echo "P1 (RAILWAY_PROJECT_ACC1_IGLA) is empty"
+          fi
