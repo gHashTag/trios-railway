@@ -7,6 +7,12 @@ jobs:
     env:
       RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
     steps:
+      - name: debug env
+        run: |
+          echo "RAILWAY_POSTGRES_URL length: ${#RAILWAY_POSTGRES_URL}"
+          echo "starts with postgres? $(echo $RAILWAY_POSTGRES_URL | head -c10 | sed 's/[:0-9].*//')"
+          which psql
+          psql --version
       - name: psql probe last 30 min
         run: |
           set -e
