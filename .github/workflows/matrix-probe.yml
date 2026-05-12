@@ -1,0 +1,42 @@
+name: MATRIX-PROBE — phd_format_algo_matrix snapshot
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    env:
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+    steps:
+      - name: introspect matrix views
+        run: |
+          set +e
+          echo "::group::view phd_format_algo_matrix exists?"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT table_schema, table_type FROM information_schema.tables WHERE table_name='phd_format_algo_matrix';"
+          echo "::endgroup::"
+          echo "::group::sample 5 rows from phd_format_algo_matrix"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT * FROM phd_format_algo_matrix LIMIT 5;" 2>&1 || echo "no view"
+          echo "::endgroup::"
+      - name: matrix MIN per (format, algo)
+        run: |
+          set +e
+          echo "::group::pivot"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT format_name, algo_name, ROUND(MIN(best_bpb)::numeric,4) AS best_bpb, SUM(n_experiments) AS n FROM phd_format_algo_matrix WHERE best_bpb IS NOT NULL GROUP BY format_name, algo_name ORDER BY format_name, algo_name;" 2>&1
+          echo "::endgroup::"
+      - name: fallback — derive from bpb_samples
+        run: |
+          set +e
+          echo "::group::derived matrix from ssot.bpb_samples"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT format, algo, ROUND(MIN(bpb)::numeric,4) AS best_bpb, COUNT(*) AS n_samples, MAX(step) AS max_step FROM ssot.bpb_samples WHERE bpb > 1.0 AND bpb < 100 GROUP BY format, algo ORDER BY format, algo;"
+          echo "::endgroup::"
+      - name: wave-a only (current run, last 2h)
+        run: |
+          set +e
+          echo "::group::wave-a SHORT-WAVE-MATRIX progress"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT format, algo, ROUND(MIN(bpb)::numeric,4) AS best_bpb, MAX(step) AS max_step, COUNT(*) AS n_samples FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '2 hours' GROUP BY format, algo ORDER BY format, algo;"
+          echo "::endgroup::"
+      - name: φ-registry
+        run: |
+          set +e
+          echo "::group::format_registry"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT format_name, phi_distance, format_bits, format_class FROM phd_format_registry ORDER BY format_name;" 2>&1 | head -80
+          echo "::endgroup::"
