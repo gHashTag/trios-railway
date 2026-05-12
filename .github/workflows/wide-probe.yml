@@ -8,27 +8,35 @@ jobs:
       RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
     steps:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-      - name: SHORT-WAVE-MATRIX last 6h
-        run: |
-          psql "$RAILWAY_POSTGRES_URL" -c "
-          SELECT format, algo, ROUND(MIN(bpb)::numeric,4) AS best_bpb, MAX(step) AS max_step, COUNT(*) AS n
-          FROM ssot.bpb_samples
-          WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '6 hours'
-          GROUP BY format, algo ORDER BY best_bpb;"
-      - name: unique canon_names last 1h
+      - name: unique SHORT-WAVE canons last 30min (active writers)
         run: |
           psql "$RAILWAY_POSTGRES_URL" -c "
           SELECT canon_name, COUNT(*) n, MAX(step) max_step, ROUND(MIN(bpb)::numeric,4) best
           FROM ssot.bpb_samples
-          WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '1 hour'
+          WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '30 minutes'
           GROUP BY canon_name ORDER BY best;"
-      - name: latest 10 writes
+      - name: unique SHORT-WAVE canons ALL TIME
         run: |
           psql "$RAILWAY_POSTGRES_URL" -c "
-          SELECT canon_name, format, algo, step, ROUND(bpb::numeric,4) bpb, ts
+          SELECT canon_name, COUNT(*) n, MAX(step) max_step, ROUND(MIN(bpb)::numeric,4) best, MAX(ts) last_seen
           FROM ssot.bpb_samples
-          ORDER BY ts DESC LIMIT 10;"
-      - name: total rows + last-write age
+          WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%'
+          GROUP BY canon_name ORDER BY best;"
+      - name: unique by format-algo pair extracted from canon
         run: |
           psql "$RAILWAY_POSTGRES_URL" -c "
-          SELECT COUNT(*) total_rows, MAX(ts) last_write, NOW()-MAX(ts) age FROM ssot.bpb_samples;"
+          WITH parsed AS (
+            SELECT 
+              SUBSTRING(canon_name FROM 'IGLA-SHORT-WAVE-MATRIX-([a-z0-9]+)-h') AS fmt,
+              SUBSTRING(canon_name FROM 'rng1597-([a-z0-9-]+)$') AS algo,
+              bpb, step, canon_name
+            FROM ssot.bpb_samples
+            WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%'
+          )
+          SELECT fmt, algo, ROUND(MIN(bpb)::numeric,4) AS best, MAX(step) AS max_step, COUNT(*) AS n
+          FROM parsed GROUP BY fmt, algo ORDER BY fmt, algo;"
+      - name: total + last-write age
+        run: |
+          psql "$RAILWAY_POSTGRES_URL" -c "
+          SELECT COUNT(*) total_rows, MAX(ts) last_write, NOW()-MAX(ts) age
+          FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%';"
