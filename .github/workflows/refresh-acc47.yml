@@ -1,0 +1,71 @@
+name: REFRESH-ACC47 — variableUpsert + redeploy on existing 111 services
+on:
+  workflow_dispatch:
+    inputs:
+      offset:
+        description: "cell offset (0 = first 111, 111 = next batch)"
+        type: string
+        default: "0"
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      IMG: "ghcr.io/ghashtag/trios-trainer-igla:sha-20c79fe"
+      OFFSET: ${{ inputs.offset }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: refresh services with new format-algo assignments
+        run: |
+          set +e
+          SVC=.github/wave-a/acc47-services.csv
+          CELLS=.github/wave-a/wave-a-cells-v2.csv
+          OFF=${OFFSET:-0}
+          TOTAL_SVC=$(wc -l < "$SVC")
+          echo "services=$TOTAL_SVC offset=$OFF"
+          IDX=0
+          while IFS=',' read -r ACC PROJ ENV_ID SID SNAME; do
+            CELL_ROW=$((IDX + OFF + 2))  # +1 for header, +1 for 1-indexed
+            CELL=$(sed -n "${CELL_ROW}p" "$CELLS")
+            if [[ -z "$CELL" ]]; then echo "no cell at $CELL_ROW"; IDX=$((IDX+1)); continue; fi
+            FMT=$(echo "$CELL" | cut -d, -f2)
+            ALGO=$(echo "$CELL" | cut -d, -f3)
+            CANON=$(echo "$CELL" | cut -d, -f4)
+            RUN_ID=$(echo "$CELL" | cut -d, -f5)
+            case "$ACC" in
+              ACC4) TOK="$T4";; ACC5) TOK="$T5";; ACC6) TOK="$T6";; ACC7) TOK="$T7";;
+            esac
+            echo "::group::$IDX [$ACC] $SNAME -> FMT=$FMT ALGO=$ALGO"
+            # Upsert vars (12 vars)
+            for KV in "SEED=1597" "STEPS=500" "LR=0.0001" "HIDDEN=128" \
+              "OPTIMIZER=$ALGO" "TRIOS_OPTIMIZER=$ALGO" \
+              "FORMAT=$FMT" "TRIOS_FORMAT_TYPE=$FMT" \
+              "TRIOS_LANE=SHORT-WAVE-MATRIX" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" "L_R8_SYNTHETIC_FALLBACK=FORBID" ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV_ID" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            # Trigger redeploy
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV_ID" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" > /dev/null
+            echo "redeployed"
+            echo "::endgroup::"
+            IDX=$((IDX+1))
+          done < "$SVC"
+          echo "=== REFRESH: updated $IDX services ==="
