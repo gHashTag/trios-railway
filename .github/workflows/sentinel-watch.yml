@@ -212,19 +212,31 @@ jobs:
           gh issue comment $THRONE_ISSUE --repo $THRONE_REPO --body-file /tmp/comment.md
 
       - name: Persist new state
+        env:
+          BPB_LAST_TS: ${{ steps.data.outputs.bpb_last_ts }}
+          BPB_COUNT_1H: ${{ steps.data.outputs.bpb_count_1h }}
+          BPB_AGE_MIN: ${{ steps.data.outputs.bpb_age_min }}
+          GATE_COUNT: ${{ steps.gates.outputs.gate_count }}
         run: |
+          # Defaults for layers that skipped (e.g. RAILWAY_POSTGRES_URL unset)
+          BPB_LAST_TS="${BPB_LAST_TS:--}"
+          BPB_COUNT_1H="${BPB_COUNT_1H:--1}"
+          BPB_AGE_MIN="${BPB_AGE_MIN:--1}"
+          GATE_COUNT="${GATE_COUNT:--1}"
           cat > .github/sentinel-state.json <<EOF
           {
             "ts": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
             "ghcr_conclusion": "${{ steps.ghcr.outputs.ghcr_conclusion }}",
             "fleet_total": ${{ steps.fleet.outputs.fleet_total }},
-            "bpb_last_ts": "${{ steps.data.outputs.bpb_last_ts }}",
-            "bpb_count_1h": ${{ steps.data.outputs.bpb_count_1h }},
-            "bpb_age_min": ${{ steps.data.outputs.bpb_age_min }},
-            "gate_count": ${{ steps.gates.outputs.gate_count }},
+            "bpb_last_ts": "$BPB_LAST_TS",
+            "bpb_count_1h": $BPB_COUNT_1H,
+            "bpb_age_min": $BPB_AGE_MIN,
+            "gate_count": $GATE_COUNT,
             "anchor": "phi^2 + phi^-2 = 3"
           }
           EOF
+          # Validate JSON before committing
+          jq . .github/sentinel-state.json > /dev/null
           git config user.email "noreply@github.com"
           git config user.name "L-WATCH-FIX-AND-RAISE sentinel"
           git add .github/sentinel-state.json
