@@ -1,0 +1,107 @@
+name: GARDENER-LOOP — autonomous IGLA needle hunter
+on:
+  schedule:
+    - cron: "37 * * * *"  # каждый час :37
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  hunt:
+    runs-on: ubuntu-24.04
+    env:
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: PROBE — current matrix state
+        id: probe
+        run: |
+          mkdir -p /tmp/gardener
+          # Find F×A pairs with max_step >= 5K (real MEASURED)
+          psql "$RAILWAY_POSTGRES_URL" -t -A -F',' -c "
+          WITH parsed AS (
+            SELECT 
+              SUBSTRING(canon_name FROM 'IGLA-SHORT-WAVE-MATRIX-([a-z0-9_]+)-h') AS fmt,
+              SUBSTRING(canon_name FROM 'rng1597-([a-z0-9-]+)$') AS algo,
+              bpb, step, canon_name
+            FROM ssot.bpb_samples
+            WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%'
+          )
+          SELECT fmt, algo, MIN(bpb)::float8 AS best, MAX(step) AS max_step, COUNT(*) AS n
+          FROM parsed
+          WHERE fmt IS NOT NULL AND algo IS NOT NULL
+          GROUP BY fmt, algo
+          ORDER BY fmt, algo;
+          " > /tmp/gardener/measured.csv
+          wc -l /tmp/gardener/measured.csv
+          echo "--- top-10 MEASURED (max_step >= 5000) ---"
+          awk -F',' '$4+0 >= 5000 {print}' /tmp/gardener/measured.csv | sort -t',' -k3 -g | head -10
+          echo "--- IGLA HUNT: champion so far ---"
+          awk -F',' '$4+0 >= 5000 {print $3","$1","$2}' /tmp/gardener/measured.csv | sort -g | head -1
+      - name: SEARCH — find under-utilized services (idle / stuck)
+        run: |
+          # Get services from ACC1-3 + ACC4-7 (live snapshot)
+          for N in 1 2 3 4 5 6 7; do
+            VAR="T$N"; TOK="${!VAR}"
+            R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d '{"query":"{ projectToken { project { id environments { edges { node { id } } } services { edges { node { id name } } } } } }"}')
+            PROJ=$(echo "$R" | jq -r '.data.projectToken.project.id')
+            ENV=$(echo "$R" | jq -r '.data.projectToken.project.environments.edges[0].node.id')
+            echo "$R" | jq -r --arg acc "ACC$N" --arg p "$PROJ" --arg e "$ENV" \
+              '.data.projectToken.project.services.edges[] | "\($acc),\($p),\($e),\(.node.id),\(.node.name)"' >> /tmp/gardener/services.csv 2>/dev/null
+          done
+          wc -l /tmp/gardener/services.csv
+      - name: GARDEN — find TODO cells (in cells-v2 but not measured)
+        run: |
+          # cells-v2 has 240 expected (fmt, algo) pairs
+          tail -n +2 .github/wave-a/wave-a-cells-v2.csv | awk -F',' '{print $2","$3}' | sort -u > /tmp/gardener/expected.csv
+          # measured = max_step >= 5000
+          awk -F',' '$4+0 >= 5000 {print $1","$2}' /tmp/gardener/measured.csv | sort -u > /tmp/gardener/measured-pairs.csv
+          comm -23 /tmp/gardener/expected.csv /tmp/gardener/measured-pairs.csv > /tmp/gardener/todo.csv
+          echo "expected pairs: $(wc -l < /tmp/gardener/expected.csv)"
+          echo "measured pairs: $(wc -l < /tmp/gardener/measured-pairs.csv)"
+          echo "TODO pairs: $(wc -l < /tmp/gardener/todo.csv)"
+          echo "--- first 20 TODO ---"
+          head -20 /tmp/gardener/todo.csv
+      - name: REPORT — write to gardener_runs (Railway Postgres)
+        run: |
+          MEASURED=$(awk -F',' '$4+0 >= 5000' /tmp/gardener/measured.csv | wc -l)
+          TOTAL=240
+          PCT=$(echo "scale=1; 100*$MEASURED/$TOTAL" | bc)
+          CHAMP=$(awk -F',' '$4+0 >= 5000 {print $3","$1","$2}' /tmp/gardener/measured.csv | sort -g | head -1)
+          CHAMP_BPB=$(echo "$CHAMP" | cut -d, -f1)
+          CHAMP_FMT=$(echo "$CHAMP" | cut -d, -f2)
+          CHAMP_ALGO=$(echo "$CHAMP" | cut -d, -f3)
+          TODO_N=$(wc -l < /tmp/gardener/todo.csv)
+          echo "=== GARDENER REPORT ==="
+          echo "MEASURED: $MEASURED / $TOTAL ($PCT%)"
+          echo "CHAMPION: $CHAMP_FMT × $CHAMP_ALGO = $CHAMP_BPB BPB"
+          echo "TODO cells: $TODO_N"
+          # Write to gardener_runs table (if it exists)
+          psql "$RAILWAY_POSTGRES_URL" -c "
+          INSERT INTO public.gardener_runs (ts, action, decision)
+          VALUES (NOW(), 'matrix_probe',
+            jsonb_build_object(
+              'measured', $MEASURED,
+              'total', $TOTAL,
+              'pct', '$PCT',
+              'champion_bpb', '$CHAMP_BPB',
+              'champion_fmt', '$CHAMP_FMT',
+              'champion_algo', '$CHAMP_ALGO',
+              'todo_count', $TODO_N
+            ));
+          " 2>&1 | tail -3 || echo "gardener_runs not yet created — ok, just probing"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gardener-tick
+          path: /tmp/gardener/
