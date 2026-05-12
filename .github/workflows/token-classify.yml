@@ -1,0 +1,35 @@
+name: TOKEN-CLASSIFY — Account vs Project for ACC1..7
+on:
+  workflow_dispatch:
+jobs:
+  classify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: probe all 7 tokens
+        env:
+          T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+          T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+          T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+          T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+          T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+          T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+          T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+        run: |
+          set +e
+          for N in 1 2 3 4 5 6 7; do
+            VAR="T$N"
+            TOK="${!VAR}"
+            echo "========== ACC$N =========="
+            # Try Account-level query: `me { projects }`
+            R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $TOK" \
+              -d '{"query":"{ me { email projects { edges { node { id name } } } } }"}')
+            echo "Bearer/me: $(echo $R | jq -c '.data.me // .errors[0].message')"
+            # Try Project token query
+            R2=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d '{"query":"{ projectToken { project { id name } } }"}')
+            echo "PAT/projectToken: $(echo $R2 | jq -c '.data.projectToken.project // .errors[0].message')"
+          done
