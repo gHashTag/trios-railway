@@ -1,0 +1,262 @@
+name: L-WATCH-FIX-AND-RAISE (sentinel)
+
+# Hourly autonomous probe of the Trinity stack — observer pattern, R-silence rule:
+# notify Throne only on STATE TRANSITIONS, not on steady-state.
+#
+# Layers probed each cycle:
+#   1. GHCR — docker-trainer.yml last conclusion (red/green)
+#   2. Fleet — all 7 Project Access Tokens → total live services
+#   3. Data — ssot.bpb_samples max(ts), count last 1h with bpb<100
+#   4. Gates — any new gate verdict row
+#
+# State persisted in .github/sentinel-state.json (committed back by the bot).
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 * * * *"  # :07 every hour (offset to avoid clash with fleet-snapshot at :00)
+
+permissions:
+  contents: write   # to commit sentinel-state.json
+  issues: write     # to comment on Throne #264
+
+concurrency:
+  group: sentinel-watch
+  cancel-in-progress: false
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      THRONE_REPO: gHashTag/trios
+      THRONE_ISSUE: "264"
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client jq
+
+      - name: Probe layer 1 — GHCR docker-trainer build
+        id: ghcr
+        run: |
+          set -e
+          LAST=$(gh api "repos/gHashTag/trios-railway/actions/workflows/docker-trainer.yml/runs?per_page=1" \
+            --jq '.workflow_runs[0] | {conclusion, status, html_url, created_at}')
+          CONCL=$(echo "$LAST" | jq -r '.conclusion // "in_progress"')
+          URL=$(echo "$LAST" | jq -r '.html_url')
+          echo "ghcr_conclusion=$CONCL" >> "$GITHUB_OUTPUT"
+          echo "ghcr_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "GHCR: $CONCL ($URL)"
+
+      - name: Probe layer 2 — fleet via Project-Access-Token
+        id: fleet
+        run: |
+          set -e
+          TOTAL=0
+          DETAILS=""
+          for N in 1 2 3 4 5 6 7; do
+            VAR="T$N"; TOKEN="${!VAR}"
+            if [[ -z "$TOKEN" ]]; then
+              DETAILS="$DETAILS\nACC$N: token EMPTY"
+              continue
+            fi
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOKEN" \
+              -d '{"query":"{ projectToken { project { name services { edges { node { id } } } } } }"}')
+            PNAME=$(echo "$RESP" | jq -r '.data.projectToken.project.name // "?"')
+            SVC=$(echo "$RESP" | jq -r '.data.projectToken.project.services.edges | length // 0')
+            DETAILS="$DETAILS\nACC$N: $PNAME svc=$SVC"
+            TOTAL=$((TOTAL + SVC))
+          done
+          echo "fleet_total=$TOTAL" >> "$GITHUB_OUTPUT"
+          {
+            echo "fleet_details<<EOF"
+            echo -e "$DETAILS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "FLEET TOTAL: $TOTAL"
+
+      - name: Probe layer 3 — ssot.bpb_samples freshness
+        id: data
+        if: env.RAILWAY_POSTGRES_URL != ''
+        run: |
+          set -e
+          ROW=$(psql "$RAILWAY_POSTGRES_URL" -At -F'|' -c \
+            "SELECT COALESCE(MAX(ts)::text,'-'), COUNT(*) FROM ssot.bpb_samples WHERE ts > NOW() - INTERVAL '1 hour' AND bpb < 100")
+          MAX_TS=$(echo "$ROW" | cut -d'|' -f1)
+          CNT=$(echo "$ROW" | cut -d'|' -f2)
+          AGE_MIN=$(psql "$RAILWAY_POSTGRES_URL" -At -c \
+            "SELECT COALESCE(EXTRACT(EPOCH FROM (NOW()-MAX(ts)))/60, 9999)::int FROM ssot.bpb_samples WHERE bpb < 100")
+          echo "bpb_last_ts=$MAX_TS" >> "$GITHUB_OUTPUT"
+          echo "bpb_count_1h=$CNT" >> "$GITHUB_OUTPUT"
+          echo "bpb_age_min=$AGE_MIN" >> "$GITHUB_OUTPUT"
+          echo "DATA: last=$MAX_TS count_1h=$CNT age=${AGE_MIN}min"
+
+      - name: Probe layer 4 — new gate verdicts
+        id: gates
+        if: env.RAILWAY_POSTGRES_URL != ''
+        run: |
+          set -e
+          ROW=$(psql "$RAILWAY_POSTGRES_URL" -At -F'|' -c \
+            "SELECT COUNT(*), COALESCE(string_agg(DISTINCT run_id, ','), '-') FROM ssot.bpb_samples WHERE ts > NOW() - INTERVAL '1 hour' AND run_id ILIKE 'gate%'") || ROW="0|-"
+          CNT=$(echo "$ROW" | cut -d'|' -f1)
+          IDS=$(echo "$ROW" | cut -d'|' -f2)
+          echo "gate_count=$CNT" >> "$GITHUB_OUTPUT"
+          echo "gate_runs=$IDS" >> "$GITHUB_OUTPUT"
+          echo "GATES: $CNT new in 1h ($IDS)"
+
+      - name: Load previous state
+        id: prev
+        run: |
+          if [[ -f .github/sentinel-state.json ]]; then
+            cp .github/sentinel-state.json /tmp/prev.json
+          else
+            echo '{"ghcr_conclusion":"unknown","fleet_total":-1,"bpb_count_1h":-1,"gate_count":-1}' > /tmp/prev.json
+          fi
+          cat /tmp/prev.json
+          echo "prev_ghcr=$(jq -r .ghcr_conclusion /tmp/prev.json)" >> "$GITHUB_OUTPUT"
+          echo "prev_fleet=$(jq -r .fleet_total /tmp/prev.json)" >> "$GITHUB_OUTPUT"
+          echo "prev_bpb=$(jq -r .bpb_count_1h /tmp/prev.json)" >> "$GITHUB_OUTPUT"
+          echo "prev_gates=$(jq -r .gate_count /tmp/prev.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute transitions
+        id: diff
+        run: |
+          set -e
+          CUR_GHCR="${{ steps.ghcr.outputs.ghcr_conclusion }}"
+          CUR_FLEET="${{ steps.fleet.outputs.fleet_total }}"
+          CUR_BPB="${{ steps.data.outputs.bpb_count_1h }}"
+          CUR_GATES="${{ steps.gates.outputs.gate_count }}"
+          PREV_GHCR="${{ steps.prev.outputs.prev_ghcr }}"
+          PREV_FLEET="${{ steps.prev.outputs.prev_fleet }}"
+          PREV_BPB="${{ steps.prev.outputs.prev_bpb }}"
+          PREV_GATES="${{ steps.prev.outputs.prev_gates }}"
+
+          TRANSITIONS=()
+          # GHCR red<->green
+          if [[ "$PREV_GHCR" != "unknown" && "$CUR_GHCR" != "$PREV_GHCR" ]]; then
+            TRANSITIONS+=("**GHCR**: ${PREV_GHCR} → **${CUR_GHCR}**")
+          fi
+          # Fleet delta >=5
+          if [[ "$PREV_FLEET" -ge 0 ]]; then
+            DELTA=$((CUR_FLEET - PREV_FLEET))
+            if [[ ${DELTA#-} -ge 5 ]]; then
+              TRANSITIONS+=("**Fleet**: ${PREV_FLEET} → **${CUR_FLEET}** (Δ=${DELTA})")
+            fi
+          fi
+          # BPB writes resumed (0→N) or died (N→0)
+          if [[ "$PREV_BPB" -ge 0 ]]; then
+            if [[ "$PREV_BPB" -eq 0 && "$CUR_BPB" -gt 0 ]]; then
+              TRANSITIONS+=("**BPB writes RESUMED**: 0 → ${CUR_BPB} rows/h")
+            elif [[ "$PREV_BPB" -gt 0 && "$CUR_BPB" -eq 0 ]]; then
+              TRANSITIONS+=("**BPB writes DIED**: ${PREV_BPB} → 0 rows/h")
+            fi
+          fi
+          # New gate verdict
+          if [[ "$CUR_GATES" -gt 0 && "$PREV_GATES" != "$CUR_GATES" ]]; then
+            TRANSITIONS+=("**New gate verdicts**: ${CUR_GATES} in last hour (${{ steps.gates.outputs.gate_runs }})")
+          fi
+
+          if [[ ${#TRANSITIONS[@]} -gt 0 ]]; then
+            echo "has_signal=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "transitions<<EOF"
+              printf '%s\n' "${TRANSITIONS[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signal=false" >> "$GITHUB_OUTPUT"
+            echo "no transitions — staying silent (R-silence rule)"
+          fi
+
+      - name: Notify Throne on transition
+        if: steps.diff.outputs.has_signal == 'true'
+        run: |
+          cat > /tmp/comment.md <<EOF
+          ## L-WATCH-FIX-AND-RAISE pulse — $(date -u +'%Y-%m-%d %H:%M UTC')
+
+          ### Transitions detected
+          ${{ steps.diff.outputs.transitions }}
+
+          ### Current snapshot
+          - **GHCR docker-trainer**: ${{ steps.ghcr.outputs.ghcr_conclusion }} ([run](${{ steps.ghcr.outputs.ghcr_url }}))
+          - **Fleet**: ${{ steps.fleet.outputs.fleet_total }} live services across 7 project tokens
+          - **BPB last write**: ${{ steps.data.outputs.bpb_last_ts }} (${{ steps.data.outputs.bpb_age_min }} min ago, ${{ steps.data.outputs.bpb_count_1h }} rows last 1h)
+          - **Gate verdicts last 1h**: ${{ steps.gates.outputs.gate_count }}
+
+          ### Fleet detail
+          \`\`\`
+          ${{ steps.fleet.outputs.fleet_details }}
+          \`\`\`
+
+          Anchor: \`phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP\`
+          Sentinel run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          gh issue comment $THRONE_ISSUE --repo $THRONE_REPO --body-file /tmp/comment.md
+
+      - name: Persist new state
+        run: |
+          cat > .github/sentinel-state.json <<EOF
+          {
+            "ts": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+            "ghcr_conclusion": "${{ steps.ghcr.outputs.ghcr_conclusion }}",
+            "fleet_total": ${{ steps.fleet.outputs.fleet_total }},
+            "bpb_last_ts": "${{ steps.data.outputs.bpb_last_ts }}",
+            "bpb_count_1h": ${{ steps.data.outputs.bpb_count_1h }},
+            "bpb_age_min": ${{ steps.data.outputs.bpb_age_min }},
+            "gate_count": ${{ steps.gates.outputs.gate_count }},
+            "anchor": "phi^2 + phi^-2 = 3"
+          }
+          EOF
+          git config user.email "noreply@github.com"
+          git config user.name "L-WATCH-FIX-AND-RAISE sentinel"
+          git add .github/sentinel-state.json
+          if git diff --cached --quiet; then
+            echo "state unchanged"
+          else
+            git commit -m "chore(sentinel): pulse @ $(date -u +'%H:%M UTC')
+
+            ghcr=${{ steps.ghcr.outputs.ghcr_conclusion }}
+            fleet=${{ steps.fleet.outputs.fleet_total }}
+            bpb_1h=${{ steps.data.outputs.bpb_count_1h }}
+            age_min=${{ steps.data.outputs.bpb_age_min }}
+            gates=${{ steps.gates.outputs.gate_count }}
+
+            Anchor: phi^2 + phi^-2 = 3"
+            git push
+          fi
+
+      - name: Job summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## L-WATCH-FIX-AND-RAISE pulse
+
+          | Layer | Value |
+          |---|---|
+          | GHCR docker-trainer | ${{ steps.ghcr.outputs.ghcr_conclusion }} |
+          | Fleet live services | ${{ steps.fleet.outputs.fleet_total }} |
+          | BPB last ts | ${{ steps.data.outputs.bpb_last_ts }} |
+          | BPB count 1h | ${{ steps.data.outputs.bpb_count_1h }} |
+          | BPB age (min) | ${{ steps.data.outputs.bpb_age_min }} |
+          | Gate verdicts 1h | ${{ steps.gates.outputs.gate_count }} |
+          | Throne notified | ${{ steps.diff.outputs.has_signal }} |
+
+          Anchor: \`phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP\`
+          EOF
