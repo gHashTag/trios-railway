@@ -1,4 +1,4 @@
-name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.7 · stall-aware · forced wake-up)
+name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.8 · canonical SSOT aliases)
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"  # каждые 15 минут — ночной режим 4x x
@@ -166,11 +166,14 @@ jobs:
           echo "🛠️ Auto-redeployed $FIXED dead services"
 
       # ─────────────────────────────────────────────────────────────
-      # STAGE 2b2 — SSOT URL PROPAGATION (every trainer must know how to write)
-      # If any trainer service is missing RAILWAY_POSTGRES_URL, write it.
+      # STAGE 2b2 — SSOT URL PROPAGATION (v2.8 — canonical aliases)
+      # trios-train.rs:145-148 reads DATABASE_URL → NEON_DATABASE_URL → TRIOS_DATABASE_URL.
+      # RAILWAY_POSTGRES_URL is NOT read by trainer code. v2.8 propagates ALL three
+      # canonical aliases so every trainer can find the SSOT regardless of which
+      # version of trios-trainer-igla shipped in the image.
       # Hard-capped at 60 services / tick (rate limit safe).
       # ─────────────────────────────────────────────────────────────
-      - name: STAGE-2b2 — SSOT URL propagation
+      - name: STAGE-2b2 — SSOT URL propagation (canonical aliases)
         id: ssot_prop
         if: env.MODE == 'live'
         run: |
@@ -178,34 +181,39 @@ jobs:
           PROPAGATED=0
           MISSING=0
           CHECKED=0
+          # canonical alias list (matches trios-train.rs:145-148 + matrix_runner.rs:288)
+          ALIASES="DATABASE_URL NEON_DATABASE_URL TRIOS_DATABASE_URL MATRIX_DATABASE_URL RAILWAY_POSTGRES_URL"
           # JSON-encode the SSOT URL so it survives GraphQL string quoting
           SSOT_ESC=$(printf '%s' "$RAILWAY_POSTGRES_URL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])')
           while IFS=',' read -r ACC PROJ ENV SVC NAME STATUS CREATED; do
             N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
             [ -z "$TOK" ] && continue
             CHECKED=$((CHECKED+1))
-            # Probe: does this service already have RAILWAY_POSTGRES_URL?
+            # Probe variables once
             VR=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Project-Access-Token: $TOK" \
               -d "{\"query\":\"{ variables(projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\") }\"}" 2>/dev/null)
-            HAS=$(echo "$VR" | jq -r '.data.variables | has("RAILWAY_POSTGRES_URL")' 2>/dev/null)
-            if [ "$HAS" != "true" ]; then
-              MISSING=$((MISSING+1))
-              # Upsert it
-              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
-                -H "Content-Type: application/json" \
-                -H "Project-Access-Token: $TOK" \
-                -d "{\"query\":\"mutation { variableUpsert(input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\", name:\\\"RAILWAY_POSTGRES_URL\\\", value:\\\"$SSOT_ESC\\\"}) }\"}" \
-                > /dev/null 2>&1
-              PROPAGATED=$((PROPAGATED+1))
-              [ "$PROPAGATED" -ge 60 ] && break
-            fi
+            SVC_MISSED=0
+            for ALIAS in $ALIASES; do
+              HAS=$(echo "$VR" | jq -r --arg k "$ALIAS" '.data.variables | has($k)' 2>/dev/null)
+              if [ "$HAS" != "true" ]; then
+                SVC_MISSED=$((SVC_MISSED+1))
+                curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                  -H "Content-Type: application/json" \
+                  -H "Project-Access-Token: $TOK" \
+                  -d "{\"query\":\"mutation { variableUpsert(input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\", name:\\\"$ALIAS\\\", value:\\\"$SSOT_ESC\\\"}) }\"}" \
+                  > /dev/null 2>&1
+                PROPAGATED=$((PROPAGATED+1))
+              fi
+            done
+            [ "$SVC_MISSED" -gt 0 ] && MISSING=$((MISSING+1))
+            [ "$MISSING" -ge 60 ] && break
             sleep 0.05
           done < /tmp/gardener/services.csv
-          echo "🔗 SSOT URL propagation: checked=$CHECKED missing=$MISSING propagated=$PROPAGATED"
-          echo "ssot_checked=$CHECKED"  >> "$GITHUB_OUTPUT"
-          echo "ssot_missing=$MISSING"  >> "$GITHUB_OUTPUT"
+          echo "🔗 SSOT URL propagation v2.8 (aliases=$ALIASES): checked=$CHECKED svcs_missing=$MISSING vars_propagated=$PROPAGATED"
+          echo "ssot_checked=$CHECKED"     >> "$GITHUB_OUTPUT"
+          echo "ssot_missing=$MISSING"     >> "$GITHUB_OUTPUT"
           echo "ssot_propagated=$PROPAGATED" >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
