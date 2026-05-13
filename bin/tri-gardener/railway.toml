@@ -1,0 +1,36 @@
+# Railway service definition for tri-gardener.
+#
+# Slot: Acc1 IGLA, last free slot (idea fit — orchestrator lives next
+# to the trainers it watches). Cron behaviour comes from Railway's
+# scheduled-restart on this service every hour at :15 UTC, mirroring
+# the audit-watchdog cron tick.
+#
+# Anchor: phi^2 + phi^-2 = 3.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "bin/tri-gardener/Dockerfile"
+
+[deploy]
+# Single-shot per cron firing; Railway restarts the service on each
+# tick. `--review` first 3 ticks; operator promotes to `--live` via
+# GARDENER_LIVE=true in service variables.
+startCommand = "/usr/local/bin/tri-gardener once --review"
+
+# `cronSchedule` triggers a restart at :15 UTC every hour.
+cronSchedule = "15 * * * *"
+
+# Tick must complete inside the cron interval; 30 min is generous for
+# an MVP that talks Railway GraphQL and Neon.
+healthcheckTimeout = 1800
+
+# Restart policy: do not relaunch on success (we want the next cron
+# firing to be the next tick, not an immediate restart loop).
+restartPolicyType = "NEVER"
+
+[env]
+# Operator-managed in Railway dashboard; values shown here for docs.
+# GARDENER_LIVE        = "false"   # flip to "true" after 3 review ticks
+# GARDENER_DISABLED    = "false"   # hard kill switch
+# RAILWAY_API_TOKEN_*  = (per-account triplets, see #43)
+# NEON_DATABASE_URL    = (audit-ledger writer)

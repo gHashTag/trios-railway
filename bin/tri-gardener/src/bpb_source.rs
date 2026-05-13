@@ -241,7 +241,10 @@ impl BpbSource for RailwayLogsScraper {
                 let ts_str = entry["timestamp"].as_str().unwrap_or("");
                 let ts: DateTime<Utc> = ts_str.parse().unwrap_or_else(|_| Utc::now());
                 for (step, bpb) in parse_step_bpb_lines(msg) {
-                    if latest.as_ref().map_or(true, |(prev_step, _, _)| step >= *prev_step) {
+                    if latest
+                        .as_ref()
+                        .is_none_or(|(prev_step, _, _)| step >= *prev_step)
+                    {
                         latest = Some((step, bpb, ts));
                     }
                 }
@@ -287,10 +290,8 @@ impl GithubIssueComments {
 /// `(seed, step, bpb)` triples in document order.
 pub fn parse_alpha_bpb_block(text: &str) -> Vec<(u32, u64, f64)> {
     use regex::Regex;
-    let re = Regex::new(
-        r"BPB[=\s]+([0-9]+\.[0-9]+)\s*@\s*step[=\s]+(\d+)\s+seed[=\s]+(\d+)",
-    )
-    .unwrap();
+    let re =
+        Regex::new(r"BPB[=\s]+([0-9]+\.[0-9]+)\s*@\s*step[=\s]+(\d+)\s+seed[=\s]+(\d+)").unwrap();
     re.captures_iter(text)
         .filter_map(|c| {
             let bpb = c.get(1)?.as_str().parse::<f64>().ok()?;

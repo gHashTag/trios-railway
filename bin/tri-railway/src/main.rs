@@ -155,6 +155,35 @@ enum ServiceCmd {
         #[arg(long)]
         yes: bool,
     },
+    /// Issue #56: upsert one or more `KEY=VALUE` env vars on a service.
+    SetVars {
+        #[arg(long, env = "TRIOS_RAILWAY_PROJECT", default_value = IGLA_PROJECT_ID)]
+        project: String,
+        #[arg(long, env = "TRIOS_RAILWAY_ENV", default_value = IGLA_PROD_ENV_ID)]
+        environment: String,
+        #[arg(long)]
+        service: String,
+        /// `KEY=VALUE` pair to upsert. Repeatable.
+        #[arg(long = "var", value_name = "KEY=VALUE")]
+        vars: Vec<String>,
+    },
+    /// Issue #56: stream the most recent N log lines from a service.
+    /// **PR-2 stub** — emits a deterministic placeholder line. Real
+    /// stream lands once the Railway logs subgraph stabilises.
+    Logs {
+        #[arg(long)]
+        service: String,
+        #[arg(long, default_value_t = 200)]
+        tail: u32,
+        #[arg(long)]
+        follow: bool,
+    },
+    /// Issue #56: stop a service. Currently aliased to delete with `--yes`,
+    /// since Railway has no native pause primitive.
+    Stop {
+        #[arg(long)]
+        service: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -512,6 +541,7 @@ fn parse_var(s: &str) -> Result<(String, String)> {
     Ok((k.to_string(), v.to_string()))
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_service(cmd: ServiceCmd) -> Result<()> {
     let client =
         Client::from_env().map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?;
@@ -606,8 +636,91 @@ async fn run_service(cmd: ServiceCmd) -> Result<()> {
             M::service_delete(&client, &sid).await?;
             println!("deleted: {sid}");
         }
+        ServiceCmd::SetVars {
+            project,
+            environment,
+            service,
+            vars,
+        } => {
+            let pid = ProjectId::from(project);
+            let eid = EnvironmentId::from(environment);
+            let sid = ServiceId::from(service);
+            let pairs = parse_var_pairs(&vars)?;
+            client.set_vars(&pid, &eid, &sid, &pairs).await?;
+            println!("set_vars: {} keys upserted on service {}", pairs.len(), sid);
+        }
+        ServiceCmd::Logs {
+            service,
+            tail,
+            follow,
+        } => {
+            // PR-2 stub: emit a deterministic placeholder so cron and
+            // operator runbooks can shell out without panicking. Real
+            // log streaming lands in PR-3 once the Railway logs
+            // subgraph is wired through `Client`.
+            tracing::warn!(
+                %service,
+                tail,
+                follow,
+                "tri-railway service logs: PR-2 stub. Use the Railway dashboard or `railway logs` for now."
+            );
+            println!(
+                "# tri-railway service logs (PR-2 stub) service={service} tail={tail} follow={follow}"
+            );
+            println!("# Real logs streaming arrives in PR-3.");
+        }
+        ServiceCmd::Stop { service } => {
+            let sid = ServiceId::from(service);
+            // Railway has no native stop; delete is the closest semantics.
+            M::service_delete(&client, &sid).await?;
+            println!("stopped (deleted): {sid}");
+        }
     }
     Ok(())
+}
+
+/// Parse `KEY=VALUE` strings into typed pairs. Returns the first
+/// malformed entry as an error so the operator gets honest feedback.
+fn parse_var_pairs(input: &[String]) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::with_capacity(input.len());
+    for s in input {
+        match s.split_once('=') {
+            Some((k, v)) if !k.is_empty() => {
+                out.push((k.trim().to_string(), v.trim().to_string()));
+            }
+            _ => anyhow::bail!("invalid --var entry: {s:?} (expected KEY=VALUE)"),
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn parse_var_pairs_accepts_kv() {
+        let v = parse_var_pairs(&["FOO=bar".into(), "X=1".into()]).unwrap();
+        assert_eq!(v[0], ("FOO".into(), "bar".into()));
+        assert_eq!(v[1], ("X".into(), "1".into()));
+    }
+
+    #[test]
+    fn parse_var_pairs_rejects_missing_equals() {
+        assert!(parse_var_pairs(&["FOO".into()]).is_err());
+    }
+
+    #[test]
+    fn parse_var_pairs_rejects_empty_key() {
+        assert!(parse_var_pairs(&["=val".into()]).is_err());
+    }
+
+    #[test]
+    fn parse_var_pairs_handles_value_containing_equals() {
+        let v = parse_var_pairs(&["DSN=postgres://u:p@h/db?x=y".into()]).unwrap();
+        assert_eq!(v.len(), 1);
+        assert!(v[0].1.contains("?x=y"));
+    }
 }
 
 /// Parse `key=value,key=value` style flag values.

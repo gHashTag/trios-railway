@@ -9,8 +9,11 @@
 //!   R9 — `igla check <sha>` MUST be invoked by callers before any
 //!        mutation; this crate exposes only the typed mutation surface.
 
+#[allow(clippy::module_name_repetitions)]
+pub mod client_ext;
 pub mod hash;
 pub mod ids;
+pub mod multiclient;
 pub mod mutations;
 pub mod queries;
 pub mod transport;

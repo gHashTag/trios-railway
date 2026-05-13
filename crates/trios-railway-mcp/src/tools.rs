@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use trios_railway_core::{
-    mutations as M, queries as Q, transport::Client, EnvironmentId, ProjectId, RailwayHash,
-    ServiceId,
+    multiclient::{AccountId, RailwayMultiClient},
+    mutations as M, queries as Q,
+    transport::Client,
+    EnvironmentId, ProjectId, RailwayHash, ServiceId,
 };
 use trios_railway_experience::{append_line, ExperienceLine};
 
@@ -32,6 +34,12 @@ pub struct ListServicesRequest {
     /// Project UUID. Defaults to the IGLA project.
     #[serde(default)]
     pub project: Option<String>,
+    /// Account alias — `"acc0"`/`"acc1"`/`"acc2"`/`"acc3"`. When set,
+    /// the call routes through `RailwayMultiClient` and uses the
+    /// per-account `RAILWAY_TOKEN_ACC{N}` instead of the global token.
+    /// When omitted, falls back to legacy `RAILWAY_TOKEN`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -56,6 +64,11 @@ pub struct DeployRequest {
     /// Repo root for the L7 experience log. Defaults to `.`.
     #[serde(default)]
     pub experience_root: Option<String>,
+    /// Account alias — `"acc0"`/`"acc1"`/`"acc2"`/`"acc3"`. Routes
+    /// through `RailwayMultiClient`. Omit to use the legacy single
+    /// `RAILWAY_TOKEN` path.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -71,6 +84,9 @@ pub struct RedeployRequest {
     /// Environment UUID. Defaults to IGLA `production`.
     #[serde(default)]
     pub environment: Option<String>,
+    /// Account alias — see `ListServicesRequest::account`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -79,6 +95,9 @@ pub struct DeleteRequest {
     pub service: String,
     /// Must be `true` (R9 safety): the call refuses to proceed otherwise.
     pub confirm: bool,
+    /// Account alias — see `ListServicesRequest::account`.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 /// Built-in template that expands into N Railway services on a single MCP call.
@@ -179,7 +198,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<ListServicesRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = build_client_for(req.account.as_deref())?;
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
         let pid = ProjectId::from(project.clone());
         let pv = Q::project_view(&client, &pid).await.map_err(internal_err)?;
@@ -212,7 +231,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<DeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = build_client_for(req.account.as_deref())?;
         let token_fp = client.token_fingerprint();
 
         let project = req.project.unwrap_or_else(|| IGLA_PROJECT_ID.to_string());
@@ -285,7 +304,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<RedeployRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = build_client()?;
+        let client = build_client_for(req.account.as_deref())?;
         let env = req
             .environment
             .unwrap_or_else(|| IGLA_PROD_ENV_ID.to_string());
@@ -316,7 +335,7 @@ impl TriosRailwayMcp {
                 None,
             ));
         }
-        let client = build_client()?;
+        let client = build_client_for(req.account.as_deref())?;
         let sid = ServiceId::from(req.service);
         M::service_delete(&client, &sid)
             .await
@@ -648,6 +667,37 @@ fn build_client() -> Result<Client, McpError> {
     Client::from_env().map_err(|e| {
         McpError::internal_error(format!("RAILWAY_TOKEN not set or invalid: {e}"), None)
     })
+}
+
+/// Resolve a `Client` for the requested account alias. When `alias` is
+/// `None` we keep the legacy single-token path so existing one-account
+/// deployments keep working untouched.
+fn build_client_for(alias: Option<&str>) -> Result<Client, McpError> {
+    let Some(alias) = alias else {
+        return build_client();
+    };
+    let id = AccountId::from_alias(alias).ok_or_else(|| {
+        McpError::invalid_params(
+            format!("unknown account alias {alias:?}; expected acc0/acc1/acc2/acc3"),
+            None,
+        )
+    })?;
+    let mc = RailwayMultiClient::from_env().map_err(|e| {
+        McpError::internal_error(
+            format!("failed to load RailwayMultiClient from env: {e}"),
+            None,
+        )
+    })?;
+    let client = mc.get(id).map_err(|e| {
+        McpError::internal_error(
+            format!(
+                "account {alias:?} not authorized in this MCP instance: {e}. Set RAILWAY_TOKEN_{} (and _PROJECT_ID_/_ENVIRONMENT_ID_/_TOKEN_KIND_).",
+                alias.to_ascii_uppercase()
+            ),
+            None,
+        )
+    })?;
+    Ok(client.clone())
 }
 
 fn kv(key: &str, value: &str) -> KeyValue {
