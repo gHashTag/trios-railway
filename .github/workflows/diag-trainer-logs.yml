@@ -1,0 +1,68 @@
+name: DIAG — pull trainer deploy logs
+on:
+  workflow_dispatch:
+    inputs:
+      account:
+        description: "ACC1..ACC7"
+        default: "ACC1"
+      service_name_filter:
+        description: "substring to match"
+        default: "matrix"
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+    steps:
+      - name: pick token + project + env
+        id: pick
+        run: |
+          ACC="${{ github.event.inputs.account }}"
+          N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+          declare -A PROJ=( [ACC1]=f29aa9dd-ca0b-460f-ad24-c7680c6717fb [ACC2]=ad0f8f04-c56d-4b11-9350-cc0c2700b9db [ACC3]=475a2290-d990-426a-af57-594a934cf6f4 [ACC4]=0dc36fab-0201-46dc-9de2-43ca5008a405 [ACC5]=fa333a5e-0151-4bf2-bc5f-9b32c4e762a9 [ACC6]=f4d7b9fb-33c5-418b-b29c-6dfb1794db49 [ACC7]=19e35d90-e2ae-47a2-8777-6ae5c6c2ba2a )
+          declare -A ENVI=( [ACC1]=fade0d77-af80-4d01-bc34-2ce27283d766 [ACC2]=f4adeded-a0e6-45a3-b5c8-76fdeecc38f5 [ACC3]=5724292a-1c7d-42ca-8859-edcab337c5a9 [ACC4]=074f1a55-a202-499f-8ad1-5ab2af7d79b5 [ACC5]=6a57a0c2-59bc-4ed1-bd59-6627d30d071d [ACC6]=6c7ea634-c857-4237-b47e-44d31d345cf5 [ACC7]=a0dc5bb2-99cc-4eab-ba5a-4dcc7fee4fd4 )
+          echo "TOK=$TOK" >> $GITHUB_OUTPUT
+          echo "PROJ=${PROJ[$ACC]}" >> $GITHUB_OUTPUT
+          echo "ENVI=${ENVI[$ACC]}" >> $GITHUB_OUTPUT
+      - name: list services + find latest deployment
+        id: pick_svc
+        run: |
+          TOK="${{ steps.pick.outputs.TOK }}"
+          PROJ="${{ steps.pick.outputs.PROJ }}"
+          FILTER="${{ github.event.inputs.service_name_filter }}"
+          Q='{ "query":"query($p:String!){ project(id:$p){ services{ edges{ node{ id name } } } } }", "variables":{"p":"'$PROJ'"} }'
+          R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" -d "$Q")
+          echo "$R" | jq -r '.data.project.services.edges[]|.node|"\(.id) \(.name)"' | grep -i "$FILTER" | head -3
+          SVC=$(echo "$R" | jq -r --arg f "$FILTER" '[.data.project.services.edges[]|.node|select(.name|test($f;"i"))][0].id')
+          SVC_NAME=$(echo "$R" | jq -r --arg f "$FILTER" '[.data.project.services.edges[]|.node|select(.name|test($f;"i"))][0].name')
+          echo "SVC=$SVC" >> $GITHUB_OUTPUT
+          echo "SVC_NAME=$SVC_NAME" >> $GITHUB_OUTPUT
+          echo "Picked: $SVC_NAME ($SVC)"
+      - name: latest deployment
+        id: dep
+        run: |
+          TOK="${{ steps.pick.outputs.TOK }}"
+          SVC="${{ steps.pick_svc.outputs.SVC }}"
+          ENVI="${{ steps.pick.outputs.ENVI }}"
+          Q='{ "query":"query($s:String!,$e:String!){ deployments(first:1, input:{serviceId:$s, environmentId:$e}){ edges{ node{ id status createdAt staticUrl } } } }", "variables":{"s":"'$SVC'", "e":"'$ENVI'"} }'
+          R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" -d "$Q")
+          echo "$R" | jq .
+          DEP=$(echo "$R" | jq -r '.data.deployments.edges[0].node.id')
+          echo "DEP=$DEP" >> $GITHUB_OUTPUT
+      - name: pull deployment logs
+        run: |
+          TOK="${{ steps.pick.outputs.TOK }}"
+          DEP="${{ steps.dep.outputs.DEP }}"
+          Q='{ "query":"query($d:String!){ deploymentLogs(deploymentId:$d, limit:500){ message severity timestamp } }", "variables":{"d":"'$DEP'"} }'
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" -d "$Q" \
+            | jq -r '.data.deploymentLogs[] | "\(.timestamp) [\(.severity)] \(.message)"' | tail -200
