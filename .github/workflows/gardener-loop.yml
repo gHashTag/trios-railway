@@ -1,4 +1,4 @@
-name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.6 · O(1) · 4x cadence · night-mode)
+name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.7 · stall-aware · forced wake-up)
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"  # каждые 15 минут — ночной режим 4x x
@@ -91,6 +91,29 @@ jobs:
           awk -F',' '$4+0 >= 5000 {print $3","$1","$2}' /tmp/gardener/measured.csv | sort -g | head -1
 
       # ─────────────────────────────────────────────────────────────
+      # STAGE 1b — WRITER STALL DETECTOR (ssot.bpb_samples flow)
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-1b — writer-stall detector
+        id: stall
+        run: |
+          set +e
+          LATEST_AGE=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - MAX(ts)))::int, 99999) FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%';" 2>/dev/null | tr -d ' ')
+          ROWS_LAST_HOUR=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COUNT(*) FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '1 hour';" 2>/dev/null | tr -d ' ')
+          [ -z "$LATEST_AGE" ] && LATEST_AGE=99999
+          [ -z "$ROWS_LAST_HOUR" ] && ROWS_LAST_HOUR=0
+          STALL_MIN=$(echo "scale=1; $LATEST_AGE / 60" | bc)
+          echo "stall_seconds=$LATEST_AGE" >> "$GITHUB_OUTPUT"
+          echo "stall_minutes=$STALL_MIN"  >> "$GITHUB_OUTPUT"
+          echo "rows_last_hour=$ROWS_LAST_HOUR" >> "$GITHUB_OUTPUT"
+          if [ "$ROWS_LAST_HOUR" -lt 1 ]; then
+            echo "stalled=true" >> "$GITHUB_OUTPUT"
+            echo "🚨 WRITER STALL: 0 rows in last 1h · last write $STALL_MIN min ago"
+          else
+            echo "stalled=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Writer healthy: $ROWS_LAST_HOUR rows in last 1h · last write $STALL_MIN min ago"
+          fi
+
+      # ─────────────────────────────────────────────────────────────
       # STAGE 2 — FIX SERVICE BLOCKERS (dead/idle services)
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-2 — fleet health snapshot (O(1) per account)
@@ -179,6 +202,36 @@ jobs:
           echo "drift_fixed=$DRIFTED" >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
+      # STAGE 2d — FORCED WAKE-UP (batch redeploy when writer stalled)
+      # NO cap — when SSOT writer is silent the entire trainer fleet
+      # must be force-kicked. Sleeps 0.05s between calls to avoid GraphQL
+      # rate limits. Triggered only when Stage-1b detects stall AND mode=live.
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-2d — forced wake-up on writer stall
+        if: steps.stall.outputs.stalled == 'true' && env.MODE == 'live'
+        run: |
+          set +e
+          WOKEN=0
+          FAILED=0
+          while IFS=',' read -r ACC PROJ ENV SVC NAME STATUS CREATED; do
+            N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+            [ -z "$TOK" ] && continue
+            RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "{\"query\":\"mutation { serviceInstanceDeployV2(serviceId:\\\"$SVC\\\", environmentId:\\\"$ENV\\\") }\"}" 2>/dev/null)
+            if echo "$RESP" | grep -q '"errors"'; then
+              FAILED=$((FAILED+1))
+            else
+              WOKEN=$((WOKEN+1))
+            fi
+            sleep 0.05
+          done < /tmp/gardener/services.csv
+          echo "⚡ FORCED WAKE-UP: $WOKEN redeployed · $FAILED failed"
+          echo "woken=$WOKEN" >> "$GITHUB_OUTPUT"
+          echo "woken_failed=$FAILED" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
       # STAGE 3 — IDENTIFY TODO cells (O(1) set diff)
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-3 — TODO cells (set diff, O(N) where N=240 — effectively O(1))
@@ -224,7 +277,11 @@ jobs:
               'measured', $MEASURED, 'total', $TOTAL, 'pct', '$PCT',
               'champion_bpb', '$CB', 'champion_fmt', '$CF', 'champion_algo', '$CA',
               'todo_count', $TODO_N, 'fleet_total', $FLEET_T, 'fleet_dead', $FLEET_D,
-              'mode', '$MODE', 'version', 'v2-O1'
+              'stalled', '${{ steps.stall.outputs.stalled }}',
+              'rows_last_hour', ${{ steps.stall.outputs.rows_last_hour || 0 }},
+              'stall_minutes', '${{ steps.stall.outputs.stall_minutes || 0 }}',
+              'woken', ${{ steps.stall.outputs.woken || 0 }},
+              'mode', '$MODE', 'version', 'v2.7-stall-aware'
             ));
           "
 
@@ -296,6 +353,55 @@ jobs:
           git add docs/gardener-experience/ || true
           git diff --cached --quiet || git commit -m "gardener: tick $DT (measured=${{ steps.todo.outputs.measured }}/240, dead=${{ steps.fleet.outputs.fleet_dead }})" || true
           git push origin HEAD:main || echo "push skipped (no changes / protected)"
+
+      # ─────────────────────────────────────────────────────────────
+      # STAGE 5c — CHAMPION STALL ALERT (BPB frozen ≥ 4 ticks = 1h)
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-5c — champion-stall alert
+        if: always()
+        run: |
+          set +e
+          SNAP=docs/gardener-experience/champion-history.csv
+          [ -f "$SNAP" ] || exit 0
+          LAST4=$(tail -4 "$SNAP" | awk -F',' '{print $4}' | sort -u | wc -l)
+          ROWS=$(wc -l < "$SNAP")
+          if [ "$ROWS" -ge 5 ] && [ "$LAST4" -eq 1 ]; then
+            CB=$(tail -1 "$SNAP" | awk -F',' '{print $4}')
+            CF=$(tail -1 "$SNAP" | awk -F',' '{print $5}')
+            CA=$(tail -1 "$SNAP" | awk -F',' '{print $6}')
+            STALLED="${{ steps.stall.outputs.stalled }}"
+            WOKEN="${{ steps.stall.outputs.woken || 0 }}"
+            echo "🚨 CHAMPION STALL: BPB=$CB frozen across last 4 ticks ($CF × $CA) · writer_stalled=$STALLED · woken=$WOKEN"
+            BODY_FILE=$(mktemp)
+            {
+              echo "## Gardener v2.7 — Champion stall alert"
+              echo
+              echo "**Detected at:** $(date -u +%FT%TZ)"
+              echo "**Champion (frozen):** $CF × $CA = $CB BPB"
+              echo "**Writer stalled:** $STALLED"
+              echo "**Forced wake-up redeploys this tick:** $WOKEN"
+              echo
+              echo "Last 5 entries of champion-history.csv:"
+              echo '```csv'
+              tail -5 "$SNAP"
+              echo '```'
+              echo
+              echo "Anchor: \$\\varphi^2 + \\varphi^{-2} = 3\$ · TRINITY · NEVER STOP"
+            } > "$BODY_FILE"
+            EXISTING=$(gh issue list --repo gHashTag/trios-railway --search "in:title gardener champion stall" --state open --json number --jq '.[0].number' 2>/dev/null)
+            if [ -z "$EXISTING" ]; then
+              gh issue create --repo gHashTag/trios-railway \
+                --title "🚨 GARDENER v2.7 — champion stall ($CB BPB, $CF×$CA)" \
+                --body-file "$BODY_FILE" \
+                --label "gardener,stall,blocker" 2>&1 || echo "issue create skipped"
+            else
+              gh issue comment "$EXISTING" --repo gHashTag/trios-railway --body-file "$BODY_FILE" 2>&1 || echo "issue comment skipped"
+            fi
+          else
+            echo "✅ Champion progress detected ($LAST4 distinct BPB in last 4 ticks)"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/upload-artifact@v4
         with:
