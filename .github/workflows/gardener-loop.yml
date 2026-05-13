@@ -393,7 +393,11 @@ jobs:
               gh issue create --repo gHashTag/trios-railway \
                 --title "🚨 GARDENER v2.7 — champion stall ($CB BPB, $CF×$CA)" \
                 --body-file "$BODY_FILE" \
-                --label "gardener,stall,blocker" 2>&1 || echo "issue create skipped"
+                --label gardener --label stall --label blocker 2>&1 \
+              || gh issue create --repo gHashTag/trios-railway \
+                --title "🚨 GARDENER v2.7 — champion stall ($CB BPB, $CF×$CA)" \
+                --body-file "$BODY_FILE" 2>&1 \
+              || echo "issue create skipped"
             else
               gh issue comment "$EXISTING" --repo gHashTag/trios-railway --body-file "$BODY_FILE" 2>&1 || echo "issue comment skipped"
             fi
