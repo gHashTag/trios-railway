@@ -1,4 +1,4 @@
-name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.8 · canonical SSOT aliases)
+name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.9 · STEPS autofix + self-diag)
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"  # каждые 15 минут — ночной режим 4x x
@@ -237,7 +237,10 @@ jobs:
             FMT=$(echo "$ROW" | cut -d, -f2)
             ALG=$(echo "$ROW" | cut -d, -f3)
             CANON=$(echo "$ROW" | cut -d, -f4)
-            for KV in "FORMAT=$FMT" "OPTIMIZER=$ALG" "CANON_NAME=$CANON"; do
+            # v2.9: also force STEPS=81000 (kills the 500-step suicide-deploy bug)
+            # and sync TRIOS_CANON_NAME with CANON_NAME (kills the drift between
+            # the two name vars the trainer code can read).
+            for KV in "FORMAT=$FMT" "OPTIMIZER=$ALG" "CANON_NAME=$CANON" "TRIOS_CANON_NAME=$CANON" "STEPS=81000" "TOTAL_STEPS=81000" "MAX_STEPS=81000" "TRAIN_STEPS=81000" "NUM_TRAIN_STEPS=81000"; do
               K="${KV%%=*}"; V="${KV#*=}"
               curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
@@ -251,6 +254,106 @@ jobs:
           done < /tmp/gardener/services.csv
           echo "🔧 ENV drift autofix: $DRIFTED services re-upserted"
           echo "drift_fixed=$DRIFTED" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
+      # STAGE 2e — STEPS suicide-deploy autofix (NO cap, v2.9)
+      # RCA 2026-05-13: scarab-* services had STEPS=500 → trainer wrote one
+      # row at step=500 and exited cleanly → deploy SUCCESS → gardener saw
+      # SUCCESS and never redeployed → matrix frozen at 10/240 forever.
+      # This stage forces STEPS=81000 across the ENTIRE fleet every tick.
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-2e — STEPS=81000 fleet-wide autofix
+        id: steps_fix
+        if: env.MODE == 'live'
+        run: |
+          set +e
+          FIXED=0
+          SKIPPED=0
+          while IFS=',' read -r ACC PROJ ENV SVC NAME STATUS CREATED; do
+            N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+            [ -z "$TOK" ] && continue
+            # probe current STEPS
+            VR=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+              -d "{\"query\":\"{ variables(projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\") }\"}" 2>/dev/null)
+            CUR=$(echo "$VR" | jq -r '.data.variables.STEPS // ""')
+            if [ "$CUR" = "81000" ]; then
+              SKIPPED=$((SKIPPED+1))
+            else
+              # upsert all 5 step aliases
+              for K in STEPS TOTAL_STEPS MAX_STEPS TRAIN_STEPS NUM_TRAIN_STEPS; do
+                curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                  -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+                  -d "{\"query\":\"mutation { variableUpsert(input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\", name:\\\"$K\\\", value:\\\"81000\\\"}) }\"}" \
+                  > /dev/null 2>&1
+              done
+              FIXED=$((FIXED+1))
+            fi
+            sleep 0.05
+          done < /tmp/gardener/services.csv
+          echo "🎯 STEPS autofix: $FIXED services patched, $SKIPPED already at 81000"
+          echo "steps_fixed=$FIXED"   >> "$GITHUB_OUTPUT"
+          echo "steps_skipped=$SKIPPED" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
+      # STAGE 0d — SELF-DIAGNOSTIC: sample one service's deploy logs (v2.9)
+      # Every tick pick one random trainer service, fetch last 100 log lines,
+      # and scan for known blocker patterns. If a NEW pattern matches, file an
+      # alert into docs/gardener-experience/blockers.md. This is how gardener
+      # finds bugs WITHOUT waiting for the operator.
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-0d — self-diagnostic (sample-service log scan)
+        id: selfdiag
+        run: |
+          set +e
+          SAMPLE=$(shuf -n 1 /tmp/gardener/services.csv)
+          ACC=$(echo "$SAMPLE" | cut -d, -f1)
+          PROJ=$(echo "$SAMPLE" | cut -d, -f2)
+          ENV=$(echo "$SAMPLE" | cut -d, -f3)
+          SVC=$(echo "$SAMPLE" | cut -d, -f4)
+          NAME=$(echo "$SAMPLE" | cut -d, -f5)
+          N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+          # latest deployment
+          DEP_R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ projectToken { project { services { edges { node { id deployments(first:1){ edges { node { id status } } } } } } } } }\"}")
+          DEP_ID=$(echo "$DEP_R" | jq -r --arg s "$SVC" '[.data.projectToken.project.services.edges[]|.node|select(.id==$s)][0].deployments.edges[0].node.id // empty')
+          [ -z "$DEP_ID" ] && { echo "⚠️ selfdiag: no deployment for $NAME"; echo "blockers=" >> "$GITHUB_OUTPUT"; exit 0; }
+          LOGS=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ deploymentLogs(deploymentId:\\\"$DEP_ID\\\", limit:100) { message timestamp } }\"}")
+          BODY=$(echo "$LOGS" | jq -r '.data.deploymentLogs[]?.message' 2>/dev/null)
+          BLOCKERS=""
+          # pattern 1 — exit after step=500 only
+          if echo "$BODY" | grep -qE 'step=500' && ! echo "$BODY" | grep -qE 'step=(1000|2000|5000|10000)'; then
+            BLOCKERS="$BLOCKERS suicide-deploy-500"
+          fi
+          # pattern 2 — DATABASE_URL unset / Neon refs / connection refused
+          if echo "$BODY" | grep -qE 'DATABASE_URL.*(unset|missing|empty)|Neon|connection refused|could not connect'; then
+            BLOCKERS="$BLOCKERS db-conn-fail"
+          fi
+          # pattern 3 — OOM / killed
+          if echo "$BODY" | grep -qE 'OOMKilled|out of memory|Killed: 9|signal 9'; then
+            BLOCKERS="$BLOCKERS oom"
+          fi
+          # pattern 4 — panic / Rust trace
+          if echo "$BODY" | grep -qE 'thread .* panicked|RUST_BACKTRACE'; then
+            BLOCKERS="$BLOCKERS rust-panic"
+          fi
+          # pattern 5 — canon_name regex reject (bad triplet)
+          if echo "$BODY" | grep -qE 'canon_name.*invalid|regex.*not match|bad triplet'; then
+            BLOCKERS="$BLOCKERS canon-reject"
+          fi
+          BLOCKERS="${BLOCKERS# }"
+          echo "🔬 selfdiag sample=$NAME dep=$DEP_ID blockers=[$BLOCKERS]"
+          echo "sample_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "sample_dep=$DEP_ID" >> "$GITHUB_OUTPUT"
+          echo "blockers=$BLOCKERS" >> "$GITHUB_OUTPUT"
+          # log to blockers.md
+          if [ -n "$BLOCKERS" ]; then
+            mkdir -p docs/gardener-experience
+            echo "- $(date -u +%FT%TZ) | $NAME | $BLOCKERS | dep=$DEP_ID" >> docs/gardener-experience/blockers.md
+          fi
 
       # ─────────────────────────────────────────────────────────────
       # STAGE 2d — FORCED WAKE-UP (batch redeploy when writer stalled)
