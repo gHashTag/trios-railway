@@ -166,6 +166,49 @@ jobs:
           echo "🛠️ Auto-redeployed $FIXED dead services"
 
       # ─────────────────────────────────────────────────────────────
+      # STAGE 2b2 — SSOT URL PROPAGATION (every trainer must know how to write)
+      # If any trainer service is missing RAILWAY_POSTGRES_URL, write it.
+      # Hard-capped at 60 services / tick (rate limit safe).
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-2b2 — SSOT URL propagation
+        id: ssot_prop
+        if: env.MODE == 'live'
+        run: |
+          set +e
+          PROPAGATED=0
+          MISSING=0
+          CHECKED=0
+          # JSON-encode the SSOT URL so it survives GraphQL string quoting
+          SSOT_ESC=$(printf '%s' "$RAILWAY_POSTGRES_URL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])')
+          while IFS=',' read -r ACC PROJ ENV SVC NAME STATUS CREATED; do
+            N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+            [ -z "$TOK" ] && continue
+            CHECKED=$((CHECKED+1))
+            # Probe: does this service already have RAILWAY_POSTGRES_URL?
+            VR=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "{\"query\":\"{ variables(projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\") }\"}" 2>/dev/null)
+            HAS=$(echo "$VR" | jq -r '.data.variables | has("RAILWAY_POSTGRES_URL")' 2>/dev/null)
+            if [ "$HAS" != "true" ]; then
+              MISSING=$((MISSING+1))
+              # Upsert it
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "{\"query\":\"mutation { variableUpsert(input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SVC\\\", name:\\\"RAILWAY_POSTGRES_URL\\\", value:\\\"$SSOT_ESC\\\"}) }\"}" \
+                > /dev/null 2>&1
+              PROPAGATED=$((PROPAGATED+1))
+              [ "$PROPAGATED" -ge 60 ] && break
+            fi
+            sleep 0.05
+          done < /tmp/gardener/services.csv
+          echo "🔗 SSOT URL propagation: checked=$CHECKED missing=$MISSING propagated=$PROPAGATED"
+          echo "ssot_checked=$CHECKED"  >> "$GITHUB_OUTPUT"
+          echo "ssot_missing=$MISSING"  >> "$GITHUB_OUTPUT"
+          echo "ssot_propagated=$PROPAGATED" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────
       # STAGE 2c — DETECT ENV drift (cells assigned vs service vars)
       # Hard-capped at 20 fixes per tick (O(1) bounded)
       # ─────────────────────────────────────────────────────────────
@@ -281,7 +324,9 @@ jobs:
               'rows_last_hour', ${{ steps.stall.outputs.rows_last_hour || 0 }},
               'stall_minutes', '${{ steps.stall.outputs.stall_minutes || 0 }}',
               'woken', ${{ steps.stall.outputs.woken || 0 }},
-              'mode', '$MODE', 'version', 'v2.7-stall-aware'
+              'ssot_missing', ${{ steps.ssot_prop.outputs.ssot_missing || 0 }},
+              'ssot_propagated', ${{ steps.ssot_prop.outputs.ssot_propagated || 0 }},
+              'mode', '$MODE', 'version', 'v2.7.1-ssot-prop'
             ));
           "
 
