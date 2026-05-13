@@ -1,4 +1,4 @@
-name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.9 · STEPS autofix + self-diag)
+name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.12 · dual rate-collapse + v2.11 lift)
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"  # каждые 15 минут — ночной режим 4x x
@@ -93,24 +93,40 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # STAGE 1b — WRITER STALL DETECTOR (ssot.bpb_samples flow)
       # ─────────────────────────────────────────────────────────────
-      - name: STAGE-1b — writer-stall detector
+      - name: STAGE-1b — writer-stall detector (v2.12 dual rate-collapse)
         id: stall
         run: |
           set +e
+          # v2.12: dual rate-collapse detector — flags stalled=true if EITHER
+          #   (a) abs floor: rows_last_hour < 5  (was: < 1 in v2.9, too soft — B-09)
+          #   (b) ratio collapse: rows_last_hour / rows_prev_hour < 0.25
+          # Closes #147 (B-09 writer-stall threshold too soft)
           LATEST_AGE=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COALESCE(EXTRACT(EPOCH FROM (NOW() - MAX(ts)))::int, 99999) FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%';" 2>/dev/null | tr -d ' ')
           ROWS_LAST_HOUR=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COUNT(*) FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '1 hour';" 2>/dev/null | tr -d ' ')
+          ROWS_PREV_HOUR=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COUNT(*) FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%' AND ts > NOW() - INTERVAL '2 hours' AND ts <= NOW() - INTERVAL '1 hour';" 2>/dev/null | tr -d ' ')
           [ -z "$LATEST_AGE" ] && LATEST_AGE=99999
           [ -z "$ROWS_LAST_HOUR" ] && ROWS_LAST_HOUR=0
+          [ -z "$ROWS_PREV_HOUR" ] && ROWS_PREV_HOUR=0
           STALL_MIN=$(echo "scale=1; $LATEST_AGE / 60" | bc)
+          # ratio collapse: only meaningful if prev_hour had data
+          RATIO_COLLAPSE=false
+          if [ "$ROWS_PREV_HOUR" -ge 20 ]; then
+            RATIO_PCT=$(( ROWS_LAST_HOUR * 100 / ROWS_PREV_HOUR ))
+            [ "$RATIO_PCT" -lt 25 ] && RATIO_COLLAPSE=true
+          else
+            RATIO_PCT=NA
+          fi
           echo "stall_seconds=$LATEST_AGE" >> "$GITHUB_OUTPUT"
           echo "stall_minutes=$STALL_MIN"  >> "$GITHUB_OUTPUT"
           echo "rows_last_hour=$ROWS_LAST_HOUR" >> "$GITHUB_OUTPUT"
-          if [ "$ROWS_LAST_HOUR" -lt 1 ]; then
+          echo "rows_prev_hour=$ROWS_PREV_HOUR" >> "$GITHUB_OUTPUT"
+          echo "ratio_pct=$RATIO_PCT" >> "$GITHUB_OUTPUT"
+          if [ "$ROWS_LAST_HOUR" -lt 5 ] || [ "$RATIO_COLLAPSE" = true ]; then
             echo "stalled=true" >> "$GITHUB_OUTPUT"
-            echo "🚨 WRITER STALL: 0 rows in last 1h · last write $STALL_MIN min ago"
+            echo "🚨 WRITER STALL (v2.12): rows_1h=$ROWS_LAST_HOUR rows_prev_h=$ROWS_PREV_HOUR ratio=${RATIO_PCT}% · last write $STALL_MIN min ago"
           else
             echo "stalled=false" >> "$GITHUB_OUTPUT"
-            echo "✅ Writer healthy: $ROWS_LAST_HOUR rows in last 1h · last write $STALL_MIN min ago"
+            echo "✅ Writer healthy (v2.12): rows_1h=$ROWS_LAST_HOUR rows_prev_h=$ROWS_PREV_HOUR ratio=${RATIO_PCT}% · last write $STALL_MIN min ago"
           fi
 
       # ─────────────────────────────────────────────────────────────
