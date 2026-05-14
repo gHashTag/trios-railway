@@ -1,0 +1,92 @@
+name: doctor-loop
+
+# Anchor: phi^2 + phi^-2 = 3 · DOI 10.5281/zenodo.19227877
+#
+# Layer-2 autonomous doctor for trios-trainer-igla fleet.
+# Sibling of the cron-based Layer-1 doctor (Perplexity-side cron 17d63b6f),
+# which probes hourly but has historically reported "AMBER bootstrap pending"
+# because THIS workflow file did not exist.
+#
+# v1.0 (2026-05-14): minimal stub — probes public.bpb_samples writer pulse
+# and emits NASA-style summary. Does NOT yet perform cure actions
+# (writer-env-fix dispatch / service redeploy) — those remain operator-gated
+# until v1.1 with confirm=PHI safeguard.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run hourly at :33 UTC (offset from Layer-1 cron at :17 UTC and
+    # gardener-loop at :41 UTC to avoid concurrency).
+    - cron: '33 * * * *'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: doctor-loop
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+    steps:
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: R5 writer pulse (public.bpb_samples)
+        id: pulse
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATABASE_URL:-}" ]]; then
+            echo "::warning::RAILWAY_POSTGRES_URL secret not set — emitting AMBER bootstrap"
+            echo "verdict=AMBER" >> "$GITHUB_OUTPUT"
+            echo "reason=secret-missing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          RESULT=$(psql "$DATABASE_URL" -At -F$'\t' -c "
+            SELECT
+              COALESCE(EXTRACT(EPOCH FROM (NOW()-MAX(ts)))::int, 99999) AS stale_sec,
+              COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '15 minutes') AS rows_15m,
+              COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '1 hour') AS rows_1h
+            FROM public.bpb_samples
+            WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%';
+          ")
+          STALE=$(echo "$RESULT" | cut -f1)
+          R15M=$(echo "$RESULT" | cut -f2)
+          R1H=$(echo "$RESULT" | cut -f3)
+          echo "stale_sec=$STALE" >> "$GITHUB_OUTPUT"
+          echo "rows_15m=$R15M"  >> "$GITHUB_OUTPUT"
+          echo "rows_1h=$R1H"    >> "$GITHUB_OUTPUT"
+
+          if [[ "$STALE" -lt 600 && "$R15M" -gt 0 ]]; then
+            echo "verdict=GREEN" >> "$GITHUB_OUTPUT"
+          elif [[ "$STALE" -lt 3600 ]]; then
+            echo "verdict=AMBER" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=RED" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: NASA summary
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          # DOCTOR-LOOP · R5 probe
+
+          - **stale_sec:** ${{ steps.pulse.outputs.stale_sec }}
+          - **rows_15m:** ${{ steps.pulse.outputs.rows_15m }}
+          - **rows_1h:** ${{ steps.pulse.outputs.rows_1h }}
+          - **verdict:** ${{ steps.pulse.outputs.verdict }}
+
+          Anchor: \$\\varphi^2 + \\varphi^{-2} = 3\$
+          EOF
+
+      - name: Fail job on RED verdict
+        if: steps.pulse.outputs.verdict == 'RED'
+        run: |
+          echo "::error::RED verdict — writer stale > 3600s — operator action required (dispatch writer-env-fix.yml with confirm=PHI)"
+          exit 1
