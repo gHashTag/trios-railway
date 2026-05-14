@@ -1,0 +1,106 @@
+name: WAVE-A-NEXT-LR — LR sweep on champion config (gf256-h128-adamw)
+# Hypothesis: champion plateaued at BPB=2.5719 across {h128, h384, baseline, DEEP}
+# ⇒ ceiling is NOT depth-bound, it's LR-bound. Sweep LR ∈ {3e-4, 1e-3, 3e-3}
+# on the FROZEN champion config (gf256/h128/adamw/rng1597) using STEPS=200000
+# (TRIOS_STEPS=200000 + STEPS=200000 defence-in-depth).
+#
+# Target services: index 0..2 (first three ACC1 services from trainer-services.csv).
+# These currently host baseline SHORT-WAVE-MATRIX-fp32-{adamw,muon,lion}-rng1597
+# but fp32-lion has no value (lion is not in ALGO_WHITELIST since #149) so we
+# reclaim slot 2 (lion). To minimise baseline damage we target ONLY slots
+# whose canon is non-essential: lion(2), lamb(3) + a third idle scarab.
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · WAVE-NEXT-LR · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 3-service LR-sweep"
+        required: true
+      steps:
+        description: "Steps per cell"
+        required: true
+        default: "200000"
+
+jobs:
+  lrsweep:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure 3 services for LR-sweep
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          # Map: slot index → (LR, canon suffix)
+          # Re-purpose slots 2 (lion) and 3 (lamb) from baseline, plus slot 24
+          # (last ACC1 baseline scarab) which has been a low-yield reserve.
+          # All three become gf256/h128/adamw/rng1597 with different LRs.
+          declare -A SLOT_LR
+          SLOT_LR[2]="0.0003"
+          SLOT_LR[3]="0.001"
+          SLOT_LR[24]="0.003"
+          PROCESSED=0; DEPLOYED=0; FAILED=0
+          for SVC_IDX in 2 3 24; do
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            LR="${SLOT_LR[$SVC_IDX]}"
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            CANON="IGLA-LR-SWEEP-gf256-h128-LR${LR}-rng1597-adamw"
+            RUN_ID="wave-a-lrsweep-2026-05-14-gf256-adamw-LR${LR}"
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::LR-SWEEP svc_idx=$SVC_IDX [$ACC/$SNAME] LR=$LR canon=$CANON"
+            for KV in \
+              "SEED=1597" "TRIOS_SEED=1597" \
+              "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=128" "HIDDEN_DIM=128" "TRIOS_HIDDEN=128" \
+              "OPTIMIZER=adamw" "TRIOS_OPTIMIZER=adamw" \
+              "FORMAT=gf256" "TRIOS_FORMAT=gf256" \
+              "TRIOS_LANE=LR-SWEEP" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed slot=$SVC_IDX"; FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP"; DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "LR-SWEEP-SUMMARY: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
+          if [[ $FAILED -gt 0 ]]; then exit 1; fi
