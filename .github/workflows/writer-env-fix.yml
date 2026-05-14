@@ -57,8 +57,16 @@ jobs:
       TOKEN_ACC1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       TOKEN_ACC2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
       RAILWAY_TOKEN_AUTH: project  # B-18 fix (2026-05-14): all ACC1..7 tokens are project-scoped (PAT), not team. Verified by token-classify.yml run 25846091578.
-      IGLA_PROJECT_ID: e4fe33bb-3b09-4842-9782-7d2dea1abc9b
-      ACC2_PROJECT_ID: 12c508c7-1196-468d-b06d-d8de8cb77e93
+      # B-19 fix (2026-05-14): real project IDs verified by token-classify.yml
+      # run 25846091578 — PAT/projectToken returned ACC1->IGLA RACE,
+      # ACC2->IGLA. Previous values (e4fe33bb / 12c508c7) bound to projects
+      # the PATs did NOT control, so `project(id:$x)` returned null and the
+      # job exited 5 "could not resolve production env". With PAT-implicit
+      # `projectToken.project` query (no id arg) the env_id is discovered
+      # at runtime — these IGLA_/ACC2_PROJECT_ID env vars are now
+      # informational only (kept for the audit-trail in logs).
+      IGLA_PROJECT_ID: f29aa9dd-ca0b-460f-ad24-c7680c6717fb  # IGLA RACE (ACC1 PAT scope)
+      ACC2_PROJECT_ID: ad0f8f04-c56d-4b11-9350-cc0c2700b9db  # IGLA (ACC2 PAT scope)
       MCP_SERVICE_ID: db786a4b-5a79-4643-b915-e9184680cf97
       # Railway-ref placeholder. GH Actions escape: outer ${{ ... }}
       # evaluates a single-quoted literal containing the literal
@@ -137,31 +145,34 @@ jobs:
           ok_count=0
 
           # ----- helper: resolve production env UUID for a project -----
+          # B-19 fix (2026-05-14): PAT-implicit `projectToken.project` query.
+          # The previous form `query env($projectId){ project(id:$projectId){ ... } }`
+          # returned `{"data":{"project":null}}` under PAT, because PAT scope
+          # binds to a single project implicitly — the explicit `id` arg
+          # selects a DIFFERENT project the token can't see. Verified working
+          # form lives in wave-a-massive.yml (line 28): no id arg, no
+          # variables, `projectToken.project.environments`. Last good run
+          # of that workflow: 25754312720 @ 2026-05-12 18:31Z.
           resolve_env() {
             local TOKEN="$1"
-            local PROJECT_ID="$2"
-            # B-18 fix: PAT header instead of Authorization: Bearer.
-            # NOTE: project(id) query is implicit for PAT — the token already
-            # carries the project, but Railway still accepts an explicit projectId.
             curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
                 -H "Project-Access-Token: $TOKEN" \
-                -d "{\"query\":\"query env(\$projectId: String!){ project(id:\$projectId){ environments { edges { node { id name } } } } }\",\"variables\":{\"projectId\":\"$PROJECT_ID\"}}" \
-                | jq -r '.data.project.environments.edges[] | select(.node.name=="production") | .node.id' \
+                -d '{"query":"{ projectToken { project { environments { edges { node { id name } } } } } }"}' \
+                | jq -r '.data.projectToken.project.environments.edges[] | select(.node.name=="production") | .node.id' \
                 | head -n 1
           }
 
           # ----- helper: fetch all (id,name) for a project as JSON -----
           # Returns a JSON array `[{"id":"<full UUID>","name":"<svc name>"}, ...]`.
+          # B-19 fix (2026-05-14): PAT-implicit form same as resolve_env above.
           fetch_services() {
             local TOKEN="$1"
-            local PROJECT_ID="$2"
-            # B-18 fix: PAT header.
             curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
                 -H "Project-Access-Token: $TOKEN" \
-                -d "{\"query\":\"query svcs(\$projectId: String!){ project(id:\$projectId){ services { edges { node { id name } } } } }\",\"variables\":{\"projectId\":\"$PROJECT_ID\"}}" \
-                | jq '[.data.project.services.edges[].node]'
+                -d '{"query":"{ projectToken { project { services { edges { node { id name } } } } } }"}' \
+                | jq '[.data.projectToken.project.services.edges[].node]'
           }
 
           # ----- helper: resolve 8-char prefix → full UUID -----
@@ -245,7 +256,7 @@ jobs:
           #  the MCP).
           # ===================================================================
           echo "::group::resolve IGLA env"
-          IGLA_ENV_ID=$(resolve_env "$TOKEN_ACC1" "$IGLA_PROJECT_ID")
+          IGLA_ENV_ID=$(resolve_env "$TOKEN_ACC1")
           if [[ -z "$IGLA_ENV_ID" ]]; then
             echo "::error::could not resolve IGLA production environment"
             exit 4
@@ -280,7 +291,7 @@ jobs:
           # acc2 project — coverage-b + acc2 runner
           # ===================================================================
           echo "::group::resolve acc2 env"
-          ACC2_ENV_ID=$(resolve_env "$TOKEN_ACC2" "$ACC2_PROJECT_ID")
+          ACC2_ENV_ID=$(resolve_env "$TOKEN_ACC2")
           if [[ -z "$ACC2_ENV_ID" ]]; then
             echo "::error::could not resolve acc2 production environment"
             exit 5
