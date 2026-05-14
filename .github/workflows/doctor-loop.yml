@@ -1,0 +1,40 @@
+name: doctor-loop
+
+# Layer-2 autonomous Railway fleet doctor for trios-trainer-igla.
+# Bypass-discipline: lives in its own workflow + crate, does NOT modify
+# gardener-loop.yml (v2.9 / PR #149 territory). Skill: docker-railway-doctor v1.2.
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP · DOI 10.5281/zenodo.19227877
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # every 5 minutes (cron-tier monitor runs hourly)
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'doctor action: diagnose | cure | cure-all'
+        required: false
+        default: 'diagnose'
+
+concurrency:
+  group: doctor-loop
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Skeleton — Layer-2 doctor stub (PR #155, feat/doctor-v1.0)
+        run: |
+          echo "DOCTOR Layer-2 skeleton — not yet wired."
+          echo "Anchor: phi^2 + phi^-2 = 3"
+          echo "Action: ${{ inputs.action || 'diagnose' }}"
+          echo "Pending merge of crates/tri-doctor (PR #155)."
+          # TODO: invoke `cargo run -p tri-doctor -- $ACTION` once the crate lands.
+          # TODO: append row to public.gardener_runs with action='doctor_cure'.
+          # TODO: emit Railway serviceInstanceDeployV2 force-redeploys on AMBER.
