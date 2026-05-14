@@ -110,27 +110,17 @@ jobs:
           # human name. The 8-char id is what Railway exposes in URLs and
           # in the operator manifest; the workflow looks up the full UUID
           # by prefix-matching against `project.services` to be safe.
-          TARGETS_IGLA_NON_MCP: |
-            03f8e518 trios-mr-coverage-a-runner
-            19c85634 trios-mr-seed47-runner
-            22d82210 trios-mr-tier3b-runner
-            32cee577 trios-mr-tier1b-runner
-            43afaa6d trios-mr-seed123-runner
-            5003c8e0 trios-mr-tier3d-runner
-            683c4ece trios-mr-tier2b-runner
-            71f5aac2 trios-mr-priority-runner
-            91ef9d5c trios-matrix-bot
-            94a833e9 trios-train-ONE-v2-acc1-s1597
-            b03133c2 trios-mr-tier3c-runner
-            b0bd370e trios-mr-tier3-runner
-            b20cf052 trios-mr-tier1a-runner
-            c3e27a4f trios-mr-seed89-runner
-            e2c7447c trios-mr-tier2a-runner
-            fe9a7801 trios-mr-seed144-runner
-            066163be trios-postrun-sidecar
-          TARGETS_ACC2: |
-            3f10fc42 trios-mr-acc2-runner
-            70fda6c1 trios-mr-coverage-b-runner
+          # DYNAMIC DISCOVERY (2026-05-14, B-20):
+          # Hardcoded `trios-mr-*` IDs were phantoms left over from the
+          # pre-scarab-pull-loop architecture and DELETED from Railway
+          # months ago. The workflow logged `Not Authorized` for every
+          # phantom service, never actually patched the live writers
+          # (scarab-*, phase1-*) → writer COMA 1014 min.
+          # We now query Railway GraphQL for the live service list at
+          # runtime, filtered to known writer prefixes.
+          # Excluded prefixes (regex): ^Postgres$|^trios$|^trios-railway$|^trios-mcp$|^TEST-
+          WRITER_PREFIX_REGEX: '^(scarab-|phase1-|trios-train-|trios-matrix-bot$|trios-postrun-)'
+          EXCLUDE_REGEX: '^(Postgres$|trios$|trios-railway$|trios-mcp$|TEST-)'
         run: |
           set -uo pipefail
 
@@ -264,15 +254,24 @@ jobs:
           echo "IGLA env: $IGLA_ENV_ID"
           echo "::endgroup::"
 
+          # B-20: dynamic service discovery instead of hardcoded TARGETS.
+          echo "::group::discover IGLA RACE writers"
+          IGLA_TARGETS=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOKEN_ACC1" \
+              -d "$(jq -n --arg id "$IGLA_PROJECT_ID" '{query:"query Q($id:String!){ project(id:$id){ services{edges{node{id name}}} } }", variables:{id:$id}}')" \
+            | jq -r --arg w "$WRITER_PREFIX_REGEX" --arg x "$EXCLUDE_REGEX" \
+                '.data.project.services.edges[].node | select(.name|test($w)) | select(.name|test($x)|not) | "\(.id) \(.name)"')
+          echo "discovered IGLA writers:"; echo "$IGLA_TARGETS" | sed 's/^/  /'
+          IGLA_COUNT=$(echo "$IGLA_TARGETS" | grep -c . || true)
+          echo "IGLA writer count: $IGLA_COUNT"
+          echo "::endgroup::"
+
           while IFS= read -r line; do
             line="$(echo "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
             [[ -z "$line" ]] && continue
-            ID_PREFIX="${line%% *}"
+            SVC_ID="${line%% *}"
             NAME="${line##* }"
-            # Strip the zero-padding back to the 8-char prefix Railway
-            # expects (when matching by exact id), but keep the full
-            # padded form for the GraphQL call — Railway accepts both.
-            SVC_ID="${ID_PREFIX%%-0000-0000-0000-000000000000}"
             echo "::group::IGLA $NAME ($SVC_ID)"
             ok=1
             upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$SVC_ID" "DATABASE_URL" "$RW_REF" || ok=0
@@ -285,7 +284,7 @@ jobs:
               fail_count=$((fail_count + 1))
             fi
             echo "::endgroup::"
-          done <<< "$TARGETS_IGLA_NON_MCP"
+          done <<< "$IGLA_TARGETS"
 
           # ===================================================================
           # acc2 project — coverage-b + acc2 runner
@@ -299,12 +298,23 @@ jobs:
           echo "acc2 env: $ACC2_ENV_ID"
           echo "::endgroup::"
 
+          echo "::group::discover ACC2 writers"
+          ACC2_TARGETS=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOKEN_ACC2" \
+              -d "$(jq -n --arg id "$ACC2_PROJECT_ID" '{query:"query Q($id:String!){ project(id:$id){ services{edges{node{id name}}} } }", variables:{id:$id}}')" \
+            | jq -r --arg w "$WRITER_PREFIX_REGEX" --arg x "$EXCLUDE_REGEX" \
+                '.data.project.services.edges[].node | select(.name|test($w)) | select(.name|test($x)|not) | "\(.id) \(.name)"')
+          echo "discovered ACC2 writers:"; echo "$ACC2_TARGETS" | sed 's/^/  /'
+          ACC2_COUNT=$(echo "$ACC2_TARGETS" | grep -c . || true)
+          echo "ACC2 writer count: $ACC2_COUNT"
+          echo "::endgroup::"
+
           while IFS= read -r line; do
             line="$(echo "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
             [[ -z "$line" ]] && continue
-            ID_PREFIX="${line%% *}"
+            SVC_ID="${line%% *}"
             NAME="${line##* }"
-            SVC_ID="${ID_PREFIX%%-0000-0000-0000-000000000000}"
             echo "::group::acc2 $NAME ($SVC_ID)"
             ok=1
             upsert_var "$TOKEN_ACC2" "$ACC2_PROJECT_ID" "$ACC2_ENV_ID" "$SVC_ID" "DATABASE_URL" "$RW_REF" || ok=0
@@ -317,7 +327,7 @@ jobs:
               fail_count=$((fail_count + 1))
             fi
             echo "::endgroup::"
-          done <<< "$TARGETS_ACC2"
+          done <<< "$ACC2_TARGETS"
 
           # ===================================================================
           # MCP last (IGLA project, dual var: legacy + new — see L-NEON-RENAME)
@@ -336,12 +346,8 @@ jobs:
           fi
           echo "::endgroup::"
 
-          # ===================================================================
-          # Skipped — manual operator handling
-          # ===================================================================
-          echo "::warning::SKIPPED (no token in this repo's secrets):"
-          echo "::warning::  acc4 (0247abaa) — 8a15af8d trios-mr-acc4-runner, c78218a5 trios-mr-coverage-c-runner"
-          echo "::warning::  acc6 (475a2290) — 422b1ffd trios-mr-acc6-runner"
+          # B-20: stale acc4/acc6 warning block removed — those projects were
+          # part of the pre-scarab fleet that no longer exists.
 
           # ===================================================================
           # Final verdict
