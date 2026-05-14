@@ -67,12 +67,10 @@ jobs:
       # informational only (kept for the audit-trail in logs).
       IGLA_PROJECT_ID: f29aa9dd-ca0b-460f-ad24-c7680c6717fb  # IGLA RACE (ACC1 PAT scope)
       ACC2_PROJECT_ID: ad0f8f04-c56d-4b11-9350-cc0c2700b9db  # IGLA (ACC2 PAT scope)
-      MCP_SERVICE_ID: db786a4b-5a79-4643-b915-e9184680cf97
-      # Railway-ref placeholder. GH Actions escape: outer ${{ ... }}
-      # evaluates a single-quoted literal containing the literal
-      # `${{...}}` Railway placeholder. Railway stores this verbatim and
-      # resolves it at runtime against the SoT service `phd-postgres-ssot`.
-      RW_REF: ${{ '${{phd-postgres-ssot.DATABASE_URL}}' }}
+      # B-20.1: legacy MCP_SERVICE_ID (db786a4b-...) and RW_REF reference
+      # value (phd-postgres-ssot.DATABASE_URL) removed — see PR #169.
+      # Both are now resolved dynamically at runtime from the live project
+      # service list and Postgres-service literal DATABASE_PUBLIC_URL.
 
     steps:
       - name: Sanity-check tokens
@@ -269,7 +267,8 @@ jobs:
             exit 6
           fi
           # B-20: read literal DATABASE_URL value from Postgres service (public proxy URL).
-          # Reference syntax ${{Postgres.DATABASE_URL}} fails when service name mismatches.
+          # Reference syntax (Postgres dot DATABASE_URL with double-curly braces)
+          # fails when service name mismatches — see PR #169 root-cause analysis.
           IGLA_DB_URL=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Project-Access-Token: $TOKEN_ACC1" \
