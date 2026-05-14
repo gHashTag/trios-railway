@@ -151,3 +151,15 @@ cell_idx,format,algo,canon_name,run_id
 150,phi-fixed,shampoo,IGLA-SHORT-WAVE-MATRIX-phi-fixed-h128-LR0.0001-rng1597-shampoo,wave-a-2026-05-12-phi-fixed-shampoo-rng1597
 151,phi-fixed,prodigy,IGLA-SHORT-WAVE-MATRIX-phi-fixed-h128-LR0.0001-rng1597-prodigy,wave-a-2026-05-12-phi-fixed-prodigy-rng1597
 152,phi-fixed,sgdm,IGLA-SHORT-WAVE-MATRIX-phi-fixed-h128-LR0.0001-rng1597-sgdm,wave-a-2026-05-12-phi-fixed-sgdm-rng1597
+153,gf256,adamw,IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng1597-adamw,wave-a-deep-2026-05-14-gf256-adamw-h384
+154,gf256,muon,IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng1597-muon,wave-a-deep-2026-05-14-gf256-muon-h384
+155,gf16,adamw,IGLA-DEEP-CHAMPION-gf16-h384-LR0.0001-rng1597-adamw,wave-a-deep-2026-05-14-gf16-adamw-h384
+156,gf16,muon,IGLA-DEEP-CHAMPION-gf16-h384-LR0.0001-rng1597-muon,wave-a-deep-2026-05-14-gf16-muon-h384
+157,fp8_e4m3,adamw,IGLA-FP-EXPANSION-fp8_e4m3-h128-LR0.0001-rng1597-adamw,wave-a-fp-2026-05-14-fp8_e4m3-adamw
+158,fp8_e4m3,muon,IGLA-FP-EXPANSION-fp8_e4m3-h128-LR0.0001-rng1597-muon,wave-a-fp-2026-05-14-fp8_e4m3-muon
+159,fp8_e5m2,adamw,IGLA-FP-EXPANSION-fp8_e5m2-h128-LR0.0001-rng1597-adamw,wave-a-fp-2026-05-14-fp8_e5m2-adamw
+160,fp8_e5m2,muon,IGLA-FP-EXPANSION-fp8_e5m2-h128-LR0.0001-rng1597-muon,wave-a-fp-2026-05-14-fp8_e5m2-muon
+161,posit16,adamw,IGLA-FP-EXPANSION-posit16-h128-LR0.0001-rng1597-adamw,wave-a-fp-2026-05-14-posit16-adamw
+162,posit16,muon,IGLA-FP-EXPANSION-posit16-h128-LR0.0001-rng1597-muon,wave-a-fp-2026-05-14-posit16-muon
+163,nf4,adamw,IGLA-FP-EXPANSION-nf4-h128-LR0.0001-rng1597-adamw,wave-a-fp-2026-05-14-nf4-adamw
+164,nf4,muon,IGLA-FP-EXPANSION-nf4-h128-LR0.0001-rng1597-muon,wave-a-fp-2026-05-14-nf4-muon

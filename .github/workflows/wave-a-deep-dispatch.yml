@@ -1,0 +1,127 @@
+name: WAVE-A-DEEP — h=384 champion-formats + FP-EXPANSION (fp8/posit/nf4)
+# SAFE dispatch: targets cells 153-164 (12 new) → services 32-43 (idle scarab slots).
+# DOES NOT touch services 1-31 (which carry 6 active canons + reserve).
+# STEPS configurable (default 200000 = deep run), HIDDEN extracted from canon_name `h{N}`.
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Training steps per cell (default 200000)"
+        required: true
+        default: "200000"
+      lr:
+        description: "Learning rate (default 0.0001)"
+        required: true
+        default: "0.0001"
+      seed:
+        description: "Seed (must be in SEED_CANON; default 1597)"
+        required: true
+        default: "1597"
+jobs:
+  dispatch_deep:
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+      LR_IN: ${{ inputs.lr }}
+      SEED_IN: ${{ inputs.seed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure and deploy DEEP cells (153-164 → services 32-43)
+        run: |
+          set -e
+          # Read services
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          CELLS_CSV=.github/wave-a/wave-a-cells.csv
+          # 12 cells: lines 154..165 in CSV (header at line 1, so cell idx 153 = line 154)
+          PROCESSED=0
+          DEPLOYED=0
+          FAILED=0
+          for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
+            SVC_IDX=$((31 + i))    # services array is 0-indexed: index 31 = row 32
+            CELL_LINE_NUM=$((154 + i))  # cells.csv: line 154 = cell 153
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            CELL_LINE=$(sed -n "${CELL_LINE_NUM}p" "$CELLS_CSV")
+            if [[ -z "$SVC_LINE" || -z "$CELL_LINE" ]]; then
+              echo "::warning::skip i=$i empty line (svc='$SVC_LINE' cell='$CELL_LINE')"
+              continue
+            fi
+            # Parse service: "ACC1","proj","env","sid","sname"
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            # Parse cell: idx,format,algo,canon_name,run_id
+            FMT=$(echo "$CELL_LINE" | awk -F',' '{print $2}')
+            ALGO=$(echo "$CELL_LINE" | awk -F',' '{print $3}')
+            CANON=$(echo "$CELL_LINE" | awk -F',' '{print $4}')
+            RUN_ID=$(echo "$CELL_LINE" | awk -F',' '{print $5}')
+            # Extract HIDDEN from canon_name: look for token h{N}
+            HIDDEN=$(echo "$CANON" | grep -oE 'h[0-9]+' | head -1 | sed 's/h//')
+            if [[ -z "$HIDDEN" ]]; then HIDDEN=128; fi
+            # Pick token
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::DEEP cell $((153+i)) [$ACC/$SNAME] $FMT/$ALGO/h$HIDDEN/steps=$STEPS_IN canon=$CANON"
+            # Set env vars
+            for KV in \
+              "SEED=$SEED_IN" "STEPS=$STEPS_IN" "LR=$LR_IN" "HIDDEN=$HIDDEN" \
+              "OPTIMIZER=$ALGO" "FORMAT=$FMT" \
+              "TRIOS_LANE=DEEP-CHAMPION" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            # Trigger deploy
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" ]]; then
+              echo "::warning::deploy failed for $SNAME"
+              FAILED=$((FAILED+1))
+            else
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 2  # gentle rate limit
+          done
+          echo "=== WAVE-A-DEEP: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED ==="
+
+      - name: Wait 5 min for trainers to write
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 30
+            CNT=$(psql "$RAILWAY_POSTGRES_URL" -At -c "SELECT count(*) FROM ssot.bpb_samples WHERE (run_id LIKE 'wave-a-deep-2026-05-14-%' OR run_id LIKE 'wave-a-fp-2026-05-14-%') AND ts > NOW() - INTERVAL '15 minutes';")
+            echo "[probe $i/10] DEEP+FP rows last 15 min: $CNT"
+          done
+
+      - name: Final SSOT snapshot
+        run: |
+          set -e
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, run_id, step, ROUND(bpb::numeric,4) AS bpb, ts FROM ssot.bpb_samples WHERE (run_id LIKE 'wave-a-deep-2026-05-14-%' OR run_id LIKE 'wave-a-fp-2026-05-14-%') AND ts > NOW() - INTERVAL '20 minutes' ORDER BY ts DESC LIMIT 60;"
+          echo "::group::count by run_id"
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT run_id, count(*) AS rows, MIN(step) AS min_step, MAX(step) AS max_step FROM ssot.bpb_samples WHERE run_id LIKE 'wave-a-deep-2026-05-14-%' OR run_id LIKE 'wave-a-fp-2026-05-14-%' GROUP BY run_id ORDER BY run_id;"
+          echo "::endgroup::"
