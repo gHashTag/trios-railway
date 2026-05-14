@@ -1,0 +1,125 @@
+name: WAVE-A-PATCH1 — force STEPS=200000 + TRIOS_STEPS=200000 on cells 153-170
+# Re-deploy cells 153-170 (services 32-43 + services from rescue cells 165-170)
+# with BOTH STEPS and TRIOS_STEPS to defeat the silent-drop bug where finished
+# trainers hit step=81000 default. The Wave-33 alias-resolver lives in main
+# already (entrypoint_env.rs), so TRIOS_STEPS=200000 is the canonical path.
+# We additionally set STEPS=200000 for defense-in-depth.
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 24-service re-deploy"
+        required: true
+      target_steps:
+        description: "Target step count (default 200000)"
+        required: true
+        default: "200000"
+
+jobs:
+  patch1:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.target_steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-deploy cells 153-170 with TRIOS_STEPS + STEPS
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          CELLS_CSV=.github/wave-a/wave-a-cells.csv
+          PROCESSED=0
+          DEPLOYED=0
+          FAILED=0
+          # Cells 153-170 → CSV lines 154..171 → services indices 31..42 (cells 153-164)
+          # and indices 25..30 (cells 165-170 = rescue/mseed, see rescue dispatcher)
+          # But rescue cells 165-170 mapped to services 26..31 in the earlier
+          # rescue dispatcher. Replicate same mapping here.
+          # Mapping table (zero-indexed services array):
+          #   cell 153 → svc[31]   cell 154 → svc[32]   ... cell 164 → svc[42]
+          #   cell 165 → svc[25]   cell 166 → svc[26]   ... cell 170 → svc[30]
+          declare -A CELL_TO_SVC
+          for i in 0 1 2 3 4 5 6 7 8 9 10 11; do
+            CELL=$((153 + i)); SVC_IDX=$((31 + i))
+            CELL_TO_SVC[$CELL]=$SVC_IDX
+          done
+          for i in 0 1 2 3 4 5; do
+            CELL=$((165 + i)); SVC_IDX=$((25 + i))
+            CELL_TO_SVC[$CELL]=$SVC_IDX
+          done
+          for CELL in 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170; do
+            SVC_IDX=${CELL_TO_SVC[$CELL]}
+            CELL_LINE_NUM=$((CELL + 1))  # header at line 1
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            CELL_LINE=$(sed -n "${CELL_LINE_NUM}p" "$CELLS_CSV")
+            if [[ -z "$SVC_LINE" || -z "$CELL_LINE" ]]; then
+              echo "::warning::skip cell=$CELL svc_idx=$SVC_IDX empty"
+              continue
+            fi
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            FMT=$(echo "$CELL_LINE" | awk -F',' '{print $2}')
+            ALGO=$(echo "$CELL_LINE" | awk -F',' '{print $3}')
+            CANON=$(echo "$CELL_LINE" | awk -F',' '{print $4}')
+            RUN_ID=$(echo "$CELL_LINE" | awk -F',' '{print $5}')
+            HIDDEN=$(echo "$CANON" | grep -oE 'h[0-9]+' | head -1 | sed 's/h//')
+            [[ -z "$HIDDEN" ]] && HIDDEN=128
+            SEED_FROM_CANON=$(echo "$CANON" | grep -oE 'rng[0-9]+' | head -1 | sed 's/rng//')
+            [[ -z "$SEED_FROM_CANON" ]] && SEED_FROM_CANON=1597
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::PATCH1 cell=$CELL [$ACC/$SNAME] $FMT/$ALGO/h$HIDDEN/seed=$SEED_FROM_CANON STEPS=$STEPS_IN canon=$CANON"
+            for KV in \
+              "SEED=$SEED_FROM_CANON" "TRIOS_SEED=$SEED_FROM_CANON" \
+              "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
+              "LR=0.0001" "TRIOS_LR=0.0001" \
+              "HIDDEN=$HIDDEN" "HIDDEN_DIM=$HIDDEN" "TRIOS_HIDDEN=$HIDDEN" \
+              "OPTIMIZER=$ALGO" "TRIOS_OPTIMIZER=$ALGO" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed cell=$CELL svc=$SID"
+              FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP for cell=$CELL"
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "PATCH1-SUMMARY: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
+          if [[ $FAILED -gt 0 ]]; then exit 1; fi
