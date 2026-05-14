@@ -1,0 +1,122 @@
+name: WAVE-A-EXPAND — broaden LR×Hidden×Format frontier (8 new cells)
+# After PATCH-1 stabilised STEPS=200000 on champions and WAVE-NEXT-LR
+# probed LR ∈ {3e-4, 1e-3, 3e-3} on slots 2/3/24, the operator wants
+# zero idle workers. Deploy 8 more cells onto previously-low-yield
+# scarab/TEST/phase1 slots to widen the LR×Hidden×Format search:
+#
+#  Slot  ACC  Canon                                                              Why
+#  ----  ---  ----------------------------------------------------------------   ---------------------------------
+#  4     ACC1 IGLA-EXPAND-gf256-h256-LR0.0001-rng1597-adamw                       middle hidden, baseline LR
+#  5     ACC1 IGLA-EXPAND-gf256-h256-LR0.0003-rng1597-adamw                       middle hidden + LR-bump
+#  6     ACC1 IGLA-EXPAND-gf256-h512-LR0.0001-rng1597-adamw                       larger than h384 champion
+#  7     ACC1 IGLA-EXPAND-bf16-h256-LR0.0003-rng1597-adamw                        broaden bf16 lane
+#  8     ACC1 IGLA-EXPAND-fp16-h256-LR0.0003-rng1597-adamw                        broaden fp16 lane
+#  9     ACC1 IGLA-EXPAND-gf256-h384-LR0.0003-rng2584-adamw                       deep-champion-LR3e-4 multi-seed
+# 10     ACC1 IGLA-EXPAND-gf256-h384-LR0.0001-rng4181-adamw                       deep-champion 3rd seed
+# 11     ACC1 IGLA-EXPAND-gf256-h128-LR0.0001-rng1597-muon                        muon×gf256 baseline (was missing)
+#
+# All cells: STEPS=200000, TRIOS_STEPS=200000 (PATCH-1 rune defence-in-depth).
+# All env vars set with BOTH TRIOS_<KEY> and <KEY> aliases (Wave-33 alias-resolver).
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · WAVE-EXPAND · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 8-cell expansion"
+        required: true
+      steps:
+        description: "Steps per cell"
+        required: true
+        default: "200000"
+
+jobs:
+  expand:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure 8 idle slots for WAVE-EXPAND
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          # Slot index → (FORMAT, HIDDEN, LR, SEED, OPTIMIZER, suffix)
+          # Pipe-delimited: "FORMAT|HIDDEN|LR|SEED|OPT"
+          declare -A SLOT_CFG
+          SLOT_CFG[4]="gf256|256|0.0001|1597|adamw"
+          SLOT_CFG[5]="gf256|256|0.0003|1597|adamw"
+          SLOT_CFG[6]="gf256|512|0.0001|1597|adamw"
+          SLOT_CFG[7]="bf16|256|0.0003|1597|adamw"
+          SLOT_CFG[8]="fp16|256|0.0003|1597|adamw"
+          SLOT_CFG[9]="gf256|384|0.0003|2584|adamw"
+          SLOT_CFG[10]="gf256|384|0.0001|4181|adamw"
+          SLOT_CFG[11]="gf256|128|0.0001|1597|muon"
+          PROCESSED=0; DEPLOYED=0; FAILED=0
+          for SVC_IDX in 4 5 6 7 8 9 10 11; do
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            CFG="${SLOT_CFG[$SVC_IDX]}"
+            FMT=$(echo "$CFG" | cut -d'|' -f1)
+            HID=$(echo "$CFG" | cut -d'|' -f2)
+            LR=$(echo "$CFG" | cut -d'|' -f3)
+            SEED=$(echo "$CFG" | cut -d'|' -f4)
+            OPT=$(echo "$CFG" | cut -d'|' -f5)
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            CANON="IGLA-EXPAND-${FMT}-h${HID}-LR${LR}-rng${SEED}-${OPT}"
+            RUN_ID="wave-a-expand-2026-05-14-${FMT}-${OPT}-h${HID}-LR${LR}-rng${SEED}"
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::EXPAND svc_idx=$SVC_IDX [$ACC/$SNAME] canon=$CANON"
+            for KV in \
+              "SEED=$SEED" "TRIOS_SEED=$SEED" \
+              "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=$HID" "HIDDEN_DIM=$HID" "TRIOS_HIDDEN=$HID" \
+              "OPTIMIZER=$OPT" "TRIOS_OPTIMIZER=$OPT" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "TRIOS_LANE=EXPAND" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed slot=$SVC_IDX"; FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP"; DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "EXPAND-SUMMARY: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
+          if [[ $FAILED -gt 0 ]]; then exit 1; fi
