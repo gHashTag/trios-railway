@@ -1,0 +1,115 @@
+name: WAVE-A-RESCUE — int4 rescue + posit16 multi-seed + gf256-h384 multi-seed
+# SAFE dispatch: cells 165-170 (6 new) → services 26-31 (idle ACC3 lion/prodigy/sf-lite slots).
+# Tracks all 3 fixes: int4 divergence escape via alt-seed, posit16 multi-seed validation, gf256-h384 multi-seed.
+# DOES NOT touch services 1-25 (active baseline) or 32-43 (DEEP+FP from earlier deploy).
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Training steps per cell (default 200000)"
+        required: true
+        default: "200000"
+      lr:
+        description: "Learning rate (default 0.0001)"
+        required: true
+        default: "0.0001"
+jobs:
+  dispatch_rescue:
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+      LR_IN: ${{ inputs.lr }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure and deploy RESCUE cells (165-170 → services 26-31)
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          CELLS_CSV=.github/wave-a/wave-a-cells.csv
+          PROCESSED=0; DEPLOYED=0; FAILED=0
+          for i in 0 1 2 3 4 5; do
+            SVC_IDX=$((25 + i))         # services row 26 = index 25 (0-indexed)
+            CELL_LINE_NUM=$((166 + i))  # cell 165 = csv line 166 (header at 1)
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            CELL_LINE=$(sed -n "${CELL_LINE_NUM}p" "$CELLS_CSV")
+            if [[ -z "$SVC_LINE" || -z "$CELL_LINE" ]]; then
+              echo "::warning::skip i=$i empty"
+              continue
+            fi
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            FMT=$(echo "$CELL_LINE" | awk -F',' '{print $2}')
+            ALGO=$(echo "$CELL_LINE" | awk -F',' '{print $3}')
+            CANON=$(echo "$CELL_LINE" | awk -F',' '{print $4}')
+            RUN_ID=$(echo "$CELL_LINE" | awk -F',' '{print $5}')
+            # Extract HIDDEN from canon_name h{N}
+            HIDDEN=$(echo "$CANON" | grep -oE 'h[0-9]+' | head -1 | sed 's/h//')
+            [[ -z "$HIDDEN" ]] && HIDDEN=128
+            # Extract SEED from canon_name rng{N}
+            SEED=$(echo "$CANON" | grep -oE 'rng[0-9]+' | head -1 | sed 's/rng//')
+            [[ -z "$SEED" ]] && SEED=1597
+            # Extract LANE from canon_name (between IGLA- and -FORMAT)
+            LANE=$(echo "$CANON" | sed -E "s|^IGLA-([A-Z-]+)-${FMT}-.*|\1|")
+            [[ -z "$LANE" ]] && LANE="RESCUE"
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::RESCUE cell $((165+i)) [$ACC/$SNAME] $FMT/$ALGO/h$HIDDEN/rng$SEED lane=$LANE"
+            for KV in \
+              "SEED=$SEED" "STEPS=$STEPS_IN" "LR=$LR_IN" "HIDDEN=$HIDDEN" \
+              "OPTIMIZER=$ALGO" "FORMAT=$FMT" \
+              "TRIOS_LANE=$LANE" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" ]]; then
+              echo "::warning::deploy failed for $SNAME"
+              FAILED=$((FAILED+1))
+            else
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 2
+          done
+          echo "=== WAVE-A-RESCUE: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED ==="
+
+      - name: Wait 5 min and probe
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 30
+            CNT=$(psql "$RAILWAY_POSTGRES_URL" -At -c "SELECT count(*) FROM ssot.bpb_samples WHERE (canon_name LIKE 'IGLA-RESCUE-%' OR canon_name LIKE 'IGLA-MULTI-SEED-%' OR canon_name = 'IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng2584-adamw') AND ts > NOW() - INTERVAL '15 minutes';")
+            echo "[probe $i/10] RESCUE+MSEED rows last 15 min: $CNT"
+          done
+
+      - name: Final snapshot
+        run: |
+          psql "$RAILWAY_POSTGRES_URL" -c "SELECT canon_name, MAX(step) AS max_step, COUNT(*) AS rows, ROUND(MIN(bpb)::numeric,4) AS best_bpb, MAX(ts) AS last_write FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-RESCUE-%' OR canon_name LIKE 'IGLA-MULTI-SEED-%' OR canon_name = 'IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng2584-adamw' GROUP BY canon_name ORDER BY last_write DESC;"

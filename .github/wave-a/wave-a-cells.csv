@@ -163,3 +163,9 @@ cell_idx,format,algo,canon_name,run_id
 162,posit16,muon,IGLA-FP-EXPANSION-posit16-h128-LR0.0001-rng1597-muon,wave-a-fp-2026-05-14-posit16-muon
 163,nf4,adamw,IGLA-FP-EXPANSION-nf4-h128-LR0.0001-rng1597-adamw,wave-a-fp-2026-05-14-nf4-adamw
 164,nf4,muon,IGLA-FP-EXPANSION-nf4-h128-LR0.0001-rng1597-muon,wave-a-fp-2026-05-14-nf4-muon
+165,int4,muon,IGLA-RESCUE-int4-h128-LR0.0001-rng2584-muon,wave-a-rescue-2026-05-14-int4-muon-rng2584
+166,posit16,adamw,IGLA-MULTI-SEED-posit16-h128-LR0.0001-rng2584-adamw,wave-a-mseed-2026-05-14-posit16-adamw-rng2584
+167,posit16,muon,IGLA-MULTI-SEED-posit16-h128-LR0.0001-rng2584-muon,wave-a-mseed-2026-05-14-posit16-muon-rng2584
+168,posit16,adamw,IGLA-MULTI-SEED-posit16-h128-LR0.0001-rng4181-adamw,wave-a-mseed-2026-05-14-posit16-adamw-rng4181
+169,posit16,muon,IGLA-MULTI-SEED-posit16-h128-LR0.0001-rng4181-muon,wave-a-mseed-2026-05-14-posit16-muon-rng4181
+170,gf256,adamw,IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng2584-adamw,wave-a-deep-2026-05-14-gf256-adamw-h384-rng2584
