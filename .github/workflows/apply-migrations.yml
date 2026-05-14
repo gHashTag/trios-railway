@@ -1,0 +1,70 @@
+name: Apply Postgres Migrations
+
+# Anchor: phi^2 + phi^-2 = 3 · DOI 10.5281/zenodo.19227877
+#
+# Applies all migrations/*.sql in lexical order to phd-postgres-ssot
+# using DATABASE_URL secret (set this to the public phd-postgres-ssot
+# connection string from Railway). Idempotent — uses CREATE ... IF NOT EXISTS.
+#
+# Resolves trios-railway#141 (audit_runs auto-apply gate).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "PHI" to confirm. Applies migrations to phd-postgres-ssot.'
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - 'migrations/*.sql'
+      - '.github/workflows/apply-migrations.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-migrations
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ github.event_name == 'push' || inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanity-check DATABASE_URL secret
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATABASE_URL}" ]]; then
+            echo "::error::DATABASE_URL secret is empty. Set it to the public phd-postgres-ssot DSN."
+            exit 2
+          fi
+          # never echo the URL itself
+          echo "DATABASE_URL is set (length=${#DATABASE_URL})"
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Verify connection (SELECT 1)
+        run: |
+          psql "$DATABASE_URL" -c 'SELECT 1' -tA
+
+      - name: Apply migrations in lexical order
+        run: |
+          set -euo pipefail
+          cd migrations
+          for f in $(ls -1 *.sql | sort); do
+            echo "==> applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Verify audit_runs exists
+        run: |
+          psql "$DATABASE_URL" -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='audit_runs'" -tA
