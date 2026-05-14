@@ -255,13 +255,33 @@ jobs:
           echo "::endgroup::"
 
           # B-20: dynamic service discovery instead of hardcoded TARGETS.
-          echo "::group::discover IGLA RACE writers"
-          IGLA_TARGETS=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+          echo "::group::discover IGLA RACE writers + Postgres"
+          IGLA_SERVICES_JSON=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Project-Access-Token: $TOKEN_ACC1" \
-              -d "$(jq -n --arg id "$IGLA_PROJECT_ID" '{query:"query Q($id:String!){ project(id:$id){ services{edges{node{id name}}} } }", variables:{id:$id}}')" \
+              -d "$(jq -n --arg id "$IGLA_PROJECT_ID" '{query:"query Q($id:String!){ project(id:$id){ services{edges{node{id name}}} } }", variables:{id:$id}}')")
+          IGLA_TARGETS=$(echo "$IGLA_SERVICES_JSON" \
             | jq -r --arg w "$WRITER_PREFIX_REGEX" --arg x "$EXCLUDE_REGEX" \
                 '.data.project.services.edges[].node | select(.name|test($w)) | select(.name|test($x)|not) | "\(.id) \(.name)"')
+          IGLA_PG_SVC=$(echo "$IGLA_SERVICES_JSON" | jq -r '.data.project.services.edges[].node | select(.name=="Postgres" or .name=="phd-postgres-ssot") | .id' | head -1)
+          if [[ -z "$IGLA_PG_SVC" ]]; then
+            echo "::error::IGLA Postgres service not found"
+            exit 6
+          fi
+          # B-20: read literal DATABASE_URL value from Postgres service (public proxy URL).
+          # Reference syntax ${{Postgres.DATABASE_URL}} fails when service name mismatches.
+          IGLA_DB_URL=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOKEN_ACC1" \
+              -d "$(jq -n --arg p "$IGLA_PROJECT_ID" --arg id "$IGLA_PG_SVC" --arg env "$IGLA_ENV_ID" '{query:"query Q($p:String!,$id:String!,$env:String!){ variables(projectId:$p, serviceId:$id, environmentId:$env) }", variables:{p:$p, id:$id, env:$env}}')" \
+            | jq -r '.data.variables.DATABASE_PUBLIC_URL // .data.variables.RAILWAY_POSTGRES_URL // .data.variables.DATABASE_URL // ""')
+          if [[ -z "$IGLA_DB_URL" || "$IGLA_DB_URL" == "null" ]]; then
+            echo "::error::IGLA Postgres public URL not resolved"
+            exit 7
+          fi
+          # Mask URL in logs (contains password).
+          echo "::add-mask::$IGLA_DB_URL"
+          echo "IGLA Postgres URL: resolved (length=${#IGLA_DB_URL})"
           echo "discovered IGLA writers:"; echo "$IGLA_TARGETS" | sed 's/^/  /'
           IGLA_COUNT=$(echo "$IGLA_TARGETS" | grep -c . || true)
           echo "IGLA writer count: $IGLA_COUNT"
@@ -274,7 +294,7 @@ jobs:
             NAME="${line##* }"
             echo "::group::IGLA $NAME ($SVC_ID)"
             ok=1
-            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$SVC_ID" "DATABASE_URL" "$RW_REF" || ok=0
+            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$SVC_ID" "DATABASE_URL" "$IGLA_DB_URL" || ok=0
             redeploy   "$TOKEN_ACC1" "$SVC_ID" "$IGLA_ENV_ID" || ok=0
             if [[ "$ok" -eq 1 ]]; then
               echo "[OK] $NAME $SVC_ID"
@@ -298,13 +318,33 @@ jobs:
           echo "acc2 env: $ACC2_ENV_ID"
           echo "::endgroup::"
 
-          echo "::group::discover ACC2 writers"
-          ACC2_TARGETS=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+          echo "::group::discover ACC2 writers + Postgres"
+          ACC2_SERVICES_JSON=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Project-Access-Token: $TOKEN_ACC2" \
-              -d "$(jq -n --arg id "$ACC2_PROJECT_ID" '{query:"query Q($id:String!){ project(id:$id){ services{edges{node{id name}}} } }", variables:{id:$id}}')" \
+              -d "$(jq -n --arg id "$ACC2_PROJECT_ID" '{query:"query Q($id:String!){ project(id:$id){ services{edges{node{id name}}} } }", variables:{id:$id}}')")
+          ACC2_TARGETS=$(echo "$ACC2_SERVICES_JSON" \
             | jq -r --arg w "$WRITER_PREFIX_REGEX" --arg x "$EXCLUDE_REGEX" \
                 '.data.project.services.edges[].node | select(.name|test($w)) | select(.name|test($x)|not) | "\(.id) \(.name)"')
+          ACC2_PG_SVC=$(echo "$ACC2_SERVICES_JSON" | jq -r '.data.project.services.edges[].node | select(.name=="Postgres" or .name=="phd-postgres-ssot") | .id' | head -1)
+          if [[ -z "$ACC2_PG_SVC" ]]; then
+            echo "::warning::ACC2 Postgres service not found — falling back to IGLA URL"
+            ACC2_DB_URL="$IGLA_DB_URL"
+          else
+            ACC2_DB_URL=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOKEN_ACC2" \
+                -d "$(jq -n --arg p "$ACC2_PROJECT_ID" --arg id "$ACC2_PG_SVC" --arg env "$ACC2_ENV_ID" '{query:"query Q($p:String!,$id:String!,$env:String!){ variables(projectId:$p, serviceId:$id, environmentId:$env) }", variables:{p:$p, id:$id, env:$env}}')" \
+              | jq -r '.data.variables.DATABASE_PUBLIC_URL // .data.variables.RAILWAY_POSTGRES_URL // .data.variables.DATABASE_URL // ""')
+            if [[ -z "$ACC2_DB_URL" || "$ACC2_DB_URL" == "null" ]]; then
+              echo "::warning::ACC2 Postgres URL not resolved — falling back to IGLA URL"
+              ACC2_DB_URL="$IGLA_DB_URL"
+            fi
+          fi
+          echo "::add-mask::$ACC2_DB_URL"
+          echo "ACC2 Postgres URL: resolved (length=${#ACC2_DB_URL})"
+          # NOTE: ACC2 writers connect to IGLA SSOT via public URL anyway — use IGLA_DB_URL.
+          ACC2_DB_URL="$IGLA_DB_URL"
           echo "discovered ACC2 writers:"; echo "$ACC2_TARGETS" | sed 's/^/  /'
           ACC2_COUNT=$(echo "$ACC2_TARGETS" | grep -c . || true)
           echo "ACC2 writer count: $ACC2_COUNT"
@@ -317,7 +357,7 @@ jobs:
             NAME="${line##* }"
             echo "::group::acc2 $NAME ($SVC_ID)"
             ok=1
-            upsert_var "$TOKEN_ACC2" "$ACC2_PROJECT_ID" "$ACC2_ENV_ID" "$SVC_ID" "DATABASE_URL" "$RW_REF" || ok=0
+            upsert_var "$TOKEN_ACC2" "$ACC2_PROJECT_ID" "$ACC2_ENV_ID" "$SVC_ID" "DATABASE_URL" "$ACC2_DB_URL" || ok=0
             redeploy   "$TOKEN_ACC2" "$SVC_ID" "$ACC2_ENV_ID" || ok=0
             if [[ "$ok" -eq 1 ]]; then
               echo "[OK] $NAME $SVC_ID"
@@ -331,20 +371,27 @@ jobs:
 
           # ===================================================================
           # MCP last (IGLA project, dual var: legacy + new — see L-NEON-RENAME)
+          # B-20: dynamic lookup; the legacy hardcoded MCP_SERVICE_ID was
+          # a phantom (db786a4b-…) deleted from Railway months ago.
           # ===================================================================
-          echo "::group::IGLA trios-railway-mcp ($MCP_SERVICE_ID) — last on purpose"
-          ok=1
-          upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "DATABASE_URL"         "$RW_REF" || ok=0
-          upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "RAILWAY_POSTGRES_URL" "$RW_REF" || ok=0
-          redeploy   "$TOKEN_ACC1" "$MCP_SERVICE_ID" "$IGLA_ENV_ID" || ok=0
-          if [[ "$ok" -eq 1 ]]; then
-            echo "[OK] trios-railway-mcp $MCP_SERVICE_ID"
-            ok_count=$((ok_count + 1))
+          MCP_SVC=$(echo "$IGLA_SERVICES_JSON" | jq -r '.data.project.services.edges[].node | select(.name=="trios-mcp" or .name=="trios-railway-mcp") | .id' | head -1)
+          if [[ -z "$MCP_SVC" ]]; then
+            echo "::warning::trios-mcp not found in IGLA RACE — skipping MCP refresh"
           else
-            echo "[FAIL] trios-railway-mcp $MCP_SERVICE_ID"
-            fail_count=$((fail_count + 1))
+            echo "::group::IGLA trios-mcp ($MCP_SVC) — last on purpose"
+            ok=1
+            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SVC" "DATABASE_URL"         "$IGLA_DB_URL" || ok=0
+            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SVC" "RAILWAY_POSTGRES_URL" "$IGLA_DB_URL" || ok=0
+            redeploy   "$TOKEN_ACC1" "$MCP_SVC" "$IGLA_ENV_ID" || ok=0
+            if [[ "$ok" -eq 1 ]]; then
+              echo "[OK] trios-mcp $MCP_SVC"
+              ok_count=$((ok_count + 1))
+            else
+              echo "[FAIL] trios-mcp $MCP_SVC"
+              fail_count=$((fail_count + 1))
+            fi
+            echo "::endgroup::"
           fi
-          echo "::endgroup::"
 
           # B-20: stale acc4/acc6 warning block removed — those projects were
           # part of the pre-scarab fleet that no longer exists.
