@@ -70,13 +70,20 @@ CREATE TABLE IF NOT EXISTS igla_race_trials (
     recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS igla_race_trials_seed_idx
-    ON igla_race_trials (seed, step);
-
+-- Index creation gated on column existence (R5: live DB may have different
+-- igla_race_trials schema if table was created by another path before this
+-- migration; the DO-block prevents "column does not exist" abort).
 DO $$ BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'igla_race_trials' AND column_name = 'step'
+        WHERE table_schema = 'public'
+          AND table_name = 'igla_race_trials'
+          AND column_name = 'seed'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'igla_race_trials'
+          AND column_name = 'step'
     ) THEN
         CREATE INDEX IF NOT EXISTS igla_race_trials_seed_idx
             ON igla_race_trials (seed, step);
