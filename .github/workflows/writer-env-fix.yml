@@ -1,4 +1,4 @@
-name: Writer Env Fix (NEON_DATABASE_URL on matrix runners)
+name: Writer Env Fix (DATABASE_URL on matrix runners)
 
 # Anchor: phi^2 + phi^-2 = 3 · DOI 10.5281/zenodo.19227877
 #
@@ -275,7 +275,7 @@ jobs:
             SVC_ID="${ID_PREFIX%%-0000-0000-0000-000000000000}"
             echo "::group::IGLA $NAME ($SVC_ID)"
             ok=1
-            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$SVC_ID" "NEON_DATABASE_URL" "$RW_REF" || ok=0
+            upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$SVC_ID" "DATABASE_URL" "$RW_REF" || ok=0
             redeploy   "$TOKEN_ACC1" "$SVC_ID" "$IGLA_ENV_ID" || ok=0
             if [[ "$ok" -eq 1 ]]; then
               echo "[OK] $NAME $SVC_ID"
@@ -307,7 +307,7 @@ jobs:
             SVC_ID="${ID_PREFIX%%-0000-0000-0000-000000000000}"
             echo "::group::acc2 $NAME ($SVC_ID)"
             ok=1
-            upsert_var "$TOKEN_ACC2" "$ACC2_PROJECT_ID" "$ACC2_ENV_ID" "$SVC_ID" "NEON_DATABASE_URL" "$RW_REF" || ok=0
+            upsert_var "$TOKEN_ACC2" "$ACC2_PROJECT_ID" "$ACC2_ENV_ID" "$SVC_ID" "DATABASE_URL" "$RW_REF" || ok=0
             redeploy   "$TOKEN_ACC2" "$SVC_ID" "$ACC2_ENV_ID" || ok=0
             if [[ "$ok" -eq 1 ]]; then
               echo "[OK] $NAME $SVC_ID"
@@ -324,7 +324,7 @@ jobs:
           # ===================================================================
           echo "::group::IGLA trios-railway-mcp ($MCP_SERVICE_ID) — last on purpose"
           ok=1
-          upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "NEON_DATABASE_URL"    "$RW_REF" || ok=0
+          upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "DATABASE_URL"         "$RW_REF" || ok=0
           upsert_var "$TOKEN_ACC1" "$IGLA_PROJECT_ID" "$IGLA_ENV_ID" "$MCP_SERVICE_ID" "RAILWAY_POSTGRES_URL" "$RW_REF" || ok=0
           redeploy   "$TOKEN_ACC1" "$MCP_SERVICE_ID" "$IGLA_ENV_ID" || ok=0
           if [[ "$ok" -eq 1 ]]; then
