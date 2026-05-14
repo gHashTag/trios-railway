@@ -1,0 +1,129 @@
+name: WAVE-A-EXTEND-REVIVE — push champions past 200k cap + revive dead EXPAND cells
+# After PATCH-1 stabilised STEPS=200000 on champions (BPB=2.571882 plateau)
+# and WAVE-EXPAND seeded 8 LR×Hidden×Format cells (all 8 died 40-58 min after deploy
+# at step=37k-55k, indicating Railway sleep policy / image issue / silent OOM),
+# the operator demanded ZERO IDLE WORKERS.
+#
+# This combined workflow does two things in one dispatch:
+#
+#  Part A — WAVE-EXTEND: bump DEEP-CHAMPION cells (champion + multi-seed +
+#  gf16-muon) from STEPS=200000 to STEPS=500000. Champions hit 200k cap at
+#  BPB=2.5719 — need 2.5× more steps to break through. Cells (3):
+#    cell 153  ACC1 svc[31]  IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng1597-adamw   STEPS 200k→500k
+#    cell 154  ACC1 svc[32]  IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng1597-muon    STEPS 200k→500k
+#    cell 155  ACC1 svc[33]  IGLA-DEEP-CHAMPION-gf16-h384-LR0.0001-rng1597-adamw    STEPS 200k→500k
+#
+#  Part B — WAVE-EXPAND-REVIVE: re-deploy ALL 8 dead EXPAND cells (slots 4-11 ACC1).
+#  Same canon, same env, just kick Railway to redeploy. STEPS=200000 unchanged
+#  (champions at 200k are the priority — EXPAND just needs to keep writing).
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · WAVE-EXTEND-REVIVE · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 11-service deploy (3 extend + 8 revive)"
+        required: true
+      extend_steps:
+        description: "STEPS for DEEP-CHAMPION cells (default 500000)"
+        required: true
+        default: "500000"
+
+jobs:
+  extend-revive:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      EXTEND_STEPS_IN: ${{ inputs.extend_steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy WAVE-EXTEND (3 champions) + WAVE-EXPAND-REVIVE (8 dead cells)
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/trainer-services.csv
+          DEPLOYED=0
+          FAILED=0
+
+          # Cell spec format: SVC_IDX|CANON|FORMAT|ALGO|HIDDEN|SEED|LR|STEPS|RUN_ID
+          # Part A: WAVE-EXTEND (champions, STEPS=$EXTEND_STEPS_IN)
+          # Part B: WAVE-EXPAND-REVIVE (8 dead EXPAND cells, STEPS=200000)
+          CELLS=(
+            # === PART A: WAVE-EXTEND (3 champions to break through 200k plateau) ===
+            "31|IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng1597-adamw|gf256|adamw|384|1597|0.0001|${EXTEND_STEPS_IN}|extend-champ-adamw-rng1597"
+            "32|IGLA-DEEP-CHAMPION-gf256-h384-LR0.0001-rng1597-muon|gf256|muon|384|1597|0.0001|${EXTEND_STEPS_IN}|extend-champ-muon-rng1597"
+            "33|IGLA-DEEP-CHAMPION-gf16-h384-LR0.0001-rng1597-adamw|gf16|adamw|384|1597|0.0001|${EXTEND_STEPS_IN}|extend-champ-gf16-adamw"
+            # === PART B: WAVE-EXPAND-REVIVE (8 dead cells, slots 4-11 ACC1, STEPS=200k) ===
+            "4|IGLA-EXPAND-gf256-h256-LR0.0001-rng1597-adamw|gf256|adamw|256|1597|0.0001|200000|expand-revive-gf256-h256-baseLR"
+            "5|IGLA-EXPAND-gf256-h256-LR0.0003-rng1597-adamw|gf256|adamw|256|1597|0.0003|200000|expand-revive-gf256-h256-3e4LR"
+            "6|IGLA-EXPAND-gf256-h512-LR0.0001-rng1597-adamw|gf256|adamw|512|1597|0.0001|200000|expand-revive-gf256-h512"
+            "7|IGLA-EXPAND-bf16-h256-LR0.0003-rng1597-adamw|bf16|adamw|256|1597|0.0003|200000|expand-revive-bf16-h256"
+            "8|IGLA-EXPAND-fp16-h256-LR0.0003-rng1597-adamw|fp16|adamw|256|1597|0.0003|200000|expand-revive-fp16-h256"
+            "9|IGLA-EXPAND-gf256-h384-LR0.0003-rng2584-adamw|gf256|adamw|384|2584|0.0003|200000|expand-revive-gf256-h384-3e4-rng2584"
+            "10|IGLA-EXPAND-gf256-h384-LR0.0001-rng4181-adamw|gf256|adamw|384|4181|0.0001|200000|expand-revive-gf256-h384-rng4181"
+            "11|IGLA-EXPAND-gf256-h128-LR0.0001-rng1597-muon|gf256|muon|128|1597|0.0001|200000|expand-revive-gf256-h128-muon"
+          )
+
+          for SPEC in "${CELLS[@]}"; do
+            IFS='|' read -r SVC_IDX CANON FMT ALGO HIDDEN SEED LR STEPS RUN_ID <<< "$SPEC"
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            if [[ -z "$SVC_LINE" ]]; then
+              echo "::warning::skip svc_idx=$SVC_IDX empty"
+              FAILED=$((FAILED+1))
+              continue
+            fi
+            ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::DEPLOY svc=$SVC_IDX [$ACC/$SNAME] $FMT/$ALGO/h$HIDDEN/seed=$SEED/LR=$LR/STEPS=$STEPS canon=$CANON"
+            for KV in \
+              "SEED=$SEED" "TRIOS_SEED=$SEED" \
+              "STEPS=$STEPS" "TRIOS_STEPS=$STEPS" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=$HIDDEN" "HIDDEN_DIM=$HIDDEN" "TRIOS_HIDDEN=$HIDDEN" \
+              "OPTIMIZER=$ALGO" "TRIOS_OPTIMIZER=$ALGO" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed svc=$SID canon=$CANON"
+              FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP canon=$CANON"
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "EXTEND-REVIVE-SUMMARY: deployed=$DEPLOYED failed=$FAILED total=11"
+          if [[ $FAILED -gt 0 ]]; then exit 1; fi
