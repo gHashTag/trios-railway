@@ -56,7 +56,7 @@ jobs:
     env:
       TOKEN_ACC1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       TOKEN_ACC2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
-      RAILWAY_TOKEN_AUTH: team
+      RAILWAY_TOKEN_AUTH: project  # B-18 fix (2026-05-14): all ACC1..7 tokens are project-scoped (PAT), not team. Verified by token-classify.yml run 25846091578.
       IGLA_PROJECT_ID: e4fe33bb-3b09-4842-9782-7d2dea1abc9b
       ACC2_PROJECT_ID: 12c508c7-1196-468d-b06d-d8de8cb77e93
       MCP_SERVICE_ID: db786a4b-5a79-4643-b915-e9184680cf97
@@ -78,18 +78,21 @@ jobs:
             echo "::error::RAILWAY_TOKEN_ACC2 secret is empty"
             exit 2
           fi
+          # B-18 fix: use Project-Access-Token (PAT) header + project-scoped query.
+          # The old Authorization: Bearer + { projects { edges } } pattern
+          # required an account/team token; all ACC1..7 secrets are PAT.
           for L in ACC1 ACC2; do
             T_VAR="TOKEN_${L}"
             T="${!T_VAR}"
             curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $T" \
-                -d '{"query":"{ projects { edges { node { id name } } } }"}' \
-                | jq -e '.data.projects.edges' > /dev/null || {
-                  echo "::error::token $L failed sanity check"
+                -H "Project-Access-Token: $T" \
+                -d '{"query":"{ projectToken { project { id name } } }"}' \
+                | jq -e '.data.projectToken.project.id' > /dev/null || {
+                  echo "::error::token $L failed sanity check (Project-Access-Token mode)"
                   exit 3
                 }
-            echo "token $L OK"
+            echo "token $L OK (PAT scope)"
           done
 
       - name: Apply fix to all reachable services
@@ -137,9 +140,12 @@ jobs:
           resolve_env() {
             local TOKEN="$1"
             local PROJECT_ID="$2"
+            # B-18 fix: PAT header instead of Authorization: Bearer.
+            # NOTE: project(id) query is implicit for PAT — the token already
+            # carries the project, but Railway still accepts an explicit projectId.
             curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $TOKEN" \
+                -H "Project-Access-Token: $TOKEN" \
                 -d "{\"query\":\"query env(\$projectId: String!){ project(id:\$projectId){ environments { edges { node { id name } } } } }\",\"variables\":{\"projectId\":\"$PROJECT_ID\"}}" \
                 | jq -r '.data.project.environments.edges[] | select(.node.name=="production") | .node.id' \
                 | head -n 1
@@ -150,9 +156,10 @@ jobs:
           fetch_services() {
             local TOKEN="$1"
             local PROJECT_ID="$2"
+            # B-18 fix: PAT header.
             curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $TOKEN" \
+                -H "Project-Access-Token: $TOKEN" \
                 -d "{\"query\":\"query svcs(\$projectId: String!){ project(id:\$projectId){ services { edges { node { id name } } } } }\",\"variables\":{\"projectId\":\"$PROJECT_ID\"}}" \
                 | jq '[.data.project.services.edges[].node]'
           }
@@ -193,9 +200,10 @@ jobs:
                 --arg v "$VALUE" \
                 '{query:"mutation variableUpsert($input: VariableUpsertInput!) { variableUpsert(input: $input) }", variables:{input:{projectId:$p, environmentId:$e, serviceId:$s, name:$n, value:$v}}}')
             local RESP
+            # B-18 fix: PAT header.
             RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $TOKEN" \
+                -H "Project-Access-Token: $TOKEN" \
                 -d "$PAYLOAD")
             if echo "$RESP" | jq -e '.errors' > /dev/null; then
               echo "    upsert $NAME: ERR — $(echo "$RESP" | jq -c '.errors')"
@@ -216,9 +224,10 @@ jobs:
                 --arg e "$ENV_ID" \
                 '{query:"mutation serviceInstanceRedeploy($serviceId: String!, $environmentId: String!) { serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId) }", variables:{serviceId:$s, environmentId:$e}}')
             local RESP
+            # B-18 fix: PAT header.
             RESP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $TOKEN" \
+                -H "Project-Access-Token: $TOKEN" \
                 -d "$PAYLOAD")
             if echo "$RESP" | jq -e '.errors' > /dev/null; then
               echo "    redeploy: ERR — $(echo "$RESP" | jq -c '.errors')"
