@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write     # для auto-commit улучшений
   issues: write
+  actions: write      # v3.0.1 (PASS-24): STAGE-2f BRAIN revive dispatches sibling workflows
 jobs:
   hunt:
     runs-on: ubuntu-24.04
@@ -505,9 +506,20 @@ jobs:
             fi
             echo "  🚑 REVIVE $LANE → $WF"
             # Most revive workflows take confirm=PHI input. Try with confirm first, fall back to no-input.
-            gh workflow run "$WF" --repo gHashTag/trios-railway -f confirm=PHI 2>/dev/null \
-              || gh workflow run "$WF" --repo gHashTag/trios-railway 2>/dev/null \
-              && DISPATCHED=$((DISPATCHED+1))
+            # v3.0.1 (2026-05-15 PASS-24 PATCH): drop 2>/dev/null (was hiding gh errors), fix
+            # ||/&& precedence bug that left DISPATCHED=0 even when dispatch succeeded.
+            DISPATCH_OK=0
+            if gh workflow run "$WF" --repo gHashTag/trios-railway -f confirm=PHI; then
+              DISPATCH_OK=1
+            elif gh workflow run "$WF" --repo gHashTag/trios-railway; then
+              DISPATCH_OK=1
+            fi
+            if [ "$DISPATCH_OK" = "1" ]; then
+              DISPATCHED=$((DISPATCHED+1))
+              echo "    ✅ dispatched"
+            else
+              echo "    ❌ dispatch FAILED for $LANE → $WF (see gh output above)"
+            fi
           done
           echo "brain_revived=$DISPATCHED"       >> "$GITHUB_OUTPUT"
           echo "brain_skipped_idemp=$SKIPPED_IDEMP" >> "$GITHUB_OUTPUT"
@@ -697,7 +709,7 @@ jobs:
               'woken', ${{ steps.stall.outputs.woken || 0 }},
               'ssot_missing', ${{ steps.ssot_prop.outputs.ssot_missing || 0 }},
               'ssot_propagated', ${{ steps.ssot_prop.outputs.ssot_propagated || 0 }},
-              'mode', '$MODE', 'version', 'v3.0-trinity-brain',
+              'mode', '$MODE', 'version', 'v3.0.1-trinity-brain-dispatch-fix',
               'brain_util_pct', ${{ steps.brain.outputs.utilization_pct || 0 }},
               'brain_verdict', '${{ steps.brain.outputs.verdict || 'UNKNOWN' }}',
               'brain_stalled', '${{ steps.brain.outputs.lanes_stalled || '' }}',
