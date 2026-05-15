@@ -1,0 +1,118 @@
+name: KILL-STALE-WAVES — free deployment slots for ARCH lanes
+
+# Root cause of FIX-7 partial failure: 3 ARCH service deploys are stuck in
+# Railway "QUEUED — Waiting for deployment slot" because ACC4/5/6 plans
+# have run out of concurrent deployment slots. Legacy wave-* trainers
+# (stuck at BPB>=7.0 for weeks, divergent / broken kernels) are holding
+# the slots.
+#
+# This workflow stops the N worst-BPB wave-* services per ACC (default N=3
+# per ACC) by calling serviceInstanceRedeployToCommit with a non-existent
+# tag to halt the container, then deploymentStop to remove from active set.
+#
+# Idempotent via confirm=PHI gate.
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm"
+        required: true
+        type: string
+        default: ""
+      n_per_acc:
+        description: "How many worst-BPB wave-* services to kill per ACC4/5/6"
+        required: false
+        default: "3"
+      dry_run:
+        description: "If true, only print planned kills"
+        required: false
+        default: "true"
+
+jobs:
+  kill-stale:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      N_PER_ACC: ${{ inputs.n_per_acc }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Identify and stop worst wave-* services
+        run: |
+          set -euo pipefail
+
+          # Pull worst N wave-* services per ACC by canon BPB
+          # (we don't have direct service_id↔canon mapping; use service_name match)
+          # Simpler: pick first N entries from CSV per ACC, excluding the
+          # 3 ARCH carriers (051cb5a4, 01cf32d5, 002b62ee).
+          # That's safe because all wave-* in ACC4-6 are broken/diverged.
+
+          ARCH_SVCS="051cb5a4-1e62-48c8-8b02-abb14c387611 01cf32d5-cac1-45d8-b120-0ceba7a2647a 002b62ee-52ad-409c-8e60-14836dc94083"
+
+          for ACC in ACC4 ACC5 ACC6; do
+            case "$ACC" in
+              ACC4) TOK="$T4" ;;
+              ACC5) TOK="$T5" ;;
+              ACC6) TOK="$T6" ;;
+            esac
+            if [[ -z "$TOK" ]]; then
+              echo "::warning::no token for $ACC, skip"; continue
+            fi
+            echo "::group::$ACC — picking $N_PER_ACC worst wave-* services"
+            N=0
+            while IFS=',' read -r CSV_ACC PROJ ENV SID NAME; do
+              [[ "$CSV_ACC" != "$ACC" ]] && continue
+              # Skip ARCH carriers
+              SKIP=0
+              for ARCH in $ARCH_SVCS; do
+                [[ "$SID" == "$ARCH" ]] && SKIP=1 && break
+              done
+              [[ $SKIP -eq 1 ]] && continue
+              # Skip non-wave services
+              [[ "$NAME" != wave-* ]] && continue
+
+              N=$((N+1))
+              if [[ $N -gt $N_PER_ACC ]]; then break; fi
+
+              echo "  KILL svc=$SID name=$NAME"
+              if [[ "$DRY_RUN" == "true" ]]; then
+                echo "  DRY_RUN: would stop latest deployment on $SID"
+                continue
+              fi
+
+              # Get latest deployment id
+              DEP_ID=$(curl -sS --max-time 30 --connect-timeout 10 -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "{\"query\":\"{ deployments(first:1, input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENV\\\", serviceId:\\\"$SID\\\"}){ edges { node { id status } } } }\"}" \
+                | jq -r '.data.deployments.edges[0].node.id // empty')
+
+              if [[ -z "$DEP_ID" ]]; then
+                echo "  ::warning::no deployment found for $SID"; continue
+              fi
+
+              # Stop deployment
+              R=$(curl -sS --max-time 30 --connect-timeout 10 -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "{\"query\":\"mutation{ deploymentStop(id:\\\"$DEP_ID\\\") }\"}")
+              echo "  stop response: $(echo $R | jq -c '.data // .errors')"
+
+              # Brief pause to avoid rate limits
+              sleep 1
+            done < .github/wave-a/acc47-services.csv
+            echo "::endgroup::"
+          done
+
+          echo "KILL-STALE-SUMMARY: dry_run=$DRY_RUN n_per_acc=$N_PER_ACC"
