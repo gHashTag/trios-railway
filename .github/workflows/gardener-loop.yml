@@ -418,6 +418,55 @@ jobs:
           echo "todo=$T"      >> "$GITHUB_OUTPUT"
 
       # ─────────────────────────────────────────────────────────────
+      # STAGE-3b — AUTO-DISPATCH wave-a-dispatch + refresh-acc47 if todo>50
+      # v2.13 (2026-05-15 PASS-15 PATCH): operator complained 'садовник дебил —
+      # видит todo=234 каждый час и нихуя не делает'. RCA: STAGE-2d only fires on
+      # writer_stall, but here writer is healthy & todo is still 234 → no action.
+      # Fix: if measured<200 cells, auto-dispatch missing cycles + refresh-acc47.
+      # Idempotency: 1 dispatch per cycle per 60min via gh api filter (created_at).
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-3b — auto-dispatch missing matrix cells (v2.13)
+        if: ${{ env.MODE == 'live' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TODO_COUNT: ${{ steps.todo.outputs.todo }}
+        run: |
+          set +e
+          TODO=${TODO_COUNT:-0}
+          if (( TODO < 50 )); then
+            echo "todo=$TODO < 50 → no auto-dispatch needed"
+            echo "dispatched=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "todo=$TODO ≥ 50 → triggering wave-a-dispatch cycles 2,3,4 + refresh-acc47"
+          NOW_EPOCH=$(date -u +%s)
+          DISPATCHED=0
+          # Idempotency helper: skip if last run of <wf> in last 60min
+          run_if_idle () {
+            local WF="$1"; shift
+            local LAST=$(gh api "/repos/gHashTag/trios-railway/actions/workflows/${WF}/runs?per_page=1" \
+              --jq '.workflow_runs[0].created_at // empty' 2>/dev/null)
+            if [[ -n "$LAST" ]]; then
+              local LAST_EPOCH=$(date -u -d "$LAST" +%s 2>/dev/null || echo 0)
+              local AGE=$(( NOW_EPOCH - LAST_EPOCH ))
+              if (( AGE < 3600 )); then
+                echo "SKIP $WF: last run ${AGE}s ago < 3600s"
+                return 0
+              fi
+            fi
+            echo "DISPATCH $WF $*"
+            gh workflow run "$WF" --repo gHashTag/trios-railway "$@" && DISPATCHED=$(( DISPATCHED + 1 ))
+          }
+          run_if_idle wave-a-dispatch.yml -f cycle=2
+          run_if_idle wave-a-dispatch.yml -f cycle=3
+          run_if_idle wave-a-dispatch.yml -f cycle=4
+          run_if_idle refresh-acc47.yml   -f offset=0
+          run_if_idle refresh-acc47.yml   -f offset=111
+          echo "dispatched=$DISPATCHED" >> "$GITHUB_OUTPUT"
+          echo "✅ STAGE-3b: $DISPATCHED workflow(s) dispatched"
+        id: autodispatch
+
+      # ─────────────────────────────────────────────────────────────
       # STAGE 4 — REPORT (write to gardener_runs)
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-4 — report tick
