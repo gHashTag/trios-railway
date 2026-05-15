@@ -1,0 +1,27 @@
+name: REDEPLOY-SINGLE — re-trigger a single Railway service deploy
+on:
+  workflow_dispatch:
+    inputs:
+      account: { required: true, default: "ACC4" }
+      service_id: { required: true }
+      environment_id: { required: true }
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+    steps:
+      - name: redeploy
+        run: |
+          ACC="${{ inputs.account }}"
+          N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+          SVC="${{ inputs.service_id }}"
+          ENVI="${{ inputs.environment_id }}"
+          echo "Triggering serviceInstanceDeployV2 for $ACC svc=$SVC env=$ENVI"
+          R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"mutation { serviceInstanceDeployV2(serviceId:\\\"$SVC\\\", environmentId:\\\"$ENVI\\\") }\"}")
+          echo "Response: $R"
+          echo "$R" | jq -e '.data.serviceInstanceDeployV2' > /dev/null && echo "✓ redeploy queued: $(echo $R | jq -r .data.serviceInstanceDeployV2)"
