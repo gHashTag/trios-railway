@@ -1,0 +1,24 @@
+name: SLEEP-NCA-HYBRID — temporarily sleep NCA + HYBRID to free JEPA slot
+on:
+  workflow_dispatch:
+jobs:
+  sleep:
+    runs-on: ubuntu-latest
+    env:
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+    steps:
+      - name: sleep
+        run: |
+          # NCA: ACC6 svc 002b62ee env 6c7ea634
+          # HYBRID: ACC5 svc 01cf32d5 env 6a57a0c2
+          for tuple in "T6:002b62ee-52ad-409c-8e60-14836dc94083:6c7ea634-c857-4237-b47e-44d31d345cf5" \
+                       "T5:01cf32d5-cac1-45d8-b120-0ceba7a2647a:6a57a0c2-59bc-4ed1-bd59-6627d30d071d"; do
+            VAR=$(echo $tuple | cut -d: -f1); TOK=${!VAR}
+            SVC=$(echo $tuple | cut -d: -f2); ENVI=$(echo $tuple | cut -d: -f3)
+            echo "Sleep $SVC"
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+              -d "{\"query\":\"mutation { serviceInstanceUpdate(serviceId:\\\"$SVC\\\", environmentId:\\\"$ENVI\\\", input:{sleepApplication:true}) }\"}"
+            echo ""
+          done
