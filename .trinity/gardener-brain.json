@@ -1,0 +1,142 @@
+{
+  "$schema": "https://gHashTag.github.io/trinity/schemas/gardener-brain.json",
+  "version": "1.0.0",
+  "anchor": "phi^2 + phi^-2 = 3",
+  "imported_from": "gHashTag/trinity@main",
+  "trinity_dna": {
+    "agent_letter": "T",
+    "register": "r20",
+    "archetype": "TAW · Queen · Seal · Completion",
+    "phase_cycle": ["PLAN", "ASSIGN", "RUN", "TEST_AND_BENCH", "VERDICT", "EXPERIENCE"],
+    "constitutional_anchor": "phi^2 + phi^-2 = 3 = TRINITY",
+    "doi": "10.5281/zenodo.19227877",
+    "defense_date": "2026-06-15"
+  },
+  "comment": "Gardener-Brain v1.0 — Trinity DNA transplant. Replaces hard-coded `IGLA-SHORT-WAVE-MATRIX-` filter with full IGLA-* lane registry. Each lane has its own watcher, revive policy, and budget. Imported from gHashTag/trinity .trinity/canon_map.json + AGENTS.md + repo_policy.json.",
+  "lanes": {
+    "SHORT_WAVE_MATRIX": {
+      "canon_prefix": "IGLA-SHORT-WAVE-MATRIX-",
+      "purpose": "PhD Glava-35 matrix probe (format x algo coverage)",
+      "owner_agent": "M",
+      "priority": "high",
+      "stall_threshold_min": 30,
+      "rate_min_rows_hr": 5,
+      "rate_ratio_floor": 0.25,
+      "revive_workflow": "wave-a-massive.yml",
+      "auto_cycle_on_completion": false,
+      "max_concurrent_services": 12
+    },
+    "STRATEGY": {
+      "canon_prefix": "IGLA-STRATEGY-",
+      "purpose": "21 scarab strategies — main fleet (ACC1=10, ACC3=8, ACC4-6=3)",
+      "owner_agent": "S",
+      "priority": "high",
+      "stall_threshold_min": 60,
+      "rate_min_rows_hr": 3,
+      "rate_ratio_floor": 0.30,
+      "revive_workflow": "mass-revive-strategy.yml",
+      "auto_cycle_on_completion": true,
+      "max_concurrent_services": 21,
+      "source_of_truth": "ssot.scarab_strategy WHERE status='active'"
+    },
+    "ARCH": {
+      "canon_prefix": "IGLA-ARCH-",
+      "purpose": "TRINITY 3-strand architecture probe (JEPA / HYBRID / NCA)",
+      "owner_agent": "A",
+      "priority": "critical",
+      "stall_threshold_min": 45,
+      "rate_min_rows_hr": 1,
+      "rate_ratio_floor": 0.20,
+      "revive_workflow": "mass-deploy-arch.yml",
+      "auto_cycle_on_completion": true,
+      "max_concurrent_services": 3,
+      "concurrency_budget_priority": 1
+    },
+    "CHAMPION": {
+      "canon_prefix": "IGLA-CHAMPION-",
+      "purpose": "Reproduction lane — best-of-fleet checkpoint replay",
+      "owner_agent": "V",
+      "priority": "high",
+      "stall_threshold_min": 90,
+      "rate_min_rows_hr": 1,
+      "rate_ratio_floor": 0.50,
+      "revive_workflow": "redeploy-single.yml",
+      "auto_cycle_on_completion": false,
+      "max_concurrent_services": 1
+    },
+    "EXPEDITION": {
+      "canon_prefix": "IGLA-EXPEDITION-",
+      "purpose": "Ad-hoc deep-dive experiments (Glava-36+)",
+      "owner_agent": "X",
+      "priority": "low",
+      "stall_threshold_min": 240,
+      "rate_min_rows_hr": 0,
+      "rate_ratio_floor": 0.10,
+      "revive_workflow": "redeploy-single.yml",
+      "auto_cycle_on_completion": false,
+      "max_concurrent_services": 4
+    }
+  },
+  "concurrency_budget": {
+    "comment": "Railway workspace concurrency limit. When ARCH/CHAMPION needs slot, evict BPB>6.0 garbage lanes first.",
+    "global_max_services": 38,
+    "garbage_bpb_threshold": 6.0,
+    "garbage_eviction_priority": ["EXPEDITION", "STRATEGY", "SHORT_WAVE_MATRIX"],
+    "protected_lanes": ["ARCH", "CHAMPION"]
+  },
+  "queen_phase_contract": {
+    "PLAN": {
+      "every_tick": true,
+      "actions": [
+        "read scarab_strategy registry",
+        "read brain lanes",
+        "compute per-lane health (rows_5m, rows_1h, last_row_age)"
+      ]
+    },
+    "ASSIGN": {
+      "every_tick": true,
+      "actions": [
+        "per lane: classify HEALTHY|STALL|DEAD|COMPLETED",
+        "build action plan: revive-stall[], cycle-completed[], evict-garbage[]"
+      ]
+    },
+    "RUN": {
+      "every_tick": true,
+      "actions": [
+        "execute action plan via workflow dispatches",
+        "respect idempotency (60-min cooldown per service)"
+      ]
+    },
+    "TEST_AND_BENCH": {
+      "every_tick": true,
+      "actions": [
+        "verify writer health post-action",
+        "compute fleet utilization %",
+        "log gardener_runs row with full evidence"
+      ]
+    },
+    "VERDICT": {
+      "every_tick": true,
+      "actions": [
+        "GO if util >= 70%",
+        "DEGRADED if 30% <= util < 70%",
+        "NO-GO if util < 30% → escalate Throne"
+      ]
+    },
+    "EXPERIENCE": {
+      "every_tick": true,
+      "actions": [
+        "write .trinity/experience/gardener_<run_id>.json",
+        "emit notification on verdict transition"
+      ]
+    }
+  },
+  "r5_paramount_rules": [
+    "NEVER claim 'lane healthy' without fresh SELECT evidence",
+    "NEVER revive without idempotency check (60-min cooldown)",
+    "NEVER skip writing gardener_runs row",
+    "ALWAYS include phi^2 + phi^-2 = 3 footer in Throne comments"
+  ],
+  "throne_issue": "gHashTag/trios#264",
+  "footer": "phi^2 + phi^-2 = 3 · TRINITY · GARDENER-BRAIN · DEFENSE 2026-06-15"
+}
