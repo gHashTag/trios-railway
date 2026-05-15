@@ -57,3 +57,9 @@ jobs:
           echo "$LOGS" | jq -r '.data.deploymentLogs[]? | "\(.timestamp) [\(.severity)] \(.message)"' | tail -150
           # show raw error if logs query failed
           echo "$LOGS" | jq '.errors // empty'
+          echo "=== buildLogs (last 200) ==="
+          BUILDLOGS=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"query(\$id: String!){ buildLogs(deploymentId:\$id, limit:200){ message timestamp severity } }\",\"variables\":{\"id\":\"$DEP_ID\"}}")
+          echo "$BUILDLOGS" | jq -r '.data.buildLogs[]? | [.timestamp, .severity, .message] | @tsv' | tail -200
+          echo "$BUILDLOGS" | jq '.errors // empty'
