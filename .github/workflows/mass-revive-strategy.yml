@@ -73,7 +73,11 @@ jobs:
           # Fallback acc→default-project/env from registry mismatch.
           # Read trainer-services.csv + acc47-services.csv to recover proj/env
           # by service_id when registry has nothing.
-          mapfile -t FALLBACK_LINES < <(cat .github/wave-a/trainer-services.csv .github/wave-a/acc47-services.csv)
+          # Normalize both CSV formats into a single ACC,PROJ,ENV,SID,NAME comma form (no quotes)
+          mapfile -t FALLBACK_LINES < <(
+            { sed 's/"//g' .github/wave-a/trainer-services.csv 2>/dev/null;
+              cat .github/wave-a/acc47-services.csv 2>/dev/null; } | grep -v '^$'
+          )
 
           while IFS='|' read -r SID ACC FMT ALGO HIDDEN LR SEED STEPS PROJ ENV SNAME TRAINER_BIN W_JEPA W_NCA; do
             # Defaults for rows from migrations <0010 that lack arch columns in older DBs
@@ -84,11 +88,11 @@ jobs:
             if [[ -z "$PROJ" || -z "$ENV" ]]; then
               # Fallback: lookup by service_id in CSVs
               for LINE in "${FALLBACK_LINES[@]}"; do
-                CSV_SID=$(echo "$LINE" | awk -F'","' '{print $4}')
+                IFS=',' read -r CSV_ACC CSV_PROJ CSV_ENV CSV_SID CSV_NAME <<< "$LINE"
                 if [[ "$CSV_SID" == "$SID" ]]; then
-                  PROJ=$(echo "$LINE" | awk -F'","' '{print $2}')
-                  ENV=$(echo "$LINE" | awk -F'","' '{print $3}')
-                  SNAME=$(echo "$LINE" | awk -F'","' '{print $5}' | tr -d '"')
+                  PROJ="$CSV_PROJ"
+                  ENV="$CSV_ENV"
+                  SNAME="$CSV_NAME"
                   break
                 fi
               done
