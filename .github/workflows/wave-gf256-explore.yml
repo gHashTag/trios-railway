@@ -1,12 +1,10 @@
-name: WAVE-GF256-EXPLORE — capacity + multi-seed + LR sweep on champion format
+name: WAVE-GF256-EXPLORE — capacity + multi-seed + LR sweep on champion format (v2 GraphQL)
+# v2 fix: use Railway GraphQL API (variableUpsert + serviceInstanceDeployV2) instead of
+# the railway CLI which is not installed on ubuntu-24.04 runners. Matches wave-a-expand.yml.
+#
 # 8 cells on ACC3 scarab slots 32-39. All algos in ALGO_WHITELIST={adamw,muon}.
-# All seeds in SEED_CANON={47,89,123,144,1597,2584,4181,6765,10946}.
-# All formats canonical (gf256).
-# Targets unexplored regions of the gf256 manifold:
-#   - h768/h1024 capacity scaling (PASS-13 WAVE-CAPACITY direction)
-#   - h512 @ 500k (extend previously undercooked 51k run)
-#   - multi-seed verification of champion config (h384/adamw with rng 6765, 10946)
-#   - LR sweep on muon side (champion side adamw was swept in WAVE-NEXT-LR)
+# All seeds in SEED_CANON={47,89,123,144,1597,2584,4181,6765,10946}. Format=gf256.
+#
 # Anchor: phi^2 + phi^-2 = 3 · TRINITY · WAVE-GF256-EXPLORE · DEFENSE 2026-06-15
 on:
   workflow_dispatch:
@@ -32,11 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reconfigure 8 idle ACC3 slots for WAVE-GF256-EXPLORE
+      - name: Reconfigure 8 idle ACC3 slots via Railway GraphQL
         run: |
           set -e
           mapfile -t SERVICES < .github/wave-a/trainer-services.csv
-          # Slot index -> (FORMAT|HIDDEN|LR|SEED|OPT|LANE)
           declare -A SLOT_CFG
           SLOT_CFG[32]="gf256|768|0.0001|1597|adamw|WAVE-CAPACITY"
           SLOT_CFG[33]="gf256|1024|0.0001|1597|adamw|WAVE-CAPACITY"
@@ -62,7 +59,7 @@ jobs:
             LANE=$(echo "$CFG" | cut -d'|' -f6)
             ACC=$(echo "$SVC_LINE" | awk -F'","' '{print $1}' | tr -d '"')
             PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
-            ENV=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
+            ENVI=$(echo "$SVC_LINE" | awk -F'","' '{print $3}')
             SID=$(echo "$SVC_LINE" | awk -F'","' '{print $4}')
             SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
             CANON="IGLA-${LANE}-${FMT}-h${HID}-LR${LR}-rng${SEED}-${OPT}"
@@ -74,7 +71,7 @@ jobs:
               *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
             esac
             echo "::group::WAVE-GF256-EXPLORE svc_idx=$SVC_IDX [$ACC/$SNAME] lane=$LANE fmt=$FMT h=$HID lr=$LR seed=$SEED opt=$OPT canon=$CANON"
-            # Set env vars (dual-aliased: TRIOS_X + X for Wave-33 alias-resolver)
+            # Set env vars via Railway GraphQL variableUpsert
             for KV in \
               "SEED=$SEED" "TRIOS_SEED=$SEED" \
               "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
@@ -88,28 +85,30 @@ jobs:
               "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
               "RUST_LOG=info" \
               "L_R8_SYNTHETIC_FALLBACK=FORBID" \
-              ; do
-              KEY="${KV%%=*}"
-              VAL="${KV#*=}"
-              RAILWAY_TOKEN="$TOK" railway variables set --service "$SID" "$KEY=$VAL" >/dev/null 2>&1 || true
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENVI" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
             done
-            PROCESSED=$((PROCESSED+1))
-            # Trigger redeploy
-            if RAILWAY_TOKEN="$TOK" railway service redeploy --service "$SID" >/dev/null 2>&1; then
-              DEPLOYED=$((DEPLOYED+1))
-              echo "::notice::deployed canon=$CANON to slot=$SVC_IDX svc=$SNAME"
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENVI" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed slot=$SVC_IDX svc=$SNAME"; FAILED=$((FAILED+1))
             else
-              FAILED=$((FAILED+1))
-              echo "::error::redeploy failed for slot=$SVC_IDX svc=$SNAME canon=$CANON"
+              echo "::notice::deployed canon=$CANON slot=$SVC_IDX svc=$SNAME deploy_id=$DEP"
+              DEPLOYED=$((DEPLOYED+1))
             fi
+            PROCESSED=$((PROCESSED+1))
             echo "::endgroup::"
+            sleep 1
           done
           echo "WAVE-GF256-EXPLORE summary: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
-
-      - name: Pre-flight R5 — validate env compliance
-        if: always()
-        run: |
-          echo "ALGO_WHITELIST gate: only adamw + muon are emitted by this workflow."
-          echo "SEED_CANON gate: only 1597, 6765, 10946 used (all in canonical set)."
-          echo "FORMAT gate: only gf256 (canonical, no aliases)."
-          echo "Anchor: phi^2 + phi^-2 = 3"
+          if [[ $DEPLOYED -eq 0 ]]; then exit 1; fi
