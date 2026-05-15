@@ -87,4 +87,17 @@ jobs:
           ts=$(date -u +%Y-%m-%dT%H:%MZ)
           totals=$(python3 -c 'import json; d=json.load(open("disaster-recovery/fleet-snapshot.json")); print(d["totals"])')
           git commit -m "chore(dr): hourly fleet snapshot @ $ts -- Totals: $totals -- [skip ci] phi^2 + phi^-2 = 3"
-          git push
+          # R5 retry loop — sentinel-watch + audit-watchdog also push to main
+          # at :03 / :05 / :15 UTC, so push races are routine. Rebase-and-retry
+          # up to 5 times before giving up.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "push succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "push attempt $attempt rejected — rebasing and retrying"
+            git pull --rebase origin main || true
+            sleep $((attempt * 3))
+          done
+          echo "::error::push to main rejected 5 times — manual intervention required"
+          exit 1
