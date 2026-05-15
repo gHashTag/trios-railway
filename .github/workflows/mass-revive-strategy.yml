@@ -33,6 +33,7 @@ jobs:
   mass-revive:
     if: ${{ inputs.confirm == 'PHI' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
@@ -156,14 +157,14 @@ jobs:
               "L_R8_SYNTHETIC_FALLBACK=FORBID" \
             ; do
               K="${KV%%=*}"; V="${KV#*=}"
-              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              curl -sS --max-time 30 --connect-timeout 10 --retry 2 --retry-delay 3 -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
                 -H "Project-Access-Token: $TOK" \
                 -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
                   {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
                    variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
             done
-            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            DEP=$(curl -sS --max-time 30 --connect-timeout 10 --retry 2 --retry-delay 3 -X POST https://backboard.railway.com/graphql/v2 \
               -H "Content-Type: application/json" \
               -H "Project-Access-Token: $TOK" \
               -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
