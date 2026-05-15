@@ -56,7 +56,11 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build tri-railway
-        run: cargo build --release --bin tri-railway --locked
+        # NOTE: --locked removed 2026-05-15 — workspace Cargo.lock periodically
+        # drifts from main when transient dep crates publish patch versions. Hourly
+        # cron must not fail on harmless lock drift; CI gate already covers the
+        # reproducibility invariant on PRs.
+        run: cargo build --release --bin tri-railway
 
       - name: Run snapshot
         run: |
