@@ -60,6 +60,8 @@ jobs:
           done
           echo "Guard cleared. Anchor: phi^2 + phi^-2 = 3."
 
+      - uses: actions/checkout@v4
+
       - name: Discover env IDs for ACC5 + ACC6 (PAT-implicit, ACC4 hardcoded)
         run: |
           set -euo pipefail
@@ -94,8 +96,6 @@ jobs:
           echo "SVC5=$SVC5" >> $GITHUB_ENV
           echo "SVC6=$SVC6" >> $GITHUB_ENV
         shell: bash
-
-      - uses: actions/checkout@v4
 
       - name: Deploy ARCH-JEPA, ARCH-HYBRID, ARCH-NCA (3 services)
         run: |
