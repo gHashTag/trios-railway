@@ -68,7 +68,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build tri-railway
-        run: cargo build --release --bin tri-railway --locked
+        # NOTE: --locked removed 2026-05-15 — same rationale as fleet-snapshot.yml:
+        # hourly cron must not fail on harmless workspace Cargo.lock drift. CI on
+        # PRs still enforces lock reproducibility.
+        run: cargo build --release --bin tri-railway
 
       - name: Audit Acc1 / IGLA
         id: acc1

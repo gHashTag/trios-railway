@@ -41,7 +41,11 @@ jobs:
       T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
       T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
       T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
-      GH_TOKEN: ${{ github.token }}
+      # Use TRIOS_REPO_PAT for cross-repo Throne #264 comments. Default github.token
+      # is scoped to trios-railway and triggers `Resource not accessible by integration`
+      # on gHashTag/trios#264 (see audit-watchdog.yml:52 for the same pattern).
+      GH_TOKEN: ${{ secrets.TRIOS_REPO_PAT || github.token }}
+      HAS_PAT: ${{ secrets.TRIOS_REPO_PAT != '' }}
 
     steps:
       - name: Checkout
@@ -209,6 +213,15 @@ jobs:
           Anchor: \`phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP\`
           Sentinel run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EOF
+          # R5 guard: skip cross-repo comment (and don't fail) when TRIOS_REPO_PAT
+          # is missing. Default github.token cannot post to gHashTag/trios#264 and
+          # the resulting `Resource not accessible by integration` would mark the
+          # entire sentinel run as failure even when probes were green.
+          if [[ "$HAS_PAT" != "true" ]]; then
+            echo "::warning::TRIOS_REPO_PAT not set — skipping Throne #264 comment (transition still recorded in state.json)."
+            cat /tmp/comment.md
+            exit 0
+          fi
           gh issue comment $THRONE_ISSUE --repo $THRONE_REPO --body-file /tmp/comment.md
 
       - name: Persist new state

@@ -39,7 +39,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
 
-      - name: R5 writer pulse (public.bpb_samples)
+      - name: R5 writer pulse (ssot.bpb_samples)
         id: pulse
         run: |
           set -euo pipefail
@@ -54,8 +54,8 @@ jobs:
               COALESCE(EXTRACT(EPOCH FROM (NOW()-MAX(ts)))::int, 99999) AS stale_sec,
               COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '15 minutes') AS rows_15m,
               COUNT(*) FILTER (WHERE ts > NOW() - INTERVAL '1 hour') AS rows_1h
-            FROM public.bpb_samples
-            WHERE canon_name LIKE 'IGLA-SHORT-WAVE-MATRIX-%';
+            FROM ssot.bpb_samples
+            WHERE canon_name LIKE 'IGLA-%';
           ")
           STALE=$(echo "$RESULT" | cut -f1)
           R15M=$(echo "$RESULT" | cut -f2)
