@@ -1,0 +1,65 @@
+name: Apply Single Migration
+
+# Anchor: phi^2 + phi^-2 = 3 · DOI 10.5281/zenodo.19227877
+# Applies ONE specific migration file (skips lexical-order full run).
+# Use when a stale migration earlier in the chain blocks the new one.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: 'Migration filename under migrations/ (e.g. 0007_scarab_strategy_format_full_whitelist.sql)'
+        required: true
+      confirm:
+        description: 'Type "PHI" to confirm'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apply-single-migration
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sanity-check DATABASE_URL
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATABASE_URL}" ]]; then
+            echo "::error::DATABASE_URL secret is empty."
+            exit 2
+          fi
+          echo "DATABASE_URL set (length=${#DATABASE_URL})"
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Verify connection
+        run: psql "$DATABASE_URL" -c 'SELECT 1' -tA
+
+      - name: Apply single migration
+        run: |
+          set -euo pipefail
+          FILE="migrations/${{ inputs.file }}"
+          if [[ ! -f "$FILE" ]]; then
+            echo "::error::$FILE not found"
+            exit 2
+          fi
+          echo "==> applying $FILE"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$FILE"
+
+      - name: Verify scarab_strategy_format_check (for 0007)
+        if: contains(inputs.file, '0007')
+        run: |
+          psql "$DATABASE_URL" -tA -c "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_class t ON c.conrelid=t.oid JOIN pg_namespace n ON t.relnamespace=n.oid WHERE n.nspname='ssot' AND t.relname='scarab_strategy' AND c.conname='scarab_strategy_format_check'"
