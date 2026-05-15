@@ -1,0 +1,141 @@
+name: TIER1-EXPLORE-ACC13 — 10 unexplored format families on ACC1+ACC3 scarab services
+
+# PASS-18 RECOVERY · Option A
+# Original `tier1-explore.yml` targets ACC4-7 wave-* services, but those have
+# a broken Docker image registry as of 2026-05-15 (Bug-A) — every deploy returns
+# deploy_id but lands status=FAILED with empty buildLogs/deploymentLogs.
+#
+# This workflow re-targets the same TIER1 matrix to 10 scarab services on
+# ACC1+ACC3 that are known-working (writing SHORT-WAVE-MATRIX rows to SSoT).
+# Inventory: .github/wave-a/trainer-services.csv (43 entries total).
+#
+# Selected idle scarab targets (1-indexed line in trainer-services.csv):
+#   Line 1   ACC1 scarab-soap                  → gf32
+#   Line 2   ACC1 scarab-lamb                  → gf64
+#   Line 8   ACC1 scarab-signum-rng144         → gf8
+#   Line 16  ACC1 scarab-sf-lite-rng123        → gf4
+#   Line 17  ACC1 scarab-adamw-rng123          → posit8
+#   Line 23  ACC3 scarab-adafactor-rng144      → posit32
+#   Line 24  ACC3 scarab-signum-rng89          → mxfp8
+#   Line 25  ACC3 scarab-soap-rng123           → mxfp6
+#   Line 32  ACC3 scarab-sgdm-rng123           → nf8
+#   Line 34  ACC3 scarab-tiger-rng89           → lns8
+#
+# All cells: STEPS=200000 HIDDEN=128 LR=0.0001 SEED=1597 OPT=adamw.
+# Whitelist: matrix_runner.rs:67 ALGO_WHITELIST = {adamw, muon} — adamw safe.
+# Format support: confirmed in fake_quant.rs:449-493.
+# Envar fix from PR #187 already merged.
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · TIER1-EXPLORE-ACC13 · DEFENSE 2026-06-15
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 10-cell exploration on ACC1+ACC3"
+        required: true
+      steps:
+        description: "Steps per cell"
+        required: true
+        default: "200000"
+
+jobs:
+  explore:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure 10 ACC1+ACC3 scarab slots for TIER1-EXPLORE
+        run: |
+          set -e
+          # Selected line numbers in trainer-services.csv (1-indexed) mapped to TIER1 cells:
+          # Format string: "LINE|FORMAT"
+          SLOTS=(
+            "1|gf32"
+            "2|gf64"
+            "8|gf8"
+            "16|gf4"
+            "17|posit8"
+            "23|posit32"
+            "24|mxfp8"
+            "25|mxfp6"
+            "32|nf8"
+            "34|lns8"
+          )
+          # Common config
+          HID=128; LR=0.0001; SEED=1597; OPT=adamw
+          PROCESSED=0; DEPLOYED=0; FAILED=0
+          for SLOT in "${SLOTS[@]}"; do
+            LINE=$(echo "$SLOT" | cut -d'|' -f1)
+            FMT=$(echo "$SLOT" | cut -d'|' -f2)
+            SVC_LINE=$(sed -n "${LINE}p" .github/wave-a/trainer-services.csv)
+            if [[ -z "$SVC_LINE" ]]; then
+              echo "::warning::line $LINE is empty in trainer-services.csv"
+              FAILED=$((FAILED+1)); continue
+            fi
+            # trainer-services.csv format: "ACC","proj","env","sid","sname" (quoted)
+            ACC=$(echo "$SVC_LINE"  | awk -F'","' '{print $1}' | tr -d '"')
+            PROJ=$(echo "$SVC_LINE" | awk -F'","' '{print $2}')
+            ENV=$(echo "$SVC_LINE"  | awk -F'","' '{print $3}')
+            SID=$(echo "$SVC_LINE"  | awk -F'","' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F'","' '{print $5}' | tr -d '"')
+            CANON="IGLA-TIER1-${FMT}-h${HID}-LR${LR}-rng${SEED}-${OPT}"
+            RUN_ID="tier1-explore-acc13-2026-05-15-${FMT}-${OPT}-h${HID}-LR${LR}-rng${SEED}"
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC3) TOK="$T3";;
+              *) echo "::warning::unknown acc $ACC for line $LINE"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::TIER1-ACC13 line=$LINE [$ACC/$SNAME] canon=$CANON"
+            # R5 envar fix already in main: trainer reads TRIOS_FORMAT_TYPE + TRIOS_ALGO_TYPE
+            for KV in \
+              "SEED=$SEED" "TRIOS_SEED=$SEED" \
+              "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=$HID" "HIDDEN_DIM=$HID" "TRIOS_HIDDEN=$HID" \
+              "OPTIMIZER=$OPT" "TRIOS_OPTIMIZER=$OPT" "TRIOS_ALGO_TYPE=$OPT" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" "TRIOS_FORMAT_TYPE=$FMT" \
+              "TRIOS_LANE=TIER1" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed line=$LINE"
+              FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP"
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "TIER1-ACC13-SUMMARY: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
+          if [[ $DEPLOYED -lt 5 ]]; then
+            echo "::error::critical: fewer than 5 of 10 cells deployed"
+            exit 1
+          fi
