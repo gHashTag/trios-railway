@@ -33,7 +33,7 @@ jobs:
   mass-revive:
     if: ${{ inputs.confirm == 'PHI' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 60
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
@@ -60,7 +60,7 @@ jobs:
                    trainer_bin, w_jepa, w_nca
             FROM ssot.scarab_strategy
             WHERE status = 'active'
-            ORDER BY account, service_id
+            ORDER BY CASE WHEN service_id IN ('051cb5a4-1e62-48c8-8b02-abb14c387611','01cf32d5-cac1-45d8-b120-0ceba7a2647a','002b62ee-52ad-409c-8e60-14836dc94083') THEN 0 ELSE 1 END, account, service_id
           " > strategy.txt
           echo "Strategy rows ($(wc -l < strategy.txt)):"
           cat strategy.txt
