@@ -1,0 +1,143 @@
+name: TIER1-EXPLORE — 10 unexplored format families on ACC4-7
+
+# After 12/65 formats explored (gf256 champion 2.5719, posit16 second 2.6251,
+# fp16 third 2.6691), 53 formats remain unprobed. Operator-prioritised Tier-1
+# matrix targets 8 hypothesis families:
+#
+#   Slot ACC  Canon                                                          Why
+#   ---  ---  -----------------------------------------------------------    ---------------------------------------
+#   0   ACC4 IGLA-TIER1-gf32-h128-LR0.0001-rng1597-adamw                     Galois midrange (between gf16=2.72 & gf256=2.57)
+#   1   ACC4 IGLA-TIER1-gf64-h128-LR0.0001-rng1597-adamw                     Galois midrange (between gf32 & gf256)
+#   2   ACC4 IGLA-TIER1-gf8-h128-LR0.0001-rng1597-adamw                      super-low-bit Galois (GF(2^3)=8 elements)
+#   3   ACC4 IGLA-TIER1-gf4-h128-LR0.0001-rng1597-adamw                      Trinity-ternary-adjacent (GF(2^2)=4 elements)
+#   4   ACC5 IGLA-TIER1-posit8-h128-LR0.0001-rng1597-adamw                   tapered 8-bit vs fp8=6.99 (massive expected gain)
+#   5   ACC5 IGLA-TIER1-posit32-h128-LR0.0001-rng1597-adamw                  tapered vs fp32=2.77 (expected -0.05..-0.1 BPB)
+#   6   ACC5 IGLA-TIER1-mxfp8-h128-LR0.0001-rng1597-adamw                    Microscaling-FP8 (industry 2025 standard)
+#   7   ACC6 IGLA-TIER1-mxfp6-h128-LR0.0001-rng1597-adamw                    MX sweet spot 6-bit
+#   8   ACC6 IGLA-TIER1-nf8-h128-LR0.0001-rng1597-adamw                      NormalFloat 8-bit (extension of nf4=7.06)
+#   9   ACC7 IGLA-TIER1-lns8-h128-LR0.0001-rng1597-adamw                     log-number-system (silicon-friendly)
+#
+# All cells: STEPS=200000, HIDDEN=128, LR=0.0001, SEED=1597, OPT=adamw.
+# Whitelist: matrix_runner.rs:67 ALGO_WHITELIST = {adamw, muon} — adamw safe.
+# Format support: confirmed in fake_quant.rs:449-493.
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · TIER1-EXPLORE · DEFENSE 2026-06-15
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 10-cell exploration"
+        required: true
+      steps:
+        description: "Steps per cell"
+        required: true
+        default: "200000"
+
+jobs:
+  explore:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure 10 ACC4-7 slots for TIER1-EXPLORE
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/acc47-services.csv
+          # Slot index → "FORMAT|HIDDEN|LR|SEED|OPT"
+          declare -A SLOT_CFG
+          SLOT_CFG[0]="gf32|128|0.0001|1597|adamw"
+          SLOT_CFG[1]="gf64|128|0.0001|1597|adamw"
+          SLOT_CFG[2]="gf8|128|0.0001|1597|adamw"
+          SLOT_CFG[3]="gf4|128|0.0001|1597|adamw"
+          SLOT_CFG[30]="posit8|128|0.0001|1597|adamw"
+          SLOT_CFG[31]="posit32|128|0.0001|1597|adamw"
+          SLOT_CFG[32]="mxfp8|128|0.0001|1597|adamw"
+          SLOT_CFG[57]="mxfp6|128|0.0001|1597|adamw"
+          SLOT_CFG[58]="nf8|128|0.0001|1597|adamw"
+          SLOT_CFG[84]="lns8|128|0.0001|1597|adamw"
+          PROCESSED=0; DEPLOYED=0; FAILED=0
+          for SVC_IDX in 0 1 2 3 30 31 32 57 58 84; do
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            if [[ -z "$SVC_LINE" ]]; then
+              echo "::warning::slot $SVC_IDX is empty in acc47-services.csv"
+              FAILED=$((FAILED+1))
+              continue
+            fi
+            CFG="${SLOT_CFG[$SVC_IDX]}"
+            FMT=$(echo "$CFG" | cut -d'|' -f1)
+            HID=$(echo "$CFG" | cut -d'|' -f2)
+            LR=$(echo "$CFG" | cut -d'|' -f3)
+            SEED=$(echo "$CFG" | cut -d'|' -f4)
+            OPT=$(echo "$CFG" | cut -d'|' -f5)
+            # acc47-services.csv format: ACC,proj,env,sid,sname (no quotes)
+            ACC=$(echo "$SVC_LINE" | awk -F',' '{print $1}')
+            PROJ=$(echo "$SVC_LINE" | awk -F',' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F',' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F',' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F',' '{print $5}')
+            CANON="IGLA-TIER1-${FMT}-h${HID}-LR${LR}-rng${SEED}-${OPT}"
+            RUN_ID="tier1-explore-2026-05-15-${FMT}-${OPT}-h${HID}-LR${LR}-rng${SEED}"
+            case "$ACC" in
+              ACC4) TOK="$T4";;
+              ACC5) TOK="$T5";;
+              ACC6) TOK="$T6";;
+              ACC7) TOK="$T7";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::TIER1 slot=$SVC_IDX [$ACC/$SNAME] canon=$CANON"
+            for KV in \
+              "SEED=$SEED" "TRIOS_SEED=$SEED" \
+              "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=$HID" "HIDDEN_DIM=$HID" "TRIOS_HIDDEN=$HID" \
+              "OPTIMIZER=$OPT" "TRIOS_OPTIMIZER=$OPT" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "TRIOS_LANE=TIER1" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed slot=$SVC_IDX"
+              FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP"
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "TIER1-SUMMARY: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
+          # R5 honesty: warn but don't hard-fail if some deploys race —
+          # second-tick re-dispatch covers transient API blips.
+          if [[ $DEPLOYED -lt 5 ]]; then
+            echo "::error::critical: fewer than 5 of 10 cells deployed"
+            exit 1
+          fi
