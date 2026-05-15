@@ -1,0 +1,151 @@
+name: TIER2-EXPLORE — 14 more unexplored format families on ACC4-7
+
+# Builds on TIER1-EXPLORE (10 formats deployed 2026-05-15T06:49Z covering
+# gf{4,8,32,64}, posit{8,32}, mxfp{6,8}, nf8, lns8). With format CHECK now
+# at 70 entries (PR #183 migration 0007), Tier-2 extends coverage to 14 more
+# families across all 4 ACC4-7 accounts:
+#
+#   Slot ACC  Canon                                                          Why
+#   ---  ---  -----------------------------------------------------------    ---------------------------------------
+#   4   ACC4 IGLA-TIER2-mxfp4-h128-LR0.0001-rng1597-adamw                    MX 4-bit (industry standard for inference)
+#   5   ACC4 IGLA-TIER2-int6-h128-LR0.0001-rng1597-adamw                     INT6 between int4=2.71 and int8 (gap probe)
+#   6   ACC4 IGLA-TIER2-int2-h128-LR0.0001-rng1597-adamw                     INT2 super-low-bit (ternary-adjacent)
+#   7   ACC4 IGLA-TIER2-int3-h128-LR0.0001-rng1597-adamw                     INT3 (rare, ternary+1)
+#   8   ACC5 IGLA-TIER2-nf6-h128-LR0.0001-rng1597-adamw                      NF6 between nf4=7.06 and fp16=2.67
+#   9   ACC5 IGLA-TIER2-nf2-h128-LR0.0001-rng1597-adamw                      NF2 super-low-bit NormalFloat
+#   10  ACC5 IGLA-TIER2-bf16-h128-LR0.0001-rng1597-adamw                     bfloat16 vs fp16=2.67 (mantissa/exponent tradeoff)
+#   11  ACC5 IGLA-TIER2-tf32-h128-LR0.0001-rng1597-adamw                     TensorFloat32 (NVIDIA standard)
+#   33  ACC6 IGLA-TIER2-posit6-h128-LR0.0001-rng1597-adamw                   Posit-6 silicon-friendly
+#   34  ACC6 IGLA-TIER2-posit4-h128-LR0.0001-rng1597-adamw                   Posit-4 super-aggressive tapered
+#   35  ACC6 IGLA-TIER2-lns4-h128-LR0.0001-rng1597-adamw                     LNS-4 (log number system, 4-bit)
+#   59  ACC7 IGLA-TIER2-lns16-h128-LR0.0001-rng1597-adamw                    LNS-16 (calculator-grade precision)
+#   85  ACC7 IGLA-TIER2-binary8-h128-LR0.0001-rng1597-adamw                  IEEE binary8 (P3109 draft)
+#   86  ACC7 IGLA-TIER2-flexpoint-h128-LR0.0001-rng1597-adamw                Intel Flexpoint (block-floating-point)
+#
+# All cells: STEPS=200000, HIDDEN=128, LR=0.0001, SEED=1597, OPT=adamw.
+# Whitelist: matrix_runner.rs:67 ALGO_WHITELIST = {adamw, muon} — adamw safe.
+# Format CHECK: scarab_strategy_format_check expanded 2026-05-15T06:42Z to 70 formats.
+# Format support: confirmed in fake_quant.rs:449-493 (trainer-side FormatKind::all()).
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · TIER2-EXPLORE · DEFENSE 2026-06-15
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm 14-cell exploration"
+        required: true
+      steps:
+        description: "Steps per cell"
+        required: true
+        default: "200000"
+
+jobs:
+  explore:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      STEPS_IN: ${{ inputs.steps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconfigure 14 ACC4-7 slots for TIER2-EXPLORE
+        run: |
+          set -e
+          mapfile -t SERVICES < .github/wave-a/acc47-services.csv
+          # Slot index → "FORMAT|HIDDEN|LR|SEED|OPT"
+          declare -A SLOT_CFG
+          SLOT_CFG[4]="mxfp4|128|0.0001|1597|adamw"
+          SLOT_CFG[5]="int6|128|0.0001|1597|adamw"
+          SLOT_CFG[6]="int2|128|0.0001|1597|adamw"
+          SLOT_CFG[7]="int3|128|0.0001|1597|adamw"
+          SLOT_CFG[8]="nf6|128|0.0001|1597|adamw"
+          SLOT_CFG[9]="nf2|128|0.0001|1597|adamw"
+          SLOT_CFG[10]="bf16|128|0.0001|1597|adamw"
+          SLOT_CFG[11]="tf32|128|0.0001|1597|adamw"
+          SLOT_CFG[33]="posit6|128|0.0001|1597|adamw"
+          SLOT_CFG[34]="posit4|128|0.0001|1597|adamw"
+          SLOT_CFG[35]="lns4|128|0.0001|1597|adamw"
+          SLOT_CFG[59]="lns16|128|0.0001|1597|adamw"
+          SLOT_CFG[85]="binary8|128|0.0001|1597|adamw"
+          SLOT_CFG[86]="flexpoint|128|0.0001|1597|adamw"
+          PROCESSED=0; DEPLOYED=0; FAILED=0
+          for SVC_IDX in 4 5 6 7 8 9 10 11 33 34 35 59 85 86; do
+            SVC_LINE="${SERVICES[$SVC_IDX]}"
+            if [[ -z "$SVC_LINE" ]]; then
+              echo "::warning::slot $SVC_IDX is empty in acc47-services.csv"
+              FAILED=$((FAILED+1))
+              continue
+            fi
+            CFG="${SLOT_CFG[$SVC_IDX]}"
+            FMT=$(echo "$CFG" | cut -d'|' -f1)
+            HID=$(echo "$CFG" | cut -d'|' -f2)
+            LR=$(echo "$CFG" | cut -d'|' -f3)
+            SEED=$(echo "$CFG" | cut -d'|' -f4)
+            OPT=$(echo "$CFG" | cut -d'|' -f5)
+            # acc47-services.csv format: ACC,proj,env,sid,sname (no quotes)
+            ACC=$(echo "$SVC_LINE" | awk -F',' '{print $1}')
+            PROJ=$(echo "$SVC_LINE" | awk -F',' '{print $2}')
+            ENV=$(echo "$SVC_LINE" | awk -F',' '{print $3}')
+            SID=$(echo "$SVC_LINE" | awk -F',' '{print $4}')
+            SNAME=$(echo "$SVC_LINE" | awk -F',' '{print $5}')
+            CANON="IGLA-TIER2-${FMT}-h${HID}-LR${LR}-rng${SEED}-${OPT}"
+            RUN_ID="tier2-explore-2026-05-15-${FMT}-${OPT}-h${HID}-LR${LR}-rng${SEED}"
+            case "$ACC" in
+              ACC4) TOK="$T4";;
+              ACC5) TOK="$T5";;
+              ACC6) TOK="$T6";;
+              ACC7) TOK="$T7";;
+              *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
+            esac
+            echo "::group::TIER2 slot=$SVC_IDX [$ACC/$SNAME] canon=$CANON"
+            for KV in \
+              "SEED=$SEED" "TRIOS_SEED=$SEED" \
+              "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=$HID" "HIDDEN_DIM=$HID" "TRIOS_HIDDEN=$HID" \
+              "OPTIMIZER=$OPT" "TRIOS_OPTIMIZER=$OPT" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "TRIOS_LANE=TIER2" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed slot=$SVC_IDX"
+              FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP"
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            PROCESSED=$((PROCESSED+1))
+            echo "::endgroup::"
+            sleep 1
+          done
+          echo "TIER2-SUMMARY: processed=$PROCESSED deployed=$DEPLOYED failed=$FAILED"
+          if [[ $DEPLOYED -lt 8 ]]; then
+            echo "::error::critical: fewer than 8 of 14 cells deployed"
+            exit 1
+          fi
