@@ -16,11 +16,11 @@ on:
         required: true
         type: string
         default: ""
-      image_sha:
-        description: "Docker image short-sha from trios-trainer-igla (must contain tjepa_train+hybrid_train)"
+      image_tag:
+        description: "Docker image tag (e.g. 'latest' or 'd60cb5febf6a96c359c44899a51100c730fad4b7')"
         required: true
         type: string
-        default: "d60cb5fe"
+        default: "latest"
 
 permissions:
   contents: read
@@ -100,7 +100,7 @@ jobs:
       - name: Deploy ARCH-JEPA, ARCH-HYBRID, ARCH-NCA (3 services)
         run: |
           set +e
-          IMG="ghcr.io/ghashtag/trios-trainer-igla:sha-${{ inputs.image_sha }}"
+          IMG="ghcr.io/ghashtag/trios-trainer-igla:${{ inputs.image_tag }}"
 
           # ARCH-JEPA: tjepa_train · gf256 · adamw · h384 · LR=0.001 · rng1597 · w_jepa=0.15
           # ARCH-HYBRID: hybrid_train · gf256 · muon · h384 · LR=0.001 · rng2584 · w_jepa=0.15 w_nca=0.10
