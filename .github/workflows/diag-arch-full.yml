@@ -1,0 +1,49 @@
+name: DIAG-ARCH-FULL — full vars + redeploy_attempts
+on:
+  workflow_dispatch:
+    inputs:
+      account: { description: "ACC4..ACC6", required: true, default: "ACC4" }
+      service_id: { description: "Railway service UUID", required: true }
+      project_id: { description: "Railway project UUID", required: true }
+      env_id: { description: "Railway environment UUID", required: true }
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+    steps:
+      - name: full diagnostic
+        run: |
+          ACC="${{ inputs.account }}"
+          N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+          SVC="${{ inputs.service_id }}"
+          PROJ="${{ inputs.project_id }}"
+          ENVI="${{ inputs.env_id }}"
+          echo "=== ALL vars ==="
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ variables(projectId:\\\"$PROJ\\\", environmentId:\\\"$ENVI\\\", serviceId:\\\"$SVC\\\") }\"}" \
+            | jq '.data.variables | to_entries | sort_by(.key) | map("\(.key)=\(.value)") | .[]' -r | head -60
+          echo ""
+          echo "=== last 5 deployments (full status) ==="
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ deployments(first:5, input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENVI\\\", serviceId:\\\"$SVC\\\"}){ edges { node { id status canRedeploy createdAt staticUrl url meta } } } }\"}" \
+            | jq '.data.deployments.edges[].node'
+          echo ""
+          echo "=== service instance source ==="
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ serviceInstance(serviceId:\\\"$SVC\\\", environmentId:\\\"$ENVI\\\"){ source { image repo } latestDeployment { id status } } }\"}" \
+            | jq .
+          DEP_ID=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ deployments(first:1, input:{projectId:\\\"$PROJ\\\", environmentId:\\\"$ENVI\\\", serviceId:\\\"$SVC\\\"}){ edges { node { id } } } }\"}" \
+            | jq -r '.data.deployments.edges[0].node.id')
+          echo "=== deploymentLogs for $DEP_ID ==="
+          curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
+            -d "{\"query\":\"{ deploymentLogs(deploymentId:\\\"$DEP_ID\\\", limit:200) { message severity timestamp } }\"}" \
+            | jq -r '.data.deploymentLogs[]? | "\(.timestamp) [\(.severity)] \(.message)"' | tail -100
