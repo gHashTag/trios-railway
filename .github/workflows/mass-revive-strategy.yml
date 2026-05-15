@@ -1,0 +1,163 @@
+name: MASS-REVIVE-STRATEGY — apply ssot.scarab_strategy → variableUpsert + redeploy
+
+# AUTONOMOUS REVIVAL of the 18 strategy rows held by the queen-hive scheduler.
+# `ssot.scarab_strategy` lists (service_id, account, format, optimizer, hidden,
+# lr, seed, steps). For every active row we:
+#   1. Build CANON = IGLA-STRATEGY-{format}-h{hidden}-LR{lr}-rng{seed}-{optimizer}
+#   2. variableUpsert FORMAT/OPTIMIZER/HIDDEN/SEED/LR/STEPS/TRIOS_CANON_NAME/
+#      RAILWAY_POSTGRES_URL/L_R8_SYNTHETIC_FALLBACK=FORBID/RUST_LOG=info to that
+#      service_id via Railway GraphQL.
+#   3. serviceInstanceDeployV2 to kick redeploy.
+#
+# Account → token mapping is read from RAILWAY_TOKEN_ACC1..ACC7 secrets.
+# project_id / environment_id are looked up from ssot.scarab_service_registry
+# (same source of truth used by the queen-hive). If a row is missing in that
+# registry we use the legacy default-project map from .github/wave-a/*.csv.
+#
+# Designed to run after MASS-REVIVE strategy rows are populated. Re-running is
+# idempotent — variableUpsert overwrites and redeploy just kicks a fresh build.
+#
+# Anchor: phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP · DEFENSE 2026-06-15
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm strategy-driven mass revive"
+        required: true
+      dry_run:
+        description: "If true, only print planned actions (no variableUpsert / no deploy)"
+        required: false
+        default: "false"
+
+jobs:
+  mass-revive:
+    if: ${{ inputs.confirm == 'PHI' }}
+    runs-on: ubuntu-24.04
+    env:
+      T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+      T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      T7: ${{ secrets.RAILWAY_TOKEN_ACC7 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Pull strategy & apply variableUpsert + redeploy
+        run: |
+          set -e
+          # Strategy is the canonical source. project_id/env_id resolved from CSV fallback.
+          psql "$RAILWAY_POSTGRES_URL" -A -F'|' -t -c "
+            SELECT service_id, account, format, optimizer, hidden, lr, seed, steps,
+                   '' AS project_id, '' AS env_id, '' AS name
+            FROM ssot.scarab_strategy
+            WHERE status = 'active'
+            ORDER BY account, service_id
+          " > strategy.txt
+          echo "Strategy rows ($(wc -l < strategy.txt)):"
+          cat strategy.txt
+
+          # ====== apply variableUpsert + redeploy ======
+          DEPLOYED=0
+          FAILED=0
+          SKIPPED=0
+          TOTAL=0
+
+          # Fallback acc→default-project/env from registry mismatch.
+          # Read trainer-services.csv + acc47-services.csv to recover proj/env
+          # by service_id when registry has nothing.
+          mapfile -t FALLBACK_LINES < <(cat .github/wave-a/trainer-services.csv .github/wave-a/acc47-services.csv)
+
+          while IFS='|' read -r SID ACC FMT ALGO HIDDEN LR SEED STEPS PROJ ENV SNAME; do
+            TOTAL=$((TOTAL+1))
+            if [[ -z "$PROJ" || -z "$ENV" ]]; then
+              # Fallback: lookup by service_id in CSVs
+              for LINE in "${FALLBACK_LINES[@]}"; do
+                CSV_SID=$(echo "$LINE" | awk -F'","' '{print $4}')
+                if [[ "$CSV_SID" == "$SID" ]]; then
+                  PROJ=$(echo "$LINE" | awk -F'","' '{print $2}')
+                  ENV=$(echo "$LINE" | awk -F'","' '{print $3}')
+                  SNAME=$(echo "$LINE" | awk -F'","' '{print $5}' | tr -d '"')
+                  break
+                fi
+              done
+            fi
+            if [[ -z "$PROJ" || -z "$ENV" ]]; then
+              echo "::warning::skip svc=$SID ($ACC $FMT $ALGO seed=$SEED) — no project/env found"
+              SKIPPED=$((SKIPPED+1))
+              continue
+            fi
+            case "$ACC" in
+              ACC1) TOK="$T1";;
+              ACC2) TOK="$T2";;
+              ACC3) TOK="$T3";;
+              ACC4) TOK="$T4";;
+              ACC5) TOK="$T5";;
+              ACC6) TOK="$T6";;
+              ACC7) TOK="$T7";;
+              *) echo "::warning::unknown acc $ACC"; SKIPPED=$((SKIPPED+1)); continue;;
+            esac
+            if [[ -z "$TOK" ]]; then
+              echo "::warning::no token for $ACC"; SKIPPED=$((SKIPPED+1)); continue
+            fi
+
+            # Build canon name. LR formatted same as DEEP-CHAMPION canons.
+            CANON="IGLA-STRATEGY-${FMT}-h${HIDDEN}-LR${LR}-rng${SEED}-${ALGO}"
+            RUN_ID="strategy-${FMT}-h${HIDDEN}-LR${LR}-rng${SEED}-${ALGO}"
+
+            echo "::group::REVIVE svc=$SID [$ACC/${SNAME:-unknown}] $FMT/$ALGO/h$HIDDEN/seed=$SEED/LR=$LR/STEPS=$STEPS canon=$CANON"
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY_RUN: would variableUpsert + deploy svc=$SID canon=$CANON"
+              DEPLOYED=$((DEPLOYED+1))
+              echo "::endgroup::"
+              continue
+            fi
+
+            for KV in \
+              "SEED=$SEED" "TRIOS_SEED=$SEED" \
+              "STEPS=$STEPS" "TRIOS_STEPS=$STEPS" \
+              "LR=$LR" "TRIOS_LR=$LR" \
+              "HIDDEN=$HIDDEN" "HIDDEN_DIM=$HIDDEN" "TRIOS_HIDDEN=$HIDDEN" \
+              "OPTIMIZER=$ALGO" "TRIOS_OPTIMIZER=$ALGO" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "TRIOS_RUN_ID=$RUN_ID" \
+              "TRIOS_CANON_NAME=$CANON" \
+              "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+            ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+            done
+            DEP=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')" | jq -r '.data.serviceInstanceDeployV2 // "FAIL"')
+            if [[ "$DEP" == "FAIL" || -z "$DEP" || "$DEP" == "null" ]]; then
+              echo "::error::deploy failed svc=$SID canon=$CANON"
+              FAILED=$((FAILED+1))
+            else
+              echo "deploy_id=$DEP canon=$CANON"
+              DEPLOYED=$((DEPLOYED+1))
+            fi
+            echo "::endgroup::"
+            sleep 1
+          done < strategy.txt
+
+          echo "MASS-REVIVE-SUMMARY: total=$TOTAL deployed=$DEPLOYED failed=$FAILED skipped=$SKIPPED dry_run=$DRY_RUN"
+          if [[ $TOTAL -eq 0 ]]; then echo '::error::no strategy rows'; exit 1; fi
+          if [[ $FAILED -gt 0 ]]; then exit 1; fi
