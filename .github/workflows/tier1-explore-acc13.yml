@@ -9,17 +9,19 @@ name: TIER1-EXPLORE-ACC13 — 10 unexplored format families on ACC1+ACC3 scarab 
 # ACC1+ACC3 that are known-working (writing SHORT-WAVE-MATRIX rows to SSoT).
 # Inventory: .github/wave-a/trainer-services.csv (43 entries total).
 #
-# Selected idle scarab targets (1-indexed line in trainer-services.csv):
+# Selected idle scarab targets (1-indexed line in trainer-services.csv).
+# CRITICAL: all 10 services are conflict-free against ssot.scarab_strategy
+# (verified 2026-05-15T07:55Z to avoid collision with MASS-REVIVE-STRATEGY).
 #   Line 1   ACC1 scarab-soap                  → gf32
 #   Line 2   ACC1 scarab-lamb                  → gf64
-#   Line 8   ACC1 scarab-signum-rng144         → gf8
-#   Line 16  ACC1 scarab-sf-lite-rng123        → gf4
-#   Line 17  ACC1 scarab-adamw-rng123          → posit8
+#   Line 3   ACC1 scarab-lion-rng123           → gf8
+#   Line 4   ACC1 scarab-lion-m1-rng144        → gf4
+#   Line 8   ACC1 scarab-signum-rng144         → posit8
 #   Line 23  ACC3 scarab-adafactor-rng144      → posit32
 #   Line 24  ACC3 scarab-signum-rng89          → mxfp8
 #   Line 25  ACC3 scarab-soap-rng123           → mxfp6
-#   Line 32  ACC3 scarab-sgdm-rng123           → nf8
-#   Line 34  ACC3 scarab-tiger-rng89           → lns8
+#   Line 26  ACC3 scarab-lion-rng89            → nf8
+#   Line 32  ACC3 scarab-sgdm-rng123           → lns8
 #
 # All cells: STEPS=200000 HIDDEN=128 LR=0.0001 SEED=1597 OPT=adamw.
 # Whitelist: matrix_runner.rs:67 ALGO_WHITELIST = {adamw, muon} — adamw safe.
@@ -60,14 +62,14 @@ jobs:
           SLOTS=(
             "1|gf32"
             "2|gf64"
-            "8|gf8"
-            "16|gf4"
-            "17|posit8"
+            "3|gf8"
+            "4|gf4"
+            "8|posit8"
             "23|posit32"
             "24|mxfp8"
             "25|mxfp6"
-            "32|nf8"
-            "34|lns8"
+            "26|nf8"
+            "32|lns8"
           )
           # Common config
           HID=128; LR=0.0001; SEED=1597; OPT=adamw
