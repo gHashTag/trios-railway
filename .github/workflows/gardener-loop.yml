@@ -129,6 +129,99 @@ jobs:
             echo "✅ Writer healthy (v2.12): rows_1h=$ROWS_LAST_HOUR rows_prev_h=$ROWS_PREV_HOUR ratio=${RATIO_PCT}% · last write $STALL_MIN min ago"
           fi
 
+      # ═════════════════════════════════════════════════════════════
+      # TRINITY BRAIN TRANSPLANT (v3.0 — gardener-brain.json)
+      # Imported from gHashTag/trinity AGENT_T 6-phase Queen cycle.
+      # Closes the systemic bug: STAGE-1b was blind to ALL non-SHORT-WAVE-MATRIX
+      # lanes (STRATEGY, ARCH, CHAMPION, EXPEDITION). Now per-lane probe.
+      # Anchor: phi^2 + phi^-2 = 3 · TRINITY · GARDENER-BRAIN · DEFENSE 2026-06-15
+      # ═════════════════════════════════════════════════════════════
+      - name: STAGE-1c — TRINITY BRAIN per-lane probe (v3.0)
+        id: brain
+        run: |
+          set +e
+          BRAIN=.trinity/gardener-brain.json
+          if [ ! -f "$BRAIN" ]; then
+            echo "⚠️ Brain file missing — falling back to legacy SHORT-WAVE-MATRIX only"
+            echo "brain_missing=true" >> "$GITHUB_OUTPUT"
+            echo "lanes_stalled=" >> "$GITHUB_OUTPUT"
+            echo "verdict=BRAIN-MISSING" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # iterate all lanes from brain file
+          LANES=$(jq -r '.lanes | keys[]' "$BRAIN")
+          STALLED=""
+          DEAD=""
+          COMPLETED=""
+          HEALTHY=""
+          REPORT_JSON="[]"
+          for LANE in $LANES; do
+            PREFIX=$(jq -r --arg L "$LANE" '.lanes[$L].canon_prefix' "$BRAIN")
+            STALL_MIN_THRESH=$(jq -r --arg L "$LANE" '.lanes[$L].stall_threshold_min' "$BRAIN")
+            RATE_MIN=$(jq -r --arg L "$LANE" '.lanes[$L].rate_min_rows_hr' "$BRAIN")
+            # per-lane stats: live canons (5m), rows_1h, rows_prev_1h, age of latest row
+            STATS=$(psql "$RAILWAY_POSTGRES_URL" -t -A -F',' -c "
+              SELECT
+                COUNT(DISTINCT canon_name) FILTER (WHERE ts > NOW() - INTERVAL '5 minutes'),
+                COUNT(*)              FILTER (WHERE ts > NOW() - INTERVAL '1 hour'),
+                COUNT(*)              FILTER (WHERE ts > NOW() - INTERVAL '2 hours' AND ts <= NOW() - INTERVAL '1 hour'),
+                COALESCE(EXTRACT(EPOCH FROM (NOW() - MAX(ts)))::int, 99999)
+              FROM ssot.bpb_samples WHERE canon_name LIKE '${PREFIX}%';" 2>/dev/null | tr -d ' ')
+            LIVE_5M=$(echo "$STATS" | cut -d, -f1)
+            ROWS_1H=$(echo "$STATS" | cut -d, -f2)
+            ROWS_PREV=$(echo "$STATS" | cut -d, -f3)
+            AGE_SEC=$(echo "$STATS" | cut -d, -f4)
+            [ -z "$LIVE_5M" ] && LIVE_5M=0
+            [ -z "$ROWS_1H" ] && ROWS_1H=0
+            [ -z "$ROWS_PREV" ] && ROWS_PREV=0
+            [ -z "$AGE_SEC" ] && AGE_SEC=99999
+            AGE_MIN=$(( AGE_SEC / 60 ))
+            # classify
+            VERDICT="HEALTHY"
+            if [ "$AGE_SEC" -ge 99999 ] || [ "$ROWS_1H" -eq 0 -a "$ROWS_PREV" -eq 0 ]; then
+              VERDICT="DEAD"
+              DEAD="$DEAD $LANE"
+            elif [ "$AGE_MIN" -gt "$STALL_MIN_THRESH" ] || [ "$ROWS_1H" -lt "$RATE_MIN" ]; then
+              VERDICT="STALL"
+              STALLED="$STALLED $LANE"
+            elif [ "$LIVE_5M" -gt 0 ] && [ "$ROWS_1H" -ge "$RATE_MIN" ]; then
+              VERDICT="HEALTHY"
+              HEALTHY="$HEALTHY $LANE"
+            fi
+            echo "  LANE $LANE [$PREFIX*]: live_5m=$LIVE_5M rows_1h=$ROWS_1H age=${AGE_MIN}min → $VERDICT"
+            REPORT_JSON=$(echo "$REPORT_JSON" | jq --arg L "$LANE" --arg V "$VERDICT" \
+              --argjson l5 "$LIVE_5M" --argjson r1 "$ROWS_1H" --argjson am "$AGE_MIN" \
+              '. += [{lane:$L, verdict:$V, live_5m:$l5, rows_1h:$r1, age_min:$am}]')
+          done
+          # fleet utilization
+          ACTIVE_IN_DB=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COUNT(*) FROM ssot.scarab_strategy WHERE status='active';" 2>/dev/null | tr -d ' ')
+          LIVE_TOTAL=$(psql "$RAILWAY_POSTGRES_URL" -t -A -c "SELECT COUNT(DISTINCT canon_name) FROM ssot.bpb_samples WHERE canon_name LIKE 'IGLA-%' AND ts > NOW() - INTERVAL '5 minutes';" 2>/dev/null | tr -d ' ')
+          [ -z "$ACTIVE_IN_DB" ] && ACTIVE_IN_DB=21
+          [ -z "$LIVE_TOTAL" ] && LIVE_TOTAL=0
+          if [ "$ACTIVE_IN_DB" -gt 0 ]; then
+            UTIL_PCT=$(( LIVE_TOTAL * 100 / ACTIVE_IN_DB ))
+          else
+            UTIL_PCT=0
+          fi
+          GLOBAL_VERDICT="GO"
+          [ "$UTIL_PCT" -lt 70 ] && GLOBAL_VERDICT="DEGRADED"
+          [ "$UTIL_PCT" -lt 30 ] && GLOBAL_VERDICT="NO-GO"
+          STALLED="${STALLED# }"
+          DEAD="${DEAD# }"
+          HEALTHY="${HEALTHY# }"
+          echo "🧠 BRAIN: util=${UTIL_PCT}% (live=$LIVE_TOTAL / active=$ACTIVE_IN_DB)  verdict=$GLOBAL_VERDICT"
+          echo "   stalled=[$STALLED]  dead=[$DEAD]  healthy=[$HEALTHY]"
+          echo "lanes_stalled=$STALLED" >> "$GITHUB_OUTPUT"
+          echo "lanes_dead=$DEAD"        >> "$GITHUB_OUTPUT"
+          echo "lanes_healthy=$HEALTHY"  >> "$GITHUB_OUTPUT"
+          echo "utilization_pct=$UTIL_PCT" >> "$GITHUB_OUTPUT"
+          echo "verdict=$GLOBAL_VERDICT"   >> "$GITHUB_OUTPUT"
+          echo "live_total=$LIVE_TOTAL"    >> "$GITHUB_OUTPUT"
+          echo "active_in_db=$ACTIVE_IN_DB" >> "$GITHUB_OUTPUT"
+          echo "brain_report<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$REPORT_JSON"     >> "$GITHUB_OUTPUT"
+          echo "EOF"               >> "$GITHUB_OUTPUT"
+
       # ─────────────────────────────────────────────────────────────
       # STAGE 2 — FIX SERVICE BLOCKERS (dead/idle services)
       # ─────────────────────────────────────────────────────────────
@@ -377,6 +470,108 @@ jobs:
       # must be force-kicked. Sleeps 0.05s between calls to avoid GraphQL
       # rate limits. Triggered only when Stage-1b detects stall AND mode=live.
       # ─────────────────────────────────────────────────────────────
+      # ─────────────────────────────────────────────────────────────
+      # STAGE 2f — TRINITY BRAIN per-lane REVIVE (v3.0)
+      # For each STALL/DEAD lane → trigger lane-specific workflow with 60-min
+      # idempotency cooldown. Reads .trinity/gardener-brain.json revive_workflow.
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-2f — TRINITY BRAIN per-lane revive
+        if: env.MODE == 'live' && steps.brain.outputs.brain_missing != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STALLED: ${{ steps.brain.outputs.lanes_stalled }}
+          DEAD:    ${{ steps.brain.outputs.lanes_dead }}
+        run: |
+          set +e
+          BRAIN=.trinity/gardener-brain.json
+          NOW_EPOCH=$(date -u +%s)
+          DISPATCHED=0
+          SKIPPED_IDEMP=0
+          for LANE in $STALLED $DEAD; do
+            [ -z "$LANE" ] && continue
+            WF=$(jq -r --arg L "$LANE" '.lanes[$L].revive_workflow' "$BRAIN")
+            [ "$WF" = "null" ] && continue
+            # idempotency: skip if last run < 60 min ago
+            LAST=$(gh api "/repos/gHashTag/trios-railway/actions/workflows/${WF}/runs?per_page=1" \
+              --jq '.workflow_runs[0].created_at // empty' 2>/dev/null)
+            if [ -n "$LAST" ]; then
+              LAST_EPOCH=$(date -u -d "$LAST" +%s 2>/dev/null || echo 0)
+              AGE=$(( NOW_EPOCH - LAST_EPOCH ))
+              if [ "$AGE" -lt 3600 ]; then
+                echo "  ⏸️  SKIP $LANE → $WF (last run ${AGE}s ago < 3600s)"
+                SKIPPED_IDEMP=$((SKIPPED_IDEMP+1))
+                continue
+              fi
+            fi
+            echo "  🚑 REVIVE $LANE → $WF"
+            # Most revive workflows take confirm=PHI input. Try with confirm first, fall back to no-input.
+            gh workflow run "$WF" --repo gHashTag/trios-railway -f confirm=PHI 2>/dev/null \
+              || gh workflow run "$WF" --repo gHashTag/trios-railway 2>/dev/null \
+              && DISPATCHED=$((DISPATCHED+1))
+          done
+          echo "brain_revived=$DISPATCHED"       >> "$GITHUB_OUTPUT"
+          echo "brain_skipped_idemp=$SKIPPED_IDEMP" >> "$GITHUB_OUTPUT"
+          echo "🧠 BRAIN revive: dispatched=$DISPATCHED skipped_idempotency=$SKIPPED_IDEMP"
+        id: brain_revive
+
+      # ─────────────────────────────────────────────────────────────
+      # STAGE 2g — TRINITY BRAIN low-util escalation
+      # If utilization < 50% AND no lane was revived this tick → emit Throne issue comment
+      # ─────────────────────────────────────────────────────────────
+      - name: STAGE-2g — TRINITY BRAIN low-util escalation
+        if: env.MODE == 'live' && steps.brain.outputs.utilization_pct != '' && env.GH_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UTIL: ${{ steps.brain.outputs.utilization_pct }}
+          VERDICT: ${{ steps.brain.outputs.verdict }}
+          STALLED: ${{ steps.brain.outputs.lanes_stalled }}
+          DEAD:    ${{ steps.brain.outputs.lanes_dead }}
+          HEALTHY: ${{ steps.brain.outputs.lanes_healthy }}
+          LIVE_TOTAL: ${{ steps.brain.outputs.live_total }}
+          ACTIVE_IN_DB: ${{ steps.brain.outputs.active_in_db }}
+          REVIVED: ${{ steps.brain_revive.outputs.brain_revived }}
+        run: |
+          set +e
+          if [ "${UTIL:-100}" -ge 50 ]; then
+            echo "✅ util ${UTIL}% ≥ 50 → no escalation"
+            exit 0
+          fi
+          # rate-limit Throne comments to 1 per 2h
+          THRONE_STAMP=/tmp/gardener/throne_last.stamp
+          NOW_EPOCH=$(date -u +%s)
+          if [ -f "$THRONE_STAMP" ]; then
+            LAST=$(cat "$THRONE_STAMP")
+            AGE=$(( NOW_EPOCH - LAST ))
+            if [ "$AGE" -lt 7200 ]; then
+              echo "⏸️  Throne rate-limit: last alert ${AGE}s ago < 7200s"
+              exit 0
+            fi
+          fi
+          mkdir -p /tmp/gardener
+          echo "$NOW_EPOCH" > "$THRONE_STAMP"
+          BODY_FILE=$(mktemp)
+          {
+            echo "## 🧠 GARDENER BRAIN — Low Utilization Alert"
+            echo
+            echo "**Detected at:** $(date -u +%FT%TZ)"
+            echo "**Utilization:** ${UTIL}% (live=${LIVE_TOTAL} / active_in_db=${ACTIVE_IN_DB})"
+            echo "**Verdict:** ${VERDICT}"
+            echo
+            echo "### Lane status"
+            echo "- 🟢 HEALTHY: ${HEALTHY:-—}"
+            echo "- 🟡 STALL:   ${STALLED:-—}"
+            echo "- 🔴 DEAD:    ${DEAD:-—}"
+            echo
+            echo "### Action this tick"
+            echo "- Lanes revived: ${REVIVED:-0}"
+            echo "- Brain config: .trinity/gardener-brain.json"
+            echo
+            echo "---"
+            echo "\$\\varphi^2 + \\varphi^{-2} = 3\$ · TRINITY · GARDENER-BRAIN · DEFENSE 2026-06-15"
+          } > "$BODY_FILE"
+          gh issue comment 264 --repo gHashTag/trios --body-file "$BODY_FILE" 2>&1 || echo "throne comment skipped"
+          echo "📢 Throne #264 low-util alert posted"
+
       - name: STAGE-2d — forced wake-up on writer stall
         if: steps.stall.outputs.stalled == 'true' && env.MODE == 'live'
         run: |
@@ -502,7 +697,15 @@ jobs:
               'woken', ${{ steps.stall.outputs.woken || 0 }},
               'ssot_missing', ${{ steps.ssot_prop.outputs.ssot_missing || 0 }},
               'ssot_propagated', ${{ steps.ssot_prop.outputs.ssot_propagated || 0 }},
-              'mode', '$MODE', 'version', 'v2.7.1-ssot-prop'
+              'mode', '$MODE', 'version', 'v3.0-trinity-brain',
+              'brain_util_pct', ${{ steps.brain.outputs.utilization_pct || 0 }},
+              'brain_verdict', '${{ steps.brain.outputs.verdict || 'UNKNOWN' }}',
+              'brain_stalled', '${{ steps.brain.outputs.lanes_stalled || '' }}',
+              'brain_dead', '${{ steps.brain.outputs.lanes_dead || '' }}',
+              'brain_healthy', '${{ steps.brain.outputs.lanes_healthy || '' }}',
+              'brain_revived', ${{ steps.brain_revive.outputs.brain_revived || 0 }},
+              'brain_live_total', ${{ steps.brain.outputs.live_total || 0 }},
+              'brain_active_in_db', ${{ steps.brain.outputs.active_in_db || 0 }}
             ));
           "
 
