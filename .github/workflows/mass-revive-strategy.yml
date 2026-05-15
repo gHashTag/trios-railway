@@ -55,7 +55,8 @@ jobs:
           # Strategy is the canonical source. project_id/env_id resolved from CSV fallback.
           psql "$RAILWAY_POSTGRES_URL" -A -F'|' -t -c "
             SELECT service_id, account, format, optimizer, hidden, lr, seed, steps,
-                   '' AS project_id, '' AS env_id, '' AS name
+                   '' AS project_id, '' AS env_id, '' AS name,
+                   trainer_bin, w_jepa, w_nca
             FROM ssot.scarab_strategy
             WHERE status = 'active'
             ORDER BY account, service_id
@@ -74,7 +75,11 @@ jobs:
           # by service_id when registry has nothing.
           mapfile -t FALLBACK_LINES < <(cat .github/wave-a/trainer-services.csv .github/wave-a/acc47-services.csv)
 
-          while IFS='|' read -r SID ACC FMT ALGO HIDDEN LR SEED STEPS PROJ ENV SNAME; do
+          while IFS='|' read -r SID ACC FMT ALGO HIDDEN LR SEED STEPS PROJ ENV SNAME TRAINER_BIN W_JEPA W_NCA; do
+            # Defaults for rows from migrations <0010 that lack arch columns in older DBs
+            TRAINER_BIN="${TRAINER_BIN:-trios-train}"
+            W_JEPA="${W_JEPA:-0}"
+            W_NCA="${W_NCA:-0}"
             TOTAL=$((TOTAL+1))
             if [[ -z "$PROJ" || -z "$ENV" ]]; then
               # Fallback: lookup by service_id in CSVs
@@ -107,9 +112,19 @@ jobs:
               echo "::warning::no token for $ACC"; SKIPPED=$((SKIPPED+1)); continue
             fi
 
-            # Build canon name. LR formatted same as DEEP-CHAMPION canons.
-            CANON="IGLA-STRATEGY-${FMT}-h${HIDDEN}-LR${LR}-rng${SEED}-${ALGO}"
-            RUN_ID="strategy-${FMT}-h${HIDDEN}-LR${LR}-rng${SEED}-${ALGO}"
+            # Build canon name. ARCH lanes use IGLA-ARCH-{BIN_TAG}, STRATEGY lanes use IGLA-STRATEGY.
+            LANE="STRATEGY"
+            case "$TRAINER_BIN" in
+              tjepa_train)  LANE="ARCH-JEPA" ;;
+              hybrid_train)
+                if [[ "$(echo "$W_JEPA > 0" | bc -l 2>/dev/null || echo 0)" == "1" ]]; then
+                  LANE="ARCH-HYBRID"
+                else
+                  LANE="ARCH-NCA"
+                fi ;;
+            esac
+            CANON="IGLA-${LANE}-${FMT}-h${HIDDEN}-LR${LR}-rng${SEED}-${ALGO}"
+            RUN_ID="${LANE,,}-${FMT}-h${HIDDEN}-LR${LR}-rng${SEED}-${ALGO}"
 
             echo "::group::REVIVE svc=$SID [$ACC/${SNAME:-unknown}] $FMT/$ALGO/h$HIDDEN/seed=$SEED/LR=$LR/STEPS=$STEPS canon=$CANON"
 
@@ -129,6 +144,9 @@ jobs:
               "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
               "TRIOS_RUN_ID=$RUN_ID" \
               "TRIOS_CANON_NAME=$CANON" \
+              "TRIOS_TRAINER_BIN=$TRAINER_BIN" \
+              "TRIOS_W_JEPA=$W_JEPA" \
+              "TRIOS_W_NCA=$W_NCA" \
               "RAILWAY_POSTGRES_URL=$RAILWAY_POSTGRES_URL" \
               "RUST_LOG=info" \
               "L_R8_SYNTHETIC_FALLBACK=FORBID" \
