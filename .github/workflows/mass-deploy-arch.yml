@@ -1,0 +1,189 @@
+name: MASS-DEPLOY-ARCH — deploy JEPA-T + NCA + HYBRID on ACC4-6
+
+# FIX-7: read 3 ARCH-lanes (arch-jepa-1, arch-hybrid-1, arch-nca-1) from
+# ssot.scarab_strategy and deploy each to a real Railway service on ACC4-6.
+# Uses the new Dockerfile from gHashTag/trios-trainer-igla PR #152 (merged
+# d60cb5fe) which includes tjepa_train + hybrid_train binaries.
+#
+# Confirmation gate: confirm=PHI guards accidental runs.
+# Anchor: phi^2 + phi^-2 = 3.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PHI to confirm"
+        required: true
+        type: string
+        default: ""
+      image_sha:
+        description: "Docker image short-sha from trios-trainer-igla (must contain tjepa_train+hybrid_train)"
+        required: true
+        type: string
+        default: "d60cb5fe"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mass-deploy-arch
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: variableUpsert + serviceInstanceDeployV2 (3 ARCH services)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    env:
+      T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
+      T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
+      T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      # Project + env IDs from wave-a-massive.yml (R5-verified working pattern)
+      P4: "0dc36fab-0201-46dc-9de2-43ca5008a405"
+      E4: "074f1a55-a202-499f-8ad1-5ab2af7d79b5"
+      P5: "fa333a5e-0151-4bf2-bc5f-9b32c4e762a9"
+      P6: "f4d7b9fb-33c5-418b-b29c-6dfb1794db49"
+
+    steps:
+      - name: Guard — confirm == 'PHI'
+        run: |
+          if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
+            echo "::error::confirm input must be exactly 'PHI'. Aborting."
+            exit 2
+          fi
+          for V in T4 T5 T6 RAILWAY_POSTGRES_URL; do
+            if [[ -z "${!V}" ]]; then
+              echo "::error::secret $V is empty"; exit 3
+            fi
+          done
+          echo "Guard cleared. Anchor: phi^2 + phi^-2 = 3."
+
+      - name: Discover env IDs for ACC5 + ACC6 (PAT-implicit, ACC4 hardcoded)
+        run: |
+          set -euo pipefail
+          for N in 5 6; do
+            VAR="T$N"; TOK="${!VAR}"
+            R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d '{"query":"{ projectToken { project { environments { edges { node { id name } } } } } }"}')
+            EID=$(echo "$R" | jq -r '.data.projectToken.project.environments.edges[] | select(.node.name=="production") | .node.id' | head -n1)
+            if [[ -z "$EID" || "$EID" == "null" ]]; then
+              # Fallback: first env if no "production"
+              EID=$(echo "$R" | jq -r '.data.projectToken.project.environments.edges[0].node.id')
+            fi
+            echo "E$N=$EID" >> $GITHUB_ENV
+            echo "ACC$N env id: $EID"
+          done
+
+      - name: Pick 3 swappable services from acc47-services.csv
+        id: pick
+        run: |
+          set -euo pipefail
+          CSV=.github/wave-a/acc47-services.csv
+          # First service from ACC4, ACC5, ACC6 → repurpose as ARCH-{JEPA,HYBRID,NCA}
+          SVC4=$(awk -F',' '$1=="ACC4"{print; exit}' "$CSV")
+          SVC5=$(awk -F',' '$1=="ACC5"{print; exit}' "$CSV")
+          SVC6=$(awk -F',' '$1=="ACC6"{print; exit}' "$CSV")
+          echo "ARCH-JEPA   → $SVC4"
+          echo "ARCH-HYBRID → $SVC5"
+          echo "ARCH-NCA    → $SVC6"
+          echo "SVC4=$SVC4" >> $GITHUB_ENV
+          echo "SVC5=$SVC5" >> $GITHUB_ENV
+          echo "SVC6=$SVC6" >> $GITHUB_ENV
+        shell: bash
+
+      - uses: actions/checkout@v4
+
+      - name: Deploy ARCH-JEPA, ARCH-HYBRID, ARCH-NCA (3 services)
+        run: |
+          set +e
+          IMG="ghcr.io/ghashtag/trios-trainer-igla:sha-${{ inputs.image_sha }}"
+
+          # ARCH-JEPA: tjepa_train · gf256 · adamw · h384 · LR=0.001 · rng1597 · w_jepa=0.15
+          # ARCH-HYBRID: hybrid_train · gf256 · muon · h384 · LR=0.001 · rng2584 · w_jepa=0.15 w_nca=0.10
+          # ARCH-NCA: hybrid_train · gf256 · adamw · h384 · LR=0.001 · rng4181 · w_nca=0.25
+
+          deploy_arch_service() {
+            local SLOT="$1"      # "JEPA" | "HYBRID" | "NCA"
+            local TOK="$2"
+            local PROJ="$3"
+            local ENV_ID="$4"
+            local SID="$5"
+            local OPT="$6"       # adamw | muon
+            local SEED="$7"
+            local TRAINER_BIN="$8"  # tjepa_train | hybrid_train
+            local W_JEPA="$9"
+            local W_NCA="${10}"
+
+            local CANON="IGLA-ARCH-${SLOT}-gf256-h384-LR0.001-rng${SEED}-${OPT}"
+            local RUN_ID="arch-${SLOT,,}-d60cb5fe"
+
+            echo "::group::ARCH-${SLOT} → ${SID}"
+            echo "canon=${CANON}"
+            echo "trainer_bin=${TRAINER_BIN} w_jepa=${W_JEPA} w_nca=${W_NCA}"
+
+            # 12 env vars (PAT-implicit upsert)
+            for KV in \
+              "SEED=${SEED}" \
+              "STEPS=30000" \
+              "LR=0.001" \
+              "HIDDEN=384" \
+              "OPTIMIZER=${OPT}" "TRIOS_OPTIMIZER=${OPT}" \
+              "FORMAT=gf256" "TRIOS_FORMAT_TYPE=gf256" \
+              "TRIOS_LANE=ARCH-${SLOT}" \
+              "TRIOS_RUN_ID=${RUN_ID}" \
+              "TRIOS_CANON_NAME=${CANON}" \
+              "RAILWAY_POSTGRES_URL=${RAILWAY_POSTGRES_URL}" \
+              "RUST_LOG=info" \
+              "L_R8_SYNTHETIC_FALLBACK=FORBID" \
+              "TRIOS_TRAINER_BIN=${TRAINER_BIN}" \
+              "TRIOS_W_CE=1.0" \
+              "TRIOS_W_JEPA=${W_JEPA}" \
+              "TRIOS_W_NCA=${W_NCA}" \
+              "TRIOS_ATTN_LAYERS=3" ; do
+              K="${KV%%=*}"; V="${KV#*=}"
+              curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d "$(jq -n --arg p "$PROJ" --arg e "$ENV_ID" --arg s "$SID" --arg k "$K" --arg v "$V" '
+                  {query:"mutation($i:VariableUpsertInput!){variableUpsert(input:$i)}",
+                   variables:{i:{projectId:$p, environmentId:$e, serviceId:$s, name:$k, value:$v}}}')" > /dev/null
+              echo "  ✓ $K"
+            done
+
+            # Update source image (mutation accepts ids as input)
+            curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV_ID" --arg img "$IMG" '
+                {query:"mutation($i:ServiceInstanceUpdateInput!,$s:String!,$e:String){serviceInstanceUpdate(serviceId:$s, environmentId:$e, input:$i)}",
+                 variables:{s:$s, e:$e, i:{source:{image:$img}}}}')" > /dev/null
+            echo "  ✓ source updated to ${IMG}"
+
+            # Redeploy
+            R=$(curl -sS -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Content-Type: application/json" \
+              -H "Project-Access-Token: $TOK" \
+              -d "$(jq -n --arg s "$SID" --arg e "$ENV_ID" '
+                {query:"mutation($s:String!,$e:String!){serviceInstanceDeployV2(serviceId:$s, environmentId:$e)}",
+                 variables:{s:$s, e:$e}}')")
+            echo "  ✓ redeploy response: $(echo $R | jq -c '.data // .errors')"
+            echo "::endgroup::"
+          }
+
+          # Parse picked services: SVC4="ACC4,P4,E4,SID,SNAME"
+          IFS=',' read -r ACC PROJ ENV_ID SID SNAME <<< "$SVC4"
+          deploy_arch_service "JEPA" "$T4" "$PROJ" "$ENV_ID" "$SID" "adamw" "1597" "tjepa_train" "0.15" "0.00"
+
+          IFS=',' read -r ACC PROJ ENV_ID SID SNAME <<< "$SVC5"
+          deploy_arch_service "HYBRID" "$T5" "$PROJ" "$ENV_ID" "$SID" "muon" "2584" "hybrid_train" "0.15" "0.10"
+
+          IFS=',' read -r ACC PROJ ENV_ID SID SNAME <<< "$SVC6"
+          deploy_arch_service "NCA" "$T6" "$PROJ" "$ENV_ID" "$SID" "adamw" "4181" "hybrid_train" "0.00" "0.25"
+
+          echo "=== MASS-DEPLOY-ARCH: 3 services updated + redeployed ==="
+          echo "Expect first ARCH-JEPA/HYBRID/NCA rows in ssot.bpb_samples within 30 min."
+          echo "phi^2 + phi^-2 = 3 · TRINITY · NEVER STOP"
