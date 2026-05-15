@@ -95,13 +95,17 @@ jobs:
               *) echo "::warning::unknown acc $ACC"; FAILED=$((FAILED+1)); continue;;
             esac
             echo "::group::TIER1 slot=$SVC_IDX [$ACC/$SNAME] canon=$CANON"
+            # R5 BUG-FIX 2026-05-15: trainer reads TRIOS_FORMAT_TYPE (matrix_runner.rs:354)
+            # and TRIOS_ALGO_TYPE (line 355). Setting FORMAT/TRIOS_FORMAT alone leaves the
+            # legacy TRIOS_FORMAT_TYPE=int4 in place, corrupting TIER1 canon→format mapping.
+            # Anchor: phi^2 + phi^-2 = 3 · TIER1-EXPLORE-FIX · DEFENSE 2026-06-15
             for KV in \
               "SEED=$SEED" "TRIOS_SEED=$SEED" \
               "STEPS=$STEPS_IN" "TRIOS_STEPS=$STEPS_IN" \
               "LR=$LR" "TRIOS_LR=$LR" \
               "HIDDEN=$HID" "HIDDEN_DIM=$HID" "TRIOS_HIDDEN=$HID" \
-              "OPTIMIZER=$OPT" "TRIOS_OPTIMIZER=$OPT" \
-              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" \
+              "OPTIMIZER=$OPT" "TRIOS_OPTIMIZER=$OPT" "TRIOS_ALGO_TYPE=$OPT" \
+              "FORMAT=$FMT" "TRIOS_FORMAT=$FMT" "TRIOS_FORMAT_TYPE=$FMT" \
               "TRIOS_LANE=TIER1" \
               "TRIOS_RUN_ID=$RUN_ID" \
               "TRIOS_CANON_NAME=$CANON" \
