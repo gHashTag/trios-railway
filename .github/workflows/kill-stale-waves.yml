@@ -74,13 +74,22 @@ jobs:
                 continue
               fi
 
-              # Strategy 1: set numReplicas=0 — stops service universally
-              # serviceInstanceUpdate(input: ServiceInstanceUpdateInput!): Boolean!
+              # Strategy 1: sleepApplication=true — properly hibernates service
+              # numReplicas=0 alone fails with "Invalid input" because Railway requires
+              # multiRegionConfig sum to match. sleepApplication is the supported
+              # way to disable a service in V2 runtime.
               UPD=$(curl -sS --max-time 30 --connect-timeout 10 -X POST https://backboard.railway.com/graphql/v2 \
                 -H "Content-Type: application/json" \
                 -H "Project-Access-Token: $TOK" \
-                -d "{\"query\":\"mutation{ serviceInstanceUpdate(serviceId:\\\"$SID\\\", environmentId:\\\"$ENV\\\", input:{numReplicas:0}) }\"}")
-              echo "  numReplicas=0 response: $(echo $UPD | jq -c '.data // .errors')"
+                -d "{\"query\":\"mutation{ serviceInstanceUpdate(serviceId:\\\"$SID\\\", environmentId:\\\"$ENV\\\", input:{sleepApplication:true}) }\"}")
+              echo "  sleepApplication=true response: $(echo $UPD | jq -c '.data // .errors')"
+
+              # Strategy 1b: set multiRegionConfig with numReplicas=0 — backup that works for V2
+              UPD2=$(curl -sS --max-time 30 --connect-timeout 10 -X POST https://backboard.railway.com/graphql/v2 \
+                -H "Content-Type: application/json" \
+                -H "Project-Access-Token: $TOK" \
+                -d '{"query":"mutation($sid:String!,$env:String!,$cfg:JSON!){ serviceInstanceUpdate(serviceId:$sid, environmentId:$env, input:{multiRegionConfig:$cfg}) }","variables":{"sid":"'"$SID"'","env":"'"$ENV"'","cfg":{"us-west2":{"numReplicas":0}}}}')
+              echo "  multiRegionConfig=0 response: $(echo $UPD2 | jq -c '.data // .errors')"
 
               # Strategy 2: cancel latest deployment regardless of state
               DEP_ID=$(curl -sS --max-time 30 --connect-timeout 10 -X POST https://backboard.railway.com/graphql/v2 \
@@ -102,4 +111,4 @@ jobs:
             echo "::endgroup::"
           done
 
-          echo "KILL-STALE-SUMMARY: dry_run=$DRY_RUN n_per_acc=$N_PER_ACC strategy=numReplicas0+cancel"
+          echo "KILL-STALE-SUMMARY: dry_run=$DRY_RUN n_per_acc=$N_PER_ACC strategy=sleepApplication+multiRegionConfig+cancel"
