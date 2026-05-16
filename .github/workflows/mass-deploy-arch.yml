@@ -1,4 +1,10 @@
-name: MASS-DEPLOY-ARCH — deploy JEPA-T + NCA + HYBRID on ACC4-6
+name: "[DEPRECATED L-SS7] MASS-DEPLOY-ARCH — replaced by Sovereign Scarab v4 pull-loop"
+
+# DEPRECATED 2026-05-16 by L-SS7 (gHashTag/trios#940).
+# Replaced by ssot.scarab_strategy + Queen-Hive MCP writer.
+# NO Railway API, NO variableUpsert. See ADR-0042-pull-loop.
+#
+# Original purpose:
 
 # FIX-7: read 3 ARCH-lanes (arch-jepa-1, arch-hybrid-1, arch-nca-1) from
 # ssot.scarab_strategy and deploy each to a real Railway service on ACC4-6.
@@ -30,8 +36,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  deprecated:
+    name: "DEPRECATED — use Queen-Hive MCP (L-SS3)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block run
+        run: |
+          echo "::error::This workflow is DEPRECATED by L-SS7 (gHashTag/trios#940)."
+          echo "::error::Sovereign Scarab v4 pull-loop replaces push-based deploys."
+          echo "::error::Use Queen-Hive MCP writer (crates/queen-hive-mcp) or call"
+          echo "::error::ssot.spawn_scarab / ssot.bump_strategy_v2 directly."
+          echo "::error::No Railway API. No variableUpsert. See ADR-0042-pull-loop."
+          exit 1
+
   deploy:
-    name: variableUpsert + serviceInstanceDeployV2 (3 ARCH services)
+    name: "[disabled] variableUpsert + serviceInstanceDeployV2 (3 ARCH services)"
+    if: false  # L-SS7: never runs — kept for git history only
     runs-on: ubuntu-24.04
     timeout-minutes: 12
 
