@@ -1,0 +1,53 @@
+# railway.toml.template — Sovereign Scarab v4
+#
+# Шаблон конфигурации Railway для одного сервиса sovereign-scarab.
+# Скопируйте этот файл в корень сервиса и переименуйте в railway.toml,
+# заполнив все плейсхолдеры <...>.
+#
+# Документация: docs/DEPLOY_SOVEREIGN_SCARAB_V4.md
+# Issue:        https://github.com/gHashTag/trios-railway/issues/210
+# Epic:         https://github.com/gHashTag/trios/issues/940
+# Anchor:       phi^2 + phi^-2 = 3
+
+[build]
+# Используем готовый Docker-образ — сборка на Railway не нужна.
+builder = "DOCKERFILE"
+# Образ задаётся через переменную Railway "Source Image" в UI/CLI:
+#   ghcr.io/ghashtag/sovereign-scarab:v4
+# Публикуется workflow: .github/workflows/sovereign-scarab.yml (L-SS1, PR #159)
+
+[deploy]
+# Healthcheck через HTTP не используется.
+# Мониторинг состояния — heartbeat-строки в ssot.scarab_heartbeat.
+healthcheckPath   = ""
+healthcheckTimeout = 0
+numReplicas       = 1
+restartPolicyType = "ON_FAILURE"
+
+# Переменные окружения (заменить плейсхолдеры реальными значениями перед деплоем):
+[deploy.env]
+
+# --- ОБЯЗАТЕЛЬНЫЕ ---
+
+# Строка подключения к Trinity SSOT.
+# ВАЖНО: должна указывать на единый источник истины (Trinity SSOT),
+#         не на локальную или тестовую БД.
+DATABASE_URL = "postgresql://<user>:<password>@<host>:<port>/<database>"
+
+# --- ОПЦИОНАЛЬНЫЕ (значения по умолчанию показаны) ---
+
+# Идентификатор датасета для обучения.
+TRAIN_DATA = "fineweb"
+
+# Интервал опроса очереди задач, миллисекунды.
+POLL_INTERVAL_MS = "2000"
+
+# Интервал записи heartbeat в БД, секунды.
+HEARTBEAT_INTERVAL_S = "30"
+
+# Уровень логирования (structured JSON logs).
+RUST_LOG = "info,sovereign_scarab=debug"
+
+# RAILWAY_SERVICE_ID проставляется Railway автоматически в runtime.
+# Явно задавать только при локальном тестировании.
+# RAILWAY_SERVICE_ID = "<uuid>"
