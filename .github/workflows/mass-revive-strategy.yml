@@ -1,4 +1,8 @@
-name: MASS-REVIVE-STRATEGY — apply ssot.scarab_strategy → variableUpsert + redeploy
+name: "[DEPRECATED L-SS7] MASS-REVIVE-STRATEGY — replaced by Sovereign Scarab v4 pull-loop"
+
+# DEPRECATED 2026-05-16 by L-SS7 (gHashTag/trios#940).
+# Sovereign Scarab v4 reads ssot.scarab_strategy itself — push-revive no
+# longer needed. Use Queen-Hive MCP (crates/queen-hive-mcp) for control.
 
 # AUTONOMOUS REVIVAL of the 18 strategy rows held by the queen-hive scheduler.
 # `ssot.scarab_strategy` lists (service_id, account, format, optimizer, hidden,
@@ -30,8 +34,19 @@ on:
         default: "false"
 
 jobs:
+  deprecated:
+    name: "DEPRECATED — use Queen-Hive MCP (L-SS3)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block run
+        run: |
+          echo "::error::This workflow is DEPRECATED by L-SS7 (gHashTag/trios#940)."
+          echo "::error::Scarab v4 pulls ssot.scarab_strategy by itself; no revive needed."
+          echo "::error::Use Queen-Hive MCP writer or call ssot.bump_strategy_v2 directly."
+          exit 1
+
   mass-revive:
-    if: ${{ inputs.confirm == 'PHI' }}
+    if: false  # L-SS7: never runs — kept for git history only
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
