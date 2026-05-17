@@ -426,7 +426,7 @@ mod sql_file_invariants {
     /// G-SS-10 contract must trip CI before it reaches prod.
     const M_0013: &str = include_str!("../../../migrations/0013_heartbeat_janitor.sql");
 
-    /// L-SS4 dependency: scarab_dead view defines what "stale" means.
+    /// L-SS4 dependency: `scarab_dead` view defines what "stale" means.
     const M_0012: &str = include_str!("../../../migrations/0012_scarab_dead_heartbeat.sql");
 
     /// The janitor function must exist with the documented signature.
@@ -563,9 +563,9 @@ mod sql_file_invariants {
         );
     }
 
-    /// L-SS4 (#211, closes #193): scarab_dead must be heartbeat-based,
-    /// not bpb_samples push-path based. 0013 layers on top of this; if
-    /// 0012 ever regresses to bpb_samples, the janitor will release the
+    /// L-SS4 (#211, closes #193): `scarab_dead` must be heartbeat-based,
+    /// not `bpb_samples` push-path based. 0013 layers on top of this; if
+    /// 0012 ever regresses to `bpb_samples`, the janitor will release the
     /// wrong rows.
     #[test]
     fn scarab_dead_is_heartbeat_based() {
@@ -592,9 +592,13 @@ mod sql_file_invariants {
         let mut entries: Vec<_> =
             std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations"))
                 .expect("migrations/ directory must exist")
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| n.ends_with(".sql"))
+                .filter(|n| {
+                    std::path::Path::new(n)
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("sql"))
+                })
                 .collect();
         entries.sort();
         let idx_0012 = entries
