@@ -14,6 +14,7 @@
 
 pub mod event;
 pub mod migrations;
+pub mod workflows;
 
 use serde::{Deserialize, Serialize};
 use trios_railway_core::ServiceId;

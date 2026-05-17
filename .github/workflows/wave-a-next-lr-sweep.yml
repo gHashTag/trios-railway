@@ -1,4 +1,7 @@
-name: WAVE-A-NEXT-LR — LR sweep on champion config (gf256-h128-adamw)
+name: "[ADR-0042 disabled] WAVE-A-NEXT-LR — LR sweep on champion config (gf256-h128-adamw)"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# See docs/ADR-0042-pull-loop.md.
 # Hypothesis: champion plateaued at BPB=2.5719 across {h128, h384, baseline, DEEP}
 # ⇒ ceiling is NOT depth-bound, it's LR-bound. Sweep LR ∈ {3e-4, 1e-3, 3e-3}
 # on the FROZEN champion config (gf256/h128/adamw/rng1597) using STEPS=200000
@@ -23,8 +26,18 @@ on:
         default: "200000"
 
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet variableUpsert+serviceInstanceDeployV2 is forbidden."
+          echo "::error::Scarabs pull ssot.scarab_strategy themselves. Update strategy via Queen-Hive MCP writer."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   lrsweep:
-    if: ${{ inputs.confirm == 'PHI' }}
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}

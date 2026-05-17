@@ -87,4 +87,21 @@ The Rust write surface in `crates/trios-railway-core` and the
 Read-only diagnostics (audit watchdog, fleet snapshot, MCP diagnose)
 remain freely available.
 
+`.github/workflows/` invariants (enforced by
+`trios-railway-audit::workflows`):
+
+- Every workflow that uses a Railway push mutation is either:
+  - **hard-disabled** with a refuse-job (legacy scarab fleet push —
+    `[ADR-0042 disabled]` prefix on the workflow `name:`), or
+  - **step-gated** by `env.LEGACY_PUSH_PATH_ENABLE == '1'` (only
+    `gardener-loop.yml`; cron path stays read-only), or
+  - **double-key gated** with input `confirm == 'PHI'` AND repo secret
+    `LEGACY_PUSH_PATH_ENABLE == '1'` (operator-tier recovery only:
+    `mcp-emergency-redeploy.yml`, `writer-env-fix.yml`,
+    `deploy-from-template.yml`, `redeploy-single.yml`).
+- No `schedule:`, `push:`, `pull_request:`, `workflow_run:`, or
+  `repository_dispatch:` trigger may reach a push-mutation workflow
+  (the gardener schedule is the lone exception and only fires
+  read-only stages).
+
 Full rationale: [`docs/ADR-0042-pull-loop.md`](docs/ADR-0042-pull-loop.md).

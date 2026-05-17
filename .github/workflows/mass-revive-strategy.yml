@@ -3,6 +3,9 @@ name: "[DEPRECATED L-SS7] MASS-REVIVE-STRATEGY — replaced by Sovereign Scarab 
 # DEPRECATED 2026-05-16 by L-SS7 (gHashTag/trios#940).
 # Sovereign Scarab v4 reads ssot.scarab_strategy itself — push-revive no
 # longer needed. Use Queen-Hive MCP (crates/queen-hive-mcp) for control.
+#
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — kept for git history only.
+# See docs/ADR-0042-pull-loop.md.
 
 # AUTONOMOUS REVIVAL of the 18 strategy rows held by the queen-hive scheduler.
 # `ssot.scarab_strategy` lists (service_id, account, format, optimizer, hidden,

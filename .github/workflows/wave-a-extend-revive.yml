@@ -1,4 +1,7 @@
-name: WAVE-A-EXTEND-REVIVE — push champions past 200k cap + revive dead EXPAND cells
+name: "[ADR-0042 disabled] WAVE-A-EXTEND-REVIVE — push champions past 200k cap + revive dead EXPAND cells"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# See docs/ADR-0042-pull-loop.md.
 # After PATCH-1 stabilised STEPS=200000 on champions (BPB=2.571882 plateau)
 # and WAVE-EXPAND seeded 8 LR×Hidden×Format cells (all 8 died 40-58 min after deploy
 # at step=37k-55k, indicating Railway sleep policy / image issue / silent OOM),
@@ -30,8 +33,18 @@ on:
         default: "500000"
 
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet variableUpsert+serviceInstanceDeployV2 is forbidden."
+          echo "::error::Scarabs pull ssot.scarab_strategy themselves. Update strategy via Queen-Hive MCP writer."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   extend-revive:
-    if: ${{ inputs.confirm == 'PHI' }}
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}

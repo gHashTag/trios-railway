@@ -1,4 +1,7 @@
-name: WAVE-A-DEEP — h=384 champion-formats + FP-EXPANSION (fp8/posit/nf4)
+name: "[ADR-0042 disabled] WAVE-A-DEEP — h=384 champion-formats + FP-EXPANSION (fp8/posit/nf4)"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# See docs/ADR-0042-pull-loop.md.
 # SAFE dispatch: targets cells 153-164 (12 new) → services 32-43 (idle scarab slots).
 # DOES NOT touch services 1-31 (which carry 6 active canons + reserve).
 # STEPS configurable (default 200000 = deep run), HIDDEN extracted from canon_name `h{N}`.
@@ -19,7 +22,18 @@ on:
         required: true
         default: "1597"
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet variableUpsert+serviceInstanceDeployV2 is forbidden."
+          echo "::error::Scarabs pull ssot.scarab_strategy themselves. Update strategy via Queen-Hive MCP writer."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   dispatch_deep:
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}

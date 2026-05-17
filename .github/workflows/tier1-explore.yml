@@ -1,4 +1,7 @@
-name: TIER1-EXPLORE — 10 unexplored format families on ACC4-7
+name: "[ADR-0042 disabled] TIER1-EXPLORE — 10 unexplored format families on ACC4-7"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# See docs/ADR-0042-pull-loop.md.
 
 # After 12/65 formats explored (gf256 champion 2.5719, posit16 second 2.6251,
 # fp16 third 2.6691), 53 formats remain unprobed. Operator-prioritised Tier-1
@@ -35,8 +38,18 @@ on:
         default: "200000"
 
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet variableUpsert+serviceInstanceDeployV2 is forbidden."
+          echo "::error::Scarabs pull ssot.scarab_strategy themselves. Update strategy via Queen-Hive MCP writer."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   explore:
-    if: ${{ inputs.confirm == 'PHI' }}
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:

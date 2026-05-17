@@ -1,4 +1,7 @@
-name: WAVE-A-PATCH1 — force STEPS=200000 + TRIOS_STEPS=200000 on cells 153-170
+name: "[ADR-0042 disabled] WAVE-A-PATCH1 — force STEPS=200000 + TRIOS_STEPS=200000 on cells 153-170"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# See docs/ADR-0042-pull-loop.md.
 # Re-deploy cells 153-170 (services 32-43 + services from rescue cells 165-170)
 # with BOTH STEPS and TRIOS_STEPS to defeat the silent-drop bug where finished
 # trainers hit step=81000 default. The Wave-33 alias-resolver lives in main
@@ -18,8 +21,18 @@ on:
         default: "200000"
 
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet variableUpsert+serviceInstanceDeployV2 is forbidden."
+          echo "::error::Scarabs pull ssot.scarab_strategy themselves. Update strategy via Queen-Hive MCP writer."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   patch1:
-    if: ${{ inputs.confirm == 'PHI' }}
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}

@@ -1,14 +1,19 @@
 name: MCP emergency redeploy
 
-# Manually-dispatched recovery workflow for the trios-railway-mcp service
-# (db786a4b-5a79-4643-b915-e9184680cf97) when the deployed instance loses
-# its `RAILWAY_POSTGRES_URL` env or enters a crash-loop. Two GraphQL
-# mutations against backboard.railway.com:
+# ADR-0042 allowlisted: NON-SCARAB operator-tier recovery for the
+# trios-railway-mcp service. Two GraphQL mutations against
+# backboard.railway.com:
 #   1. variableUpsert  RAILWAY_POSTGRES_URL = phd-postgres-ssot DATABASE_URL
 #   2. serviceInstanceRedeploy on the latest deployment of the production env
 #
-# Guarded by a `confirm == 'PHI'` input so an accidental run-workflow click
-# can never re-deploy a Trinity-Queen-Hive service. Anchor: phi^2 + phi^-2 = 3.
+# Double-key break-glass under ADR-0042:
+#   1. Input    `confirm`                  == "PHI"
+#   2. Secret   LEGACY_PUSH_PATH_ENABLE     == "1"
+#
+# This surface is reserved for the MCP / writer / Postgres sidecar
+# (operator-tier infrastructure). Pushing at a scarab service id is
+# still a violation of the invariant — operator carries that obligation.
+# Anchor: phi^2 + phi^-2 = 3. See docs/ADR-0042-pull-loop.md.
 
 on:
   workflow_dispatch:
@@ -54,19 +59,35 @@ jobs:
       MCP_VARIABLE_NAME:    "RAILWAY_POSTGRES_URL"
       RAILWAY_TOKEN:        ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       RAILWAY_TOKEN_AUTH:   team
+      # ADR-0042 lock 2 routed through env so we can boolean-gate inside `run:`.
+      PUSH_PATH_ENABLE:     ${{ secrets.LEGACY_PUSH_PATH_ENABLE }}
 
     steps:
-      - name: Guard — confirm == 'PHI'
+      - name: ADR-0042 double-key guard
         run: |
+          set -euo pipefail
+          ERR=0
           if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
-            echo "::error::confirm input must be exactly 'PHI' (got '${{ inputs.confirm }}'). Aborting per Trinity safety guard."
-            exit 2
+            echo "::error::ADR-0042 lock 1 closed: confirm input must be exactly 'PHI' (got '${{ inputs.confirm }}')."
+            ERR=1
+          fi
+          if [[ "${PUSH_PATH_ENABLE:-}" != "1" ]]; then
+            echo "::error::ADR-0042 lock 2 closed: repo secret LEGACY_PUSH_PATH_ENABLE != '1'."
+            echo "::error::This surface is reserved for NON-SCARAB MCP / writer / Postgres recovery."
+            echo "::error::To break glass: administrator sets LEGACY_PUSH_PATH_ENABLE=1, operator dispatches with confirm=PHI,"
+            echo "::error::administrator unsets the secret immediately after the run."
+            ERR=1
           fi
           if [[ -z "${RAILWAY_TOKEN}" ]]; then
             echo "::error::secret RAILWAY_TOKEN_ACC1 is empty. Set it in repo secrets before running."
-            exit 3
+            ERR=1
           fi
-          echo "Guard cleared. Anchor: phi^2 + phi^-2 = 3."
+          if [[ "${ERR}" -ne 0 ]]; then
+            echo "::error::See docs/ADR-0042-pull-loop.md. Aborting."
+            exit 2
+          fi
+          echo "Both ADR-0042 locks open. Proceeding under operator responsibility."
+          echo "Anchor: phi^2 + phi^-2 = 3."
 
       - name: Probe Railway GraphQL auth
         run: |

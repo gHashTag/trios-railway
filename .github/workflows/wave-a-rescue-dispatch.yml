@@ -1,4 +1,7 @@
-name: WAVE-A-RESCUE — int4 rescue + posit16 multi-seed + gf256-h384 multi-seed
+name: "[ADR-0042 disabled] WAVE-A-RESCUE — int4 rescue + posit16 multi-seed + gf256-h384 multi-seed"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# See docs/ADR-0042-pull-loop.md.
 # SAFE dispatch: cells 165-170 (6 new) → services 26-31 (idle ACC3 lion/prodigy/sf-lite slots).
 # Tracks all 3 fixes: int4 divergence escape via alt-seed, posit16 multi-seed validation, gf256-h384 multi-seed.
 # DOES NOT touch services 1-25 (active baseline) or 32-43 (DEEP+FP from earlier deploy).
@@ -15,7 +18,18 @@ on:
         required: true
         default: "0.0001"
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet variableUpsert+serviceInstanceDeployV2 is forbidden."
+          echo "::error::Scarabs pull ssot.scarab_strategy themselves. Update strategy via Queen-Hive MCP writer."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   dispatch_rescue:
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     env:
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}

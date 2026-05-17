@@ -1,8 +1,23 @@
-name: SLEEP-NCA-HYBRID — temporarily sleep NCA + HYBRID to free JEPA slot
+name: "[ADR-0042 disabled] SLEEP-NCA-HYBRID — temporarily sleep NCA + HYBRID to free JEPA slot"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# Quarantine via ssot.scarab_strategy.status, not via Railway sleepApplication.
+# See docs/ADR-0042-pull-loop.md.
 on:
   workflow_dispatch:
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab serviceInstanceUpdate (sleepApplication) is forbidden."
+          echo "::error::Quarantine scarabs via ssot.scarab_strategy.status, not by Railway-side sleep."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   sleep:
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-latest
     env:
       T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
