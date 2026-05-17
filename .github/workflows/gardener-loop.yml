@@ -1,12 +1,20 @@
 name: GARDENER-LOOP — autonomous IGLA needle hunter (v2.12 · dual rate-collapse + v2.11 lift)
+
+# L-SS7 / ADR-0042: Sovereign Scarab v4 invariant.
+#   Scarabs pull ssot.scarab_strategy themselves; gardener MUST NOT push
+#   variableUpsert / serviceInstanceDeployV2 against the fleet anymore.
+#   The read-only probe stages (STAGE-0/0b/0d/1/1b/1c/2) are still useful
+#   for situational awareness, so the cron keeps running. Every push
+#   stage is gated on `LEGACY_PUSH_PATH_ENABLE == '1'`, which the cron
+#   never sets, so on schedule we always run read-only.
 on:
   schedule:
     - cron: "7,22,37,52 * * * *"  # каждые 15 минут — ночной режим 4x x
   workflow_dispatch:
     inputs:
       mode:
-        description: "review | live"
-        default: "live"
+        description: "review | live (live ignored — push path disabled per ADR-0042)"
+        default: "review"
 permissions:
   contents: write     # для auto-commit улучшений
   issues: write
@@ -16,6 +24,10 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       RAILWAY_POSTGRES_URL: ${{ secrets.RAILWAY_POSTGRES_URL }}
+      # ADR-0042 LEGACY_PUSH_PATH_DISABLED. Push stages below check this
+      # env. Setting to "1" temporarily for an authorized operator-led
+      # repair is allowed; cron must never set it.
+      LEGACY_PUSH_PATH_ENABLE: "0"
       T1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       T2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
       T3: ${{ secrets.RAILWAY_TOKEN_ACC3 }}
@@ -255,7 +267,9 @@ jobs:
           echo "📊 Fleet: $TOTAL total · $DEAD dead/idle"
 
       - name: STAGE-2b — autofix dead services (redeploy if MODE=live)
-        if: steps.fleet.outputs.fleet_dead != '0' && env.MODE == 'live'
+        # ADR-0042: scarab redeploy is forbidden — scarabs self-restart on
+        # ssot.scarab_strategy row change. Gated on LEGACY_PUSH_PATH_ENABLE.
+        if: steps.fleet.outputs.fleet_dead != '0' && env.MODE == 'live' && env.LEGACY_PUSH_PATH_ENABLE == '1'
         run: |
           set +e
           FIXED=0
@@ -285,7 +299,9 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-2b2 — SSOT URL propagation (canonical aliases)
         id: ssot_prop
-        if: env.MODE == 'live'
+        # ADR-0042: variableUpsert on scarab fleet is forbidden. SSOT DSN
+        # is delivered via the scarab image template, not push-control.
+        if: env.MODE == 'live' && env.LEGACY_PUSH_PATH_ENABLE == '1'
         run: |
           set +e
           PROPAGATED=0
@@ -332,7 +348,10 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-2c — env drift autofix (re-upsert if drifted)
         id: drift
-        if: env.MODE == 'live'
+        # ADR-0042: per-cell FORMAT/OPTIMIZER/CANON_NAME live in
+        # ssot.scarab_strategy. variableUpsert here would race the pull
+        # loop. Gated.
+        if: env.MODE == 'live' && env.LEGACY_PUSH_PATH_ENABLE == '1'
         run: |
           set +e
           DRIFTED=0
@@ -374,7 +393,9 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-2e — STEPS=81000 fleet-wide autofix
         id: steps_fix
-        if: env.MODE == 'live'
+        # ADR-0042: STEPS now lives in ssot.scarab_strategy.steps. Push
+        # path retained for emergency operator use only.
+        if: env.MODE == 'live' && env.LEGACY_PUSH_PATH_ENABLE == '1'
         run: |
           set +e
           FIXED=0
@@ -477,7 +498,8 @@ jobs:
       # idempotency cooldown. Reads .trinity/gardener-brain.json revive_workflow.
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-2f — TRINITY BRAIN per-lane revive
-        if: env.MODE == 'live' && steps.brain.outputs.brain_missing != 'true'
+        # ADR-0042: revive dispatches sibling push-workflows. Gated.
+        if: env.MODE == 'live' && steps.brain.outputs.brain_missing != 'true' && env.LEGACY_PUSH_PATH_ENABLE == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STALLED: ${{ steps.brain.outputs.lanes_stalled }}
@@ -585,7 +607,9 @@ jobs:
           echo "📢 Throne #264 low-util alert posted"
 
       - name: STAGE-2d — forced wake-up on writer stall
-        if: steps.stall.outputs.stalled == 'true' && env.MODE == 'live'
+        # ADR-0042: scarab redeploy is forbidden — strategy bump is the
+        # canonical way to wake a stalled cell.
+        if: steps.stall.outputs.stalled == 'true' && env.MODE == 'live' && env.LEGACY_PUSH_PATH_ENABLE == '1'
         run: |
           set +e
           WOKEN=0
@@ -633,7 +657,8 @@ jobs:
       # Idempotency: 1 dispatch per cycle per 60min via gh api filter (created_at).
       # ─────────────────────────────────────────────────────────────
       - name: STAGE-3b — auto-dispatch missing matrix cells (v2.13)
-        if: ${{ env.MODE == 'live' }}
+        # ADR-0042: dispatches push-workflows. Gated.
+        if: ${{ env.MODE == 'live' && env.LEGACY_PUSH_PATH_ENABLE == '1' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TODO_COUNT: ${{ steps.todo.outputs.todo }}

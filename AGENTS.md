@@ -65,3 +65,26 @@ Agent: GENERAL
 - Touch `crates/trios-trainer-igla/*` — different repo entirely.
 - Open browsers (`R7` of `NOW.json`); use `gh` CLI and the Neon connector.
 - Hand-edit generated GraphQL response JSON; treat it as opaque bytes.
+
+## Scarab control invariant (ADR-0042)
+
+Scarabs (matrix-runner / trainer / strategy services) are **forever-live**
+on Railway. They pull `ssot.scarab_strategy WHERE service_id=$me` every N
+seconds and self-restart on row change. Control flows through the
+**Queen-Hive MCP writer** as `INSERT`/`UPDATE` against
+`ssot.scarab_strategy`, NOT through Railway GraphQL.
+
+Forbidden against the scarab fleet from this repo:
+
+- `variableUpsert` (env mutation)
+- `serviceInstanceDeployV2` / `serviceInstanceRedeploy`
+- `serviceInstanceUpdate` (image pin — DR template only)
+- `serviceDelete` (use SSOT `status='quarantine'` instead)
+
+The Rust write surface in `crates/trios-railway-core` and the
+`tri-railway service deploy/redeploy/delete` verbs are gated behind
+`LEGACY_PUSH_PATH_ENABLE=1`. CI / cron must never set that variable.
+Read-only diagnostics (audit watchdog, fleet snapshot, MCP diagnose)
+remain freely available.
+
+Full rationale: [`docs/ADR-0042-pull-loop.md`](docs/ADR-0042-pull-loop.md).

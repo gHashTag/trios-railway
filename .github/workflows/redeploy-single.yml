@@ -1,10 +1,48 @@
-name: REDEPLOY-SINGLE — re-trigger a single Railway service deploy
+name: "[ADR-0042] REDEPLOY-SINGLE — disabled scarab push path"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED.
+#
+# Scarabs (matrix-runner / trainer / strategy services) are forever-live
+# on Railway. They pull ssot.scarab_strategy themselves and self-restart
+# on row change. Railway-side redeploy is NOT how scarab control is
+# exercised — that contract lives in the Queen-Hive MCP writer.
+#
+# This workflow used to push `serviceInstanceDeployV2` against an
+# arbitrary service id. It is now disabled by default and refuses to run
+# under any cron path (there is none) AND under any operator dispatch
+# unless TWO independent break-glass locks are simultaneously open:
+#
+#   1. Input    `confirm`                  == "PHI"
+#   2. Secret   LEGACY_PUSH_PATH_ENABLE     == "1"
+#
+# The secret lock means a workflow_dispatch click alone cannot push;
+# an administrator must first set the repository secret, which is a
+# deliberate, audit-trailed action. Operators MUST unset the secret
+# immediately after the recovery dispatch finishes.
+#
+# Even with both locks open, this surface is reserved for NON-scarab
+# operator infrastructure recovery (MCP, writer, Postgres sidecar).
+# Pushing it at a scarab service id is still a violation of the
+# invariant — there is no programmatic way to enforce that here, so the
+# operator carries that obligation.
 on:
   workflow_dispatch:
     inputs:
       account: { required: true, default: "ACC4" }
       service_id: { required: true }
       environment_id: { required: true }
+      confirm:
+        description: "Type PHI to attempt ADR-0042 break-glass (still gated by repo secret)."
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redeploy-single-adr0042
+  cancel-in-progress: false
+
 jobs:
   redeploy:
     runs-on: ubuntu-latest
@@ -12,11 +50,45 @@ jobs:
       T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
       T5: ${{ secrets.RAILWAY_TOKEN_ACC5 }}
       T6: ${{ secrets.RAILWAY_TOKEN_ACC6 }}
+      # Routing the secret through env rather than referencing
+      # `secrets.*` directly inside an `if:` is the GitHub-Actions
+      # idiom for boolean gating on secret presence (R5).
+      PUSH_PATH_ENABLE: ${{ secrets.LEGACY_PUSH_PATH_ENABLE }}
     steps:
-      - name: redeploy
+      - name: ADR-0042 double-key guard
         run: |
+          set -euo pipefail
+          ERR=0
+          if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
+            echo "::error::ADR-0042 lock 1 closed: confirm input must be exactly 'PHI'."
+            ERR=1
+          fi
+          if [[ "${PUSH_PATH_ENABLE:-}" != "1" ]]; then
+            echo "::error::ADR-0042 lock 2 closed: repo secret LEGACY_PUSH_PATH_ENABLE != '1'."
+            echo "::error::Scarab fleet control lives in ssot.scarab_strategy via the Queen-Hive MCP writer."
+            echo "::error::This workflow performs Railway push (serviceInstanceDeployV2) and is forbidden for scarab services."
+            echo "::error::To break glass for NON-scarab operator recovery:"
+            echo "::error::  1. Administrator sets the repo secret LEGACY_PUSH_PATH_ENABLE=1."
+            echo "::error::  2. Operator dispatches this workflow with confirm=PHI."
+            echo "::error::  3. Administrator unsets the secret immediately after the run."
+            ERR=1
+          fi
+          if [[ "${ERR}" -ne 0 ]]; then
+            echo "::error::See docs/ADR-0042-pull-loop.md. Aborting."
+            exit 1
+          fi
+          echo "Both ADR-0042 locks open. Proceeding under operator responsibility."
+          echo "Anchor: phi^2 + phi^-2 = 3."
+
+      - name: redeploy (break-glass — non-scarab only)
+        run: |
+          set -euo pipefail
           ACC="${{ inputs.account }}"
           N="${ACC#ACC}"; VAR="T$N"; TOK="${!VAR}"
+          if [[ -z "${TOK:-}" ]]; then
+            echo "::error::No RAILWAY_TOKEN_${ACC} secret set."
+            exit 2
+          fi
           SVC="${{ inputs.service_id }}"
           ENVI="${{ inputs.environment_id }}"
           echo "Triggering serviceInstanceDeployV2 for $ACC svc=$SVC env=$ENVI"
@@ -24,4 +96,5 @@ jobs:
             -H "Content-Type: application/json" -H "Project-Access-Token: $TOK" \
             -d "{\"query\":\"mutation { serviceInstanceDeployV2(serviceId:\\\"$SVC\\\", environmentId:\\\"$ENVI\\\") }\"}")
           echo "Response: $R"
-          echo "$R" | jq -e '.data.serviceInstanceDeployV2' > /dev/null && echo "✓ redeploy queued: $(echo $R | jq -r .data.serviceInstanceDeployV2)"
+          echo "$R" | jq -e '.data.serviceInstanceDeployV2' > /dev/null \
+            && echo "✓ redeploy queued: $(echo $R | jq -r .data.serviceInstanceDeployV2)"

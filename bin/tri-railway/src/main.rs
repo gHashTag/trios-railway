@@ -515,7 +515,33 @@ fn parse_var(s: &str) -> Result<(String, String)> {
     Ok((k.to_string(), v.to_string()))
 }
 
+/// ADR-0042 guard: scarab fleet control lives in `ssot.scarab_strategy` via
+/// the Queen-Hive MCP writer, NOT in Railway push mutations. The CLI write
+/// verbs (`Deploy` / `Redeploy` / `Delete`) are retained for non-scarab
+/// operator recovery and refuse to run unless `LEGACY_PUSH_PATH_ENABLE=1`
+/// is set explicitly.
+fn ensure_push_path_allowed(cmd: &ServiceCmd) -> Result<()> {
+    let is_push = matches!(
+        cmd,
+        ServiceCmd::Deploy { .. } | ServiceCmd::Redeploy { .. } | ServiceCmd::Delete { .. }
+    );
+    if !is_push {
+        return Ok(());
+    }
+    let push_enabled = std::env::var("LEGACY_PUSH_PATH_ENABLE").is_ok_and(|v| v == "1");
+    if push_enabled {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "LEGACY_PUSH_PATH_DISABLED (ADR-0042): refusing scarab push mutation. \
+         Scarabs pull ssot.scarab_strategy themselves; use the Queen-Hive MCP writer. \
+         To override for non-scarab operator recovery, set LEGACY_PUSH_PATH_ENABLE=1."
+    );
+}
+
 async fn run_service(cmd: ServiceCmd) -> Result<()> {
+    ensure_push_path_allowed(&cmd)?;
+
     let client =
         Client::from_env().map_err(|e| anyhow::anyhow!("RAILWAY_TOKEN not set or invalid: {e}"))?;
     let token_fp = client.token_fingerprint();
