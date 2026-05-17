@@ -654,12 +654,10 @@ fn build_client() -> Result<Client, McpError> {
     })
 }
 
-/// ADR-0042 guard: scarab fleet is controlled via ssot.scarab_strategy.
+/// ADR-0042 guard: scarab fleet is controlled via `ssot.scarab_strategy`.
 /// MCP push tools refuse unless the operator opts in explicitly.
 fn check_push_path_allowed() -> Result<(), McpError> {
-    let on = std::env::var("LEGACY_PUSH_PATH_ENABLE")
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let on = std::env::var("LEGACY_PUSH_PATH_ENABLE").is_ok_and(|v| v == "1");
     if on {
         Ok(())
     } else {
