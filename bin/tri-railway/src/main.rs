@@ -669,44 +669,43 @@ async fn snapshot_one_account(
         std::env::var(&kind_env).ok()
     };
 
-    let (project_id, project_name, environments, services) = if let (Some(tok), Some(proj)) =
-        (token, project)
-    {
-        std::env::set_var("RAILWAY_TOKEN", &tok);
-        // rationale: per-account token kind override; default "project" matches
-        // Railway's Project-Access-Token header used by most project-scoped tokens.
-        let auth_val = kind.as_deref().unwrap_or("project");
-        std::env::set_var("RAILWAY_TOKEN_AUTH", auth_val);
-        let client = Client::from_env().map_err(|e| anyhow::anyhow!("from_env: {e}"))?;
-        let pid = ProjectId::from(proj);
-        match Q::project_view(&client, &pid).await {
-            Ok(pv) => {
-                let svcs = pv
-                    .services()
-                    .into_iter()
-                    .map(|s| {
-                        serde_json::json!({
-                            "id": s.id,
-                            "name": s.name,
-                            "createdAt": s.created_at,
+    let (project_id, project_name, environments, services) =
+        if let (Some(tok), Some(proj)) = (token, project) {
+            std::env::set_var("RAILWAY_TOKEN", &tok);
+            // rationale: per-account token kind override; default "project" matches
+            // Railway's Project-Access-Token header used by most project-scoped tokens.
+            let auth_val = kind.as_deref().unwrap_or("project");
+            std::env::set_var("RAILWAY_TOKEN_AUTH", auth_val);
+            let client = Client::from_env().map_err(|e| anyhow::anyhow!("from_env: {e}"))?;
+            let pid = ProjectId::from(proj);
+            match Q::project_view(&client, &pid).await {
+                Ok(pv) => {
+                    let svcs = pv
+                        .services()
+                        .into_iter()
+                        .map(|s| {
+                            serde_json::json!({
+                                "id": s.id,
+                                "name": s.name,
+                                "createdAt": s.created_at,
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>();
-                (Some(pv.id.clone()), Some(pv.name.clone()), Vec::new(), svcs)
+                        .collect::<Vec<_>>();
+                    (Some(pv.id.clone()), Some(pv.name.clone()), Vec::new(), svcs)
+                }
+                Err(e) => {
+                    tracing::warn!(alias = %alias, label = %label, error = %e, "skipping account");
+                    (None, None, Vec::new(), Vec::new())
+                }
             }
-            Err(e) => {
-                tracing::warn!(alias = %alias, label = %label, error = %e, "skipping account");
-                (None, None, Vec::new(), Vec::new())
-            }
-        }
-    } else {
-        tracing::warn!(
-            alias = %alias,
-            label = %label,
-            "missing token_env or project_env in process env, recording empty"
-        );
-        (None, None, Vec::new(), Vec::new())
-    };
+        } else {
+            tracing::warn!(
+                alias = %alias,
+                label = %label,
+                "missing token_env or project_env in process env, recording empty"
+            );
+            (None, None, Vec::new(), Vec::new())
+        };
 
     let count = services.len();
     Ok(SnapshotAccount {
