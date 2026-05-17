@@ -522,8 +522,7 @@ mod sql_file_invariants {
             "janitor must transition rows to status='released'"
         );
         assert!(
-            M_0013.contains("FROM   ssot.scarab_dead")
-                || M_0013.contains("FROM ssot.scarab_dead"),
+            M_0013.contains("FROM   ssot.scarab_dead") || M_0013.contains("FROM ssot.scarab_dead"),
             "janitor must source candidates from the ssot.scarab_dead view (L-SS4)"
         );
     }
@@ -590,15 +589,13 @@ mod sql_file_invariants {
         // mere fact this module compiles proves both files exist at
         // their canonical paths and are readable. This test additionally
         // asserts the ordering invariant the janitor depends on.
-        let mut entries: Vec<_> = std::fs::read_dir(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../migrations"
-        ))
-        .expect("migrations/ directory must exist")
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".sql"))
-        .collect();
+        let mut entries: Vec<_> =
+            std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations"))
+                .expect("migrations/ directory must exist")
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.ends_with(".sql"))
+                .collect();
         entries.sort();
         let idx_0012 = entries
             .iter()
