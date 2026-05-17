@@ -212,6 +212,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<DeployRequest>,
     ) -> Result<CallToolResult, McpError> {
+        check_push_path_allowed()?;
         let client = build_client()?;
         let token_fp = client.token_fingerprint();
 
@@ -285,6 +286,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<RedeployRequest>,
     ) -> Result<CallToolResult, McpError> {
+        check_push_path_allowed()?;
         let client = build_client()?;
         let env = req
             .environment
@@ -310,6 +312,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<DeleteRequest>,
     ) -> Result<CallToolResult, McpError> {
+        check_push_path_allowed()?;
         if !req.confirm {
             return Err(McpError::invalid_params(
                 "refusing to delete service without `confirm: true` (R9)".to_string(),
@@ -385,6 +388,7 @@ impl TriosRailwayMcp {
         &self,
         Parameters(req): Parameters<TemplateDeployRequest>,
     ) -> Result<CallToolResult, McpError> {
+        check_push_path_allowed()?;
         if req.seeds.is_empty() {
             return Err(McpError::invalid_params(
                 "seeds[] must contain at least one seed".to_string(),
@@ -650,6 +654,25 @@ fn build_client() -> Result<Client, McpError> {
     })
 }
 
+/// ADR-0042 guard: scarab fleet is controlled via ssot.scarab_strategy.
+/// MCP push tools refuse unless the operator opts in explicitly.
+fn check_push_path_allowed() -> Result<(), McpError> {
+    let on = std::env::var("LEGACY_PUSH_PATH_ENABLE")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    if on {
+        Ok(())
+    } else {
+        Err(McpError::invalid_params(
+            "LEGACY_PUSH_PATH_DISABLED (ADR-0042): scarab push mutations are forbidden. \
+             Use Queen-Hive MCP writer against ssot.scarab_strategy. \
+             To override for non-scarab operator recovery, set LEGACY_PUSH_PATH_ENABLE=1."
+                .to_string(),
+            None,
+        ))
+    }
+}
+
 fn kv(key: &str, value: &str) -> KeyValue {
     KeyValue {
         key: key.to_string(),
@@ -672,4 +695,39 @@ async fn find_service_by_name(
 
 fn internal_err<E: std::fmt::Display>(e: E) -> McpError {
     McpError::internal_error(e.to_string(), None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_push_path_allowed;
+
+    // ADR-0042: scarab push surface is disabled by default. Single test
+    // walks all cases sequentially so it cannot race other env-mutating
+    // tests in the same binary.
+    #[test]
+    fn legacy_push_path_guard_matrix() {
+        let prev = std::env::var("LEGACY_PUSH_PATH_ENABLE").ok();
+
+        // (a) unset → refuses
+        std::env::remove_var("LEGACY_PUSH_PATH_ENABLE");
+        assert!(check_push_path_allowed().is_err(), "unset must refuse");
+
+        // (b) "0" → refuses
+        std::env::set_var("LEGACY_PUSH_PATH_ENABLE", "0");
+        assert!(check_push_path_allowed().is_err(), "'0' must refuse");
+
+        // (c) "true"/"yes" do not count — only the literal "1" opts in.
+        std::env::set_var("LEGACY_PUSH_PATH_ENABLE", "true");
+        assert!(check_push_path_allowed().is_err(), "'true' must refuse");
+
+        // (d) "1" → allowed
+        std::env::set_var("LEGACY_PUSH_PATH_ENABLE", "1");
+        assert!(check_push_path_allowed().is_ok(), "'1' must allow");
+
+        // Restore prior state for any sibling test.
+        match prev {
+            Some(v) => std::env::set_var("LEGACY_PUSH_PATH_ENABLE", v),
+            None => std::env::remove_var("LEGACY_PUSH_PATH_ENABLE"),
+        }
+    }
 }
