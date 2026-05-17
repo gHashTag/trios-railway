@@ -1,12 +1,12 @@
 //! ADR-0042 text-level regression guard for GitHub Actions workflows.
 //!
-//! Scarab fleet push (variableUpsert / serviceInstanceDeployV2 /
-//! serviceInstanceRedeploy / serviceDelete / serviceInstanceUpdate) must
-//! not be reachable from `schedule`, `push`, `pull_request`, `workflow_run`,
-//! or `repository_dispatch` triggers. Every workflow that issues those
-//! GraphQL mutations must either be hard-disabled (legacy scarab fleet
-//! push) or double-key gated (operator-tier recovery: confirm=PHI plus
-//! repo secret LEGACY_PUSH_PATH_ENABLE=1).
+//! Scarab fleet push (`variableUpsert` / `serviceInstanceDeployV2` /
+//! `serviceInstanceRedeploy` / `serviceDelete` / `serviceInstanceUpdate`)
+//! must not be reachable from `schedule`, `push`, `pull_request`,
+//! `workflow_run`, or `repository_dispatch` triggers. Every workflow that
+//! issues those GraphQL mutations must either be hard-disabled (legacy
+//! scarab fleet push) or double-key gated (operator-tier recovery:
+//! `confirm=PHI` plus repo secret `LEGACY_PUSH_PATH_ENABLE=1`).
 //!
 //! These are text-level invariants only — they fire under `cargo test` and
 //! prevent silent drift; they do not replace operator review.
