@@ -1,4 +1,8 @@
-name: KILL-STALE-WAVES — free deployment slots for ARCH lanes
+name: "[ADR-0042 disabled] KILL-STALE-WAVES — free deployment slots for ARCH lanes"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab fleet push is forbidden.
+# Use ssot.scarab_strategy.status to quarantine. Do not delete or sleep scarabs.
+# See docs/ADR-0042-pull-loop.md.
 
 # v2 (2026-05-15): Railway's `deploymentStop` only stops SUCCESS deployments.
 # QUEUED/BUILDING/DEPLOYING/CRASHED states need `deploymentCancel` OR setting
@@ -25,8 +29,18 @@ on:
         default: "true"
 
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — scarab serviceInstanceUpdate/deploymentCancel is forbidden."
+          echo "::error::Quarantine scarabs via ssot.scarab_strategy.status, not by Railway-side disable."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   kill-stale:
-    if: ${{ inputs.confirm == 'PHI' }}
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:

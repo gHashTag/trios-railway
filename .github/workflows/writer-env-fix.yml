@@ -1,6 +1,17 @@
-name: Writer Env Fix (DATABASE_URL on matrix runners)
+name: Writer Env Fix (DATABASE_URL on MCP / writer sidecar)
 
 # Anchor: phi^2 + phi^-2 = 3 · DOI 10.5281/zenodo.19227877
+#
+# ADR-0042 allowlisted: NON-SCARAB MCP / writer / Postgres sidecar recovery
+# ONLY. Scarab fleet env push (variableUpsert on scarab-*/phase1-*/trios-train-*)
+# was removed from this workflow when ADR-0042 was accepted — scarabs read
+# DSN from ssot.scarab_strategy / pulled image template, not Railway-side env.
+#
+# Double-key break-glass under ADR-0042:
+#   1. Input    `confirm`                  == "PHI"
+#   2. Secret   LEGACY_PUSH_PATH_ENABLE     == "1"
+#
+# See docs/ADR-0042-pull-loop.md.
 #
 # Lane: L-WRITER-ENV-FIX (refs gHashTag/trios-railway#126, gHashTag/trios#446).
 #
@@ -50,12 +61,13 @@ concurrency:
 
 jobs:
   fix:
-    if: ${{ inputs.confirm == 'PHI' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       TOKEN_ACC1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
       TOKEN_ACC2: ${{ secrets.RAILWAY_TOKEN_ACC2 }}
+      # ADR-0042 lock 2 routed through env for boolean-gating inside `run:`.
+      PUSH_PATH_ENABLE: ${{ secrets.LEGACY_PUSH_PATH_ENABLE }}
       RAILWAY_TOKEN_AUTH: project  # B-18 fix (2026-05-14): all ACC1..7 tokens are project-scoped (PAT), not team. Verified by token-classify.yml run 25846091578.
       # B-19 fix (2026-05-14): real project IDs verified by token-classify.yml
       # run 25846091578 — PAT/projectToken returned ACC1->IGLA RACE,
@@ -73,6 +85,28 @@ jobs:
       # service list and Postgres-service literal DATABASE_PUBLIC_URL.
 
     steps:
+      - name: ADR-0042 double-key guard
+        run: |
+          set -euo pipefail
+          ERR=0
+          if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
+            echo "::error::ADR-0042 lock 1 closed: confirm input must be exactly 'PHI' (got '${{ inputs.confirm }}')."
+            ERR=1
+          fi
+          if [[ "${PUSH_PATH_ENABLE:-}" != "1" ]]; then
+            echo "::error::ADR-0042 lock 2 closed: repo secret LEGACY_PUSH_PATH_ENABLE != '1'."
+            echo "::error::This surface is reserved for NON-SCARAB MCP / writer / Postgres recovery."
+            echo "::error::To break glass: administrator sets LEGACY_PUSH_PATH_ENABLE=1, operator dispatches with confirm=PHI,"
+            echo "::error::administrator unsets the secret immediately after the run."
+            ERR=1
+          fi
+          if [[ "${ERR}" -ne 0 ]]; then
+            echo "::error::See docs/ADR-0042-pull-loop.md. Aborting."
+            exit 2
+          fi
+          echo "Both ADR-0042 locks open. Proceeding under operator responsibility."
+          echo "Anchor: phi^2 + phi^-2 = 3."
+
       - name: Sanity-check tokens
         run: |
           set -euo pipefail
@@ -116,9 +150,14 @@ jobs:
           # (scarab-*, phase1-*) → writer COMA 1014 min.
           # We now query Railway GraphQL for the live service list at
           # runtime, filtered to known writer prefixes.
-          # Excluded prefixes (regex): ^Postgres$|^trios$|^trios-railway$|^trios-mcp$|^TEST-
-          WRITER_PREFIX_REGEX: '^(scarab-|phase1-|trios-train-|trios-matrix-bot$|trios-postrun-)'
-          EXCLUDE_REGEX: '^(Postgres$|trios$|trios-railway$|trios-mcp$|TEST-)'
+          # ADR-0042: scarab-/phase1-/trios-train- prefixes are SCARABS — never
+          # target them here. The legacy regex (scarab-|phase1-|trios-train-)
+          # was a pre-ADR-0042 footgun. Writer-env-fix is allowlisted for the
+          # MCP / writer sidecar / Postgres-adjacent services only. The MCP
+          # service itself is patched in the dedicated "MCP last" block below,
+          # so this main loop should match nothing in steady state.
+          WRITER_PREFIX_REGEX: '^(trios-writer-|trios-mcp-sidecar-)'
+          EXCLUDE_REGEX: '^(Postgres$|trios$|trios-railway$|trios-mcp$|trios-railway-mcp$|TEST-|scarab-|phase1-|trios-train-)'
         run: |
           set -uo pipefail
 

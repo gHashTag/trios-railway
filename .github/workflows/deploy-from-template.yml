@@ -6,7 +6,13 @@ name: DR Deploy from template
 # (template marketplace) and CLI path are documented in
 # docs/DISASTER_RECOVERY.md.
 #
-# Anchor: phi^2 + phi^-2 = 3.
+# ADR-0042 allowlisted: full-fleet recreation after an account ban. DR
+# exists precisely so that the steady-state pull loop can assume
+# "scarabs are forever". Double-key break-glass gate:
+#   1. Input    `confirm`                  == "PHI"
+#   2. Secret   LEGACY_PUSH_PATH_ENABLE     == "1"
+#
+# Anchor: phi^2 + phi^-2 = 3. See docs/ADR-0042-pull-loop.md.
 
 on:
   workflow_dispatch:
@@ -29,7 +35,6 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ inputs.confirm == 'PHI' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -40,8 +45,32 @@ jobs:
                        || inputs.account_alias == 'acc3' && secrets.RAILWAY_TOKEN_ACC3 || '' }}
       RAILWAY_TOKEN_AUTH: team
       RUST_LOG:        info
+      # ADR-0042 lock 2 routed through env for boolean-gating inside `run:`.
+      PUSH_PATH_ENABLE: ${{ secrets.LEGACY_PUSH_PATH_ENABLE }}
 
     steps:
+      - name: ADR-0042 double-key guard
+        run: |
+          set -euo pipefail
+          ERR=0
+          if [[ "${{ inputs.confirm }}" != "PHI" ]]; then
+            echo "::error::ADR-0042 lock 1 closed: confirm input must be exactly 'PHI' (got '${{ inputs.confirm }}')."
+            ERR=1
+          fi
+          if [[ "${PUSH_PATH_ENABLE:-}" != "1" ]]; then
+            echo "::error::ADR-0042 lock 2 closed: repo secret LEGACY_PUSH_PATH_ENABLE != '1'."
+            echo "::error::DR template deploy is allowlisted ONLY for full-fleet recreation after an account ban."
+            echo "::error::To break glass: administrator sets LEGACY_PUSH_PATH_ENABLE=1, operator dispatches with confirm=PHI,"
+            echo "::error::administrator unsets the secret immediately after the run."
+            ERR=1
+          fi
+          if [[ "${ERR}" -ne 0 ]]; then
+            echo "::error::See docs/ADR-0042-pull-loop.md. Aborting."
+            exit 2
+          fi
+          echo "Both ADR-0042 locks open. Proceeding under operator responsibility."
+          echo "Anchor: phi^2 + phi^-2 = 3."
+
       - name: Checkout
         uses: actions/checkout@v4
 
