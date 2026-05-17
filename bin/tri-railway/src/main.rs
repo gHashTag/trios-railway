@@ -45,6 +45,9 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+// rationale: clap subcommand enum — variants are short-lived stack values built
+// once at CLI parse time, so the size disparity flagged by large_enum_variant
+// does not justify Box-ing every variant.
 #[allow(clippy::large_enum_variant)]
 enum Cmd {
     /// Print the version and exit.
@@ -647,42 +650,30 @@ struct SnapshotDoc<'a> {
     totals: serde_json::Value,
 }
 
-#[allow(clippy::too_many_lines)]
-async fn run_snapshot_fleet(
-    out: PathBuf,
-    accounts: Vec<String>,
-    emails: Vec<String>,
-) -> Result<()> {
-    let email_map: std::collections::HashMap<String, String> =
-        emails.iter().filter_map(|s| parse_alias_kv(s)).collect();
+async fn snapshot_one_account(
+    spec: &str,
+    email_map: &std::collections::HashMap<String, String>,
+) -> Result<SnapshotAccount> {
+    let kv = parse_kv_list(spec);
+    let alias = kv.get("alias").cloned().unwrap_or_else(|| "?".to_string());
+    let label = kv.get("label").cloned().unwrap_or_else(|| "?".to_string());
+    let token_env = kv.get("token_env").cloned().unwrap_or_default();
+    let project_env = kv.get("project_env").cloned().unwrap_or_default();
+    let kind_env = kv.get("kind_env").cloned().unwrap_or_default();
 
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let mut acc_out: Vec<SnapshotAccount> = Vec::new();
-    let mut alias_set = std::collections::HashSet::new();
-    let mut total_services: usize = 0;
+    let token = std::env::var(&token_env).ok();
+    let project = std::env::var(&project_env).ok();
+    let kind = if kind_env.is_empty() {
+        None
+    } else {
+        std::env::var(&kind_env).ok()
+    };
 
-    for spec in &accounts {
-        let kv = parse_kv_list(spec);
-        let alias = kv.get("alias").cloned().unwrap_or_else(|| "?".to_string());
-        let label = kv.get("label").cloned().unwrap_or_else(|| "?".to_string());
-        let token_env = kv.get("token_env").cloned().unwrap_or_default();
-        let project_env = kv.get("project_env").cloned().unwrap_or_default();
-        let kind_env = kv.get("kind_env").cloned().unwrap_or_default();
-
-        let token = std::env::var(&token_env).ok();
-        let project = std::env::var(&project_env).ok();
-        let kind = if kind_env.is_empty() {
-            None
-        } else {
-            std::env::var(&kind_env).ok()
-        };
-
-        let (project_id, project_name, environments, services) = if let (Some(tok), Some(proj)) =
-            (token, project)
-        {
+    let (project_id, project_name, environments, services) =
+        if let (Some(tok), Some(proj)) = (token, project) {
             std::env::set_var("RAILWAY_TOKEN", &tok);
-            // Respect per-account token kind; default to "project" since most
-            // Railway tokens are project-scoped and use Project-Access-Token header.
+            // rationale: per-account token kind override; default "project" matches
+            // Railway's Project-Access-Token header used by most project-scoped tokens.
             let auth_val = kind.as_deref().unwrap_or("project");
             std::env::set_var("RAILWAY_TOKEN_AUTH", auth_val);
             let client = Client::from_env().map_err(|e| anyhow::anyhow!("from_env: {e}"))?;
@@ -716,20 +707,38 @@ async fn run_snapshot_fleet(
             (None, None, Vec::new(), Vec::new())
         };
 
-        alias_set.insert(alias.clone());
-        let count = services.len();
-        total_services += count;
-        acc_out.push(SnapshotAccount {
-            alias: alias.clone(),
-            project_label: label,
-            email: email_map.get(&alias).cloned(),
-            token_secret: token_env,
-            project_id,
-            project_name,
-            environments,
-            services,
-            service_count: count,
-        });
+    let count = services.len();
+    Ok(SnapshotAccount {
+        alias: alias.clone(),
+        project_label: label,
+        email: email_map.get(&alias).cloned(),
+        token_secret: token_env,
+        project_id,
+        project_name,
+        environments,
+        services,
+        service_count: count,
+    })
+}
+
+async fn run_snapshot_fleet(
+    out: PathBuf,
+    accounts: Vec<String>,
+    emails: Vec<String>,
+) -> Result<()> {
+    let email_map: std::collections::HashMap<String, String> =
+        emails.iter().filter_map(|s| parse_alias_kv(s)).collect();
+
+    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut acc_out: Vec<SnapshotAccount> = Vec::new();
+    let mut alias_set = std::collections::HashSet::new();
+    let mut total_services: usize = 0;
+
+    for spec in &accounts {
+        let account = snapshot_one_account(spec, &email_map).await?;
+        alias_set.insert(account.alias.clone());
+        total_services += account.service_count;
+        acc_out.push(account);
     }
 
     let total_projects = acc_out.len();
