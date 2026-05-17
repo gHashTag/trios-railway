@@ -44,7 +44,10 @@ mod tests {
             let body = fs::read_to_string(&path).expect("read workflow");
             out.insert(name, body);
         }
-        assert!(!out.is_empty(), "no workflows found under .github/workflows");
+        assert!(
+            !out.is_empty(),
+            "no workflows found under .github/workflows"
+        );
         out
     }
 
@@ -54,6 +57,8 @@ mod tests {
         "serviceInstanceRedeploy",
         "serviceDelete",
         "serviceInstanceUpdate",
+        "serviceCreate",
+        "templateDeployV2",
     ];
 
     fn has_push_mutation(body: &str) -> bool {
@@ -87,8 +92,7 @@ mod tests {
         let has_marker = body.contains("[ADR-0042 disabled]")
             || body.contains("[DEPRECATED L-SS7]")
             || body.contains("adr0042-disabled");
-        let has_block_job = body.contains("LEGACY_PUSH_PATH_DISABLED")
-            && body.contains("exit 1");
+        let has_block_job = body.contains("LEGACY_PUSH_PATH_DISABLED") && body.contains("exit 1");
         let has_if_false_on_push_job = body.contains("if: false");
         has_marker && (has_block_job || has_if_false_on_push_job)
     }
@@ -189,7 +193,12 @@ mod tests {
             "gardener-loop must keep its push-stage gates (expected >= 5, got {gated_steps})"
         );
 
-        let forbidden_triggers = ["push:", "pull_request:", "workflow_run:", "repository_dispatch:"];
+        let forbidden_triggers = [
+            "push:",
+            "pull_request:",
+            "workflow_run:",
+            "repository_dispatch:",
+        ];
         for (name, body) in &workflows {
             if !has_push_mutation(body) {
                 continue;

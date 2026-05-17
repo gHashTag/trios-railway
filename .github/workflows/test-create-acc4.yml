@@ -1,8 +1,25 @@
-name: TEST-CREATE-ACC4 — try different mutations
+name: "[ADR-0042 disabled] TEST-CREATE-ACC4 — try different mutations"
+
+# ADR-0042 LEGACY_PUSH_PATH_DISABLED — Railway-side scarab creation is
+# forbidden. Scarab provisioning belongs to the Queen-Hive MCP / DR
+# template, not to ad-hoc serviceCreate experimentation.
+# See docs/ADR-0042-pull-loop.md.
 on:
   workflow_dispatch:
 jobs:
+  adr0042-disabled:
+    name: "ADR-0042 — scarab push path disabled"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse scarab fleet push
+        run: |
+          echo "::error::ADR-0042 LEGACY_PUSH_PATH_DISABLED — serviceCreate / templateDeployV2 on the scarab fleet is forbidden."
+          echo "::error::Use the DR template (deploy-from-template.yml under double-key) for full-fleet recreation,"
+          echo "::error::and the Queen-Hive MCP writer for strategy changes."
+          echo "::error::See docs/ADR-0042-pull-loop.md. Anchor: phi^2 + phi^-2 = 3."
+          exit 1
   test:
+    if: false  # ADR-0042: scarab push path disabled — kept for git history only
     runs-on: ubuntu-24.04
     env:
       T4: ${{ secrets.RAILWAY_TOKEN_ACC4 }}
