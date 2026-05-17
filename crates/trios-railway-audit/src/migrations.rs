@@ -412,3 +412,205 @@ mod tests {
         );
     }
 }
+
+/// Text-level invariants for the standalone SQL migration files in
+/// `migrations/` that are applied by the `apply-migrations.yml` workflow
+/// rather than the `tri railway audit migrate` Rust path. These checks
+/// guard the L-SS4/L-SS5 (Sovereign Scarab v4) heartbeat-TTL janitor
+/// contract — see gHashTag/trios-railway#212 and the G-SS-10 contract.
+#[cfg(test)]
+mod sql_file_invariants {
+    /// `migrations/0013_heartbeat_janitor.sql` carries the advisory-lock
+    /// janitor for L-SS5. The file is applied verbatim by the
+    /// `apply-migrations.yml` workflow, so any drift away from the
+    /// G-SS-10 contract must trip CI before it reaches prod.
+    const M_0013: &str = include_str!("../../../migrations/0013_heartbeat_janitor.sql");
+
+    /// L-SS4 dependency: scarab_dead view defines what "stale" means.
+    const M_0012: &str = include_str!("../../../migrations/0012_scarab_dead_heartbeat.sql");
+
+    /// The janitor function must exist with the documented signature.
+    #[test]
+    fn janitor_function_exists() {
+        assert!(
+            M_0013.contains("FUNCTION ssot.janitor_release_stale()"),
+            "0013 must define ssot.janitor_release_stale()"
+        );
+        assert!(
+            M_0013.contains("RETURNS integer"),
+            "janitor must return an integer (released row count)"
+        );
+    }
+
+    /// G-SS-10: the advisory-lock key is exactly `0xDEADBEEF`.
+    /// Both the literal hex and its decimal value (3735928559) appear
+    /// in the file (literal in the function, decimal in the COMMENT) —
+    /// guard against silent drift of either.
+    #[test]
+    fn advisory_lock_key_is_deadbeef() {
+        assert!(
+            M_0013.contains("x'DEADBEEF'::bigint"),
+            "advisory lock key must be the hex literal 0xDEADBEEF"
+        );
+        assert!(
+            M_0013.contains("3735928559"),
+            "decimal form 3735928559 must appear (documents the key in COMMENT)"
+        );
+        // 0xDEADBEEF must equal 3735928559 — guard against typos.
+        assert_eq!(0xDEAD_BEEF_u64, 3_735_928_559_u64);
+    }
+
+    /// G-SS-10: acquisition MUST be non-blocking. `pg_advisory_lock`
+    /// (blocking) would let the janitor pile up sessions if a previous
+    /// run hung. Only `pg_try_advisory_lock` is allowed.
+    #[test]
+    fn advisory_lock_acquisition_is_non_blocking() {
+        assert!(
+            M_0013.contains("pg_try_advisory_lock"),
+            "must use pg_try_advisory_lock (non-blocking)"
+        );
+        // No blocking variant — search for the exact call (not the `_try_` one).
+        // A simple substring check would false-match `pg_try_advisory_lock`, so
+        // strip those first.
+        let stripped = M_0013.replace("pg_try_advisory_lock", "");
+        assert!(
+            !stripped.contains("pg_advisory_lock("),
+            "blocking pg_advisory_lock() must not be used for janitor acquisition"
+        );
+    }
+
+    /// G-SS-10: the lock must be released in BOTH the normal path and
+    /// the EXCEPTION handler, otherwise a failing janitor leaks a
+    /// session-level lock and bricks the next run.
+    #[test]
+    fn advisory_lock_released_in_both_paths() {
+        // EXCEPTION block exists and releases the lock.
+        assert!(
+            M_0013.contains("EXCEPTION WHEN OTHERS THEN"),
+            "must have EXCEPTION WHEN OTHERS handler"
+        );
+        // Two unlock calls: one normal, one in the exception handler.
+        let unlock_count = M_0013.matches("pg_advisory_unlock").count();
+        assert!(
+            unlock_count >= 2,
+            "must call pg_advisory_unlock at least twice (normal + exception), got {unlock_count}"
+        );
+    }
+
+    /// L-SS5 spec: stale = heartbeat older than 600 seconds.
+    /// The threshold lives in this one place — drift would silently
+    /// change janitor semantics.
+    #[test]
+    fn stale_threshold_is_600_seconds() {
+        assert!(
+            M_0013.contains("age_seconds > 600"),
+            "janitor must release scarabs with age_seconds > 600 (L-SS5)"
+        );
+    }
+
+    /// The janitor mutates `ssot.scarab_strategy` by setting
+    /// `status = 'released'` on dead rows. Anything else would silently
+    /// change SSOT semantics.
+    #[test]
+    fn janitor_transitions_to_released_status() {
+        assert!(
+            M_0013.contains("UPDATE ssot.scarab_strategy"),
+            "janitor must update ssot.scarab_strategy"
+        );
+        assert!(
+            M_0013.contains("status = 'released'"),
+            "janitor must transition rows to status='released'"
+        );
+        assert!(
+            M_0013.contains("FROM   ssot.scarab_dead")
+                || M_0013.contains("FROM ssot.scarab_dead"),
+            "janitor must source candidates from the ssot.scarab_dead view (L-SS4)"
+        );
+    }
+
+    /// SECURITY DEFINER + a COMMENT linking back to issue #212 are part
+    /// of the L-SS5 acceptance checklist.
+    #[test]
+    fn function_is_security_definer_with_issue_comment() {
+        assert!(
+            M_0013.contains("SECURITY DEFINER"),
+            "janitor function must be SECURITY DEFINER"
+        );
+        assert!(
+            M_0013.contains("#212"),
+            "function COMMENT must reference issue #212"
+        );
+    }
+
+    /// `ssot.janitor_status` view exposes lock-holder PID for fleet
+    /// observability (L-SS5 acceptance criterion).
+    #[test]
+    fn janitor_status_view_exposes_lock_holder() {
+        assert!(
+            M_0013.contains("VIEW ssot.janitor_status"),
+            "0013 must define ssot.janitor_status view"
+        );
+        assert!(
+            M_0013.contains("lock_holder_pid"),
+            "view must surface lock_holder_pid"
+        );
+        assert!(
+            M_0013.contains("released_last_hour"),
+            "view must surface released_last_hour"
+        );
+        assert!(
+            M_0013.contains("pending_release_count"),
+            "view must surface pending_release_count"
+        );
+    }
+
+    /// L-SS4 (#211, closes #193): scarab_dead must be heartbeat-based,
+    /// not bpb_samples push-path based. 0013 layers on top of this; if
+    /// 0012 ever regresses to bpb_samples, the janitor will release the
+    /// wrong rows.
+    #[test]
+    fn scarab_dead_is_heartbeat_based() {
+        assert!(
+            M_0012.contains("ssot.scarab_heartbeat"),
+            "0012 scarab_dead must derive staleness from scarab_heartbeat"
+        );
+        assert!(
+            M_0012.contains("INTERVAL '120 seconds'"),
+            "scarab_dead threshold is 120s (per L-SS4 spec)"
+        );
+    }
+
+    /// Migrations are applied in lexical order (see
+    /// `.github/workflows/apply-migrations.yml`). 0013 depends on the
+    /// `ssot.scarab_dead` view created by 0012; if anyone renames or
+    /// reorders the files this guard trips.
+    #[test]
+    fn migration_files_are_ordered_lexically() {
+        // include_str!() at module top resolves at compile time, so the
+        // mere fact this module compiles proves both files exist at
+        // their canonical paths and are readable. This test additionally
+        // asserts the ordering invariant the janitor depends on.
+        let mut entries: Vec<_> = std::fs::read_dir(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations"
+        ))
+        .expect("migrations/ directory must exist")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".sql"))
+        .collect();
+        entries.sort();
+        let idx_0012 = entries
+            .iter()
+            .position(|n| n.starts_with("0012_"))
+            .expect("0012 migration must exist");
+        let idx_0013 = entries
+            .iter()
+            .position(|n| n.starts_with("0013_"))
+            .expect("0013 migration must exist");
+        assert!(
+            idx_0012 < idx_0013,
+            "0012 (scarab_dead) must apply before 0013 (janitor)"
+        );
+    }
+}
