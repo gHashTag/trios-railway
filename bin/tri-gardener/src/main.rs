@@ -21,6 +21,7 @@ mod canon;
 mod decide;
 mod leaderboard;
 mod ledger;
+mod seed_hunter;
 mod smoke;
 #[allow(clippy::module_name_repetitions)]
 #[path = "loop_.rs"]
