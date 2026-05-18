@@ -134,3 +134,152 @@ fn scarab_refuses_to_start_without_identity_or_db_url() {
         "scarab must accept DATABASE_URL with legacy fallbacks documented"
     );
 }
+
+// -- deployment / image-publish wiring guards --
+//
+// PR #221 fixed `scarab.rs` to ADR-0042 pull-loop semantics, but the
+// merged code never reached Railway because there was no CI path that
+// built and published the scarab image. These guards lock the deploy
+// wiring so that the binary that ships to `ghcr.io/<owner>/sovereign-scarab`
+// is the ADR-0042 `scarab` bin and not a legacy queue worker.
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+fn scarab_dockerfile() -> String {
+    let path = repo_root()
+        .join("crates")
+        .join("trios-igla-race")
+        .join("Dockerfile.scarab");
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+fn sovereign_scarab_workflow() -> String {
+    let path = repo_root()
+        .join(".github")
+        .join("workflows")
+        .join("sovereign-scarab.yml");
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+/// `Dockerfile.scarab` must build the ADR-0042 scarab bin from this
+/// crate. If someone re-points it at a legacy bin (`seed_agent`,
+/// `seed_gardener`, `reset_queue`, `debug_queue`, `trios-igla-race`),
+/// the deployed image will run the wrong process and heartbeat stays
+/// at zero — the exact failure mode this PR is fixing.
+#[test]
+fn scarab_dockerfile_builds_adr0042_scarab_bin() {
+    let dockerfile = scarab_dockerfile();
+    assert!(
+        dockerfile.contains("--bin scarab")
+            && dockerfile.contains("-p trios-igla-race"),
+        "Dockerfile.scarab must build `--bin scarab -p trios-igla-race`; \
+         got:\n{dockerfile}"
+    );
+    for legacy in [
+        "--bin seed_agent",
+        "--bin seed_gardener",
+        "--bin reset_queue",
+        "--bin debug_queue",
+        "--bin trios-igla-race",
+        "--bin smoke_agent",
+        "--bin trios-railway-mcp",
+        "--bin seed-agent",
+    ] {
+        assert!(
+            !dockerfile.contains(legacy),
+            "Dockerfile.scarab must NOT build legacy bin `{legacy}` — \
+             ADR-0042 deploy must run src/bin/scarab.rs"
+        );
+    }
+}
+
+/// The runtime stage of `Dockerfile.scarab` must `CMD`/`ENTRYPOINT` the
+/// scarab binary at the conventional `/usr/local/bin/scarab` path.
+/// A regression that points the runtime at a legacy bin (or no CMD at
+/// all, leaving the base image default) would mean the container starts
+/// but never reaches the ADR-0042 pull-loop.
+#[test]
+fn scarab_dockerfile_runtime_invokes_scarab_binary() {
+    let dockerfile = scarab_dockerfile();
+    let has_cmd = dockerfile.contains("CMD [\"/usr/local/bin/scarab\"]")
+        || dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/scarab\"]");
+    assert!(
+        has_cmd,
+        "Dockerfile.scarab runtime stage must CMD or ENTRYPOINT \
+         /usr/local/bin/scarab; got:\n{dockerfile}"
+    );
+    for legacy in [
+        "/usr/local/bin/seed-agent",
+        "/usr/local/bin/seed_agent",
+        "/usr/local/bin/seed_gardener",
+        "/usr/local/bin/trios-igla-race",
+        "/usr/local/bin/trios-railway-mcp",
+        "/usr/local/bin/tri-railway",
+    ] {
+        assert!(
+            !dockerfile.contains(legacy),
+            "Dockerfile.scarab runtime must NOT launch legacy bin `{legacy}` — \
+             scarab fleet must run ADR-0042 pull-loop"
+        );
+    }
+}
+
+/// A publishing workflow must exist so the ADR-0042 scarab image gets
+/// to GHCR for Railway to pull. Without this workflow the code-level
+/// fix in scarab.rs never reaches the deployed process — which is the
+/// exact failure this PR remediates.
+#[test]
+fn sovereign_scarab_publish_workflow_exists_and_targets_scarab_dockerfile() {
+    let wf = sovereign_scarab_workflow();
+    assert!(
+        wf.contains("crates/trios-igla-race/Dockerfile.scarab"),
+        "sovereign-scarab.yml must build crates/trios-igla-race/Dockerfile.scarab; \
+         got:\n{wf}"
+    );
+    assert!(
+        wf.contains("sovereign-scarab"),
+        "sovereign-scarab.yml must publish under the `sovereign-scarab` image name \
+         (matches docs/DEPLOY_SOVEREIGN_SCARAB_V4.md and railway.toml.template)"
+    );
+    // The workflow must NOT reuse the MCP Dockerfile or other legacy
+    // Dockerfiles — that would publish the wrong runtime.
+    for wrong in [
+        "Dockerfile.mcp",
+        "Dockerfile.real-seed-agent",
+    ] {
+        assert!(
+            !wf.contains(wrong),
+            "sovereign-scarab.yml must not publish from `{wrong}`"
+        );
+    }
+}
+
+/// ADR-0042 forbids any Railway-mutation control path from this repo
+/// against scarab services. The publish workflow must never reach for
+/// the Railway GraphQL push API (`variableUpsert`, `serviceInstance*`,
+/// `serviceDelete`) and must never reference a Railway PAT.
+#[test]
+fn sovereign_scarab_workflow_is_read_only_against_railway() {
+    let wf = sovereign_scarab_workflow();
+    for forbidden in [
+        "variableUpsert",
+        "serviceInstanceDeployV2",
+        "serviceInstanceRedeploy",
+        "serviceInstanceUpdate",
+        "serviceDelete",
+        "RAILWAY_TOKEN",
+        "RAILWAY_API_TOKEN",
+    ] {
+        assert!(
+            !wf.contains(forbidden),
+            "sovereign-scarab.yml must not touch Railway control plane (`{forbidden}` \
+             found) — scarab fleet control is SSOT, not Railway API (ADR-0042)"
+        );
+    }
+}
