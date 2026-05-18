@@ -229,6 +229,61 @@ fn scarab_dockerfile_runtime_invokes_scarab_binary() {
     }
 }
 
+/// `Dockerfile.scarab`'s builder stage must use a Rust base image new
+/// enough to compile the workspace's transitive deps. tokio-postgres
+/// 0.7.17 (and its transitive crates) declare `edition = "2024"`, which
+/// the compiler only accepts on Rust >= 1.85. A regression to an older
+/// image (e.g. `rust:1.82-slim`, the original toolchain) breaks the
+/// sovereign-scarab GHCR publish workflow and the ADR-0042 runtime
+/// never reaches Railway. We scan for the version embedded in `FROM
+/// rust:<MAJOR>.<MINOR>...` and reject anything below 1.85.
+#[test]
+fn scarab_dockerfile_rust_toolchain_supports_edition2024() {
+    const MIN_MAJOR: u32 = 1;
+    const MIN_MINOR: u32 = 85;
+    let dockerfile = scarab_dockerfile();
+    let mut found_rust_from = false;
+    for line in dockerfile.lines() {
+        let trimmed = line.trim_start();
+        // Match lines like `FROM rust:1.90-slim-bookworm AS builder`.
+        let Some(rest) = trimmed.strip_prefix("FROM ") else {
+            continue;
+        };
+        let Some(tag) = rest.split_whitespace().next() else {
+            continue;
+        };
+        let Some(version_part) = tag.strip_prefix("rust:") else {
+            continue;
+        };
+        found_rust_from = true;
+        // `1.90-slim-bookworm` -> `1.90` -> (1, 90).
+        let version_token = version_part
+            .split(['-', '@'])
+            .next()
+            .unwrap_or(version_part);
+        let mut parts = version_token.split('.');
+        let major: u32 = parts
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("cannot parse rust major from `{tag}`"));
+        let minor: u32 = parts
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| panic!("cannot parse rust minor from `{tag}`"));
+        assert!(
+            (major, minor) >= (MIN_MAJOR, MIN_MINOR),
+            "Dockerfile.scarab builder uses `rust:{version_token}` but workspace \
+             transitive deps (tokio-postgres 0.7.17) require Rust >= \
+             {MIN_MAJOR}.{MIN_MINOR} for edition2024 support. Bump the FROM line."
+        );
+    }
+    assert!(
+        found_rust_from,
+        "Dockerfile.scarab must declare a `FROM rust:<version>` builder stage; \
+         got:\n{dockerfile}"
+    );
+}
+
 /// A publishing workflow must exist so the ADR-0042 scarab image gets
 /// to GHCR for Railway to pull. Without this workflow the code-level
 /// fix in scarab.rs never reaches the deployed process — which is the
