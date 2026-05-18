@@ -22,8 +22,7 @@ fn scarab_src() -> String {
     let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "src", "bin", "scarab.rs"]
         .iter()
         .collect();
-    fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
 /// Every Railway control-plane symbol forbidden by ADR-0042 must be
@@ -89,7 +88,9 @@ fn heartbeat_upsert_targets_ssot_scarab_heartbeat() {
 fn scarab_emits_startup_heartbeat_before_loop() {
     let src = scarab_src();
     // Find the first occurrence of the upsert helper call.
-    let first_hb = src.find("upsert_heartbeat(").expect("upsert_heartbeat call");
+    let first_hb = src
+        .find("upsert_heartbeat(")
+        .expect("upsert_heartbeat call");
     // Find the boundary of the main poll loop. The current implementation
     // marks it with `loop {` directly after `let stats =`.
     let loop_pos = src[first_hb..]

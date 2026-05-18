@@ -384,7 +384,8 @@ async fn main() -> Result<()> {
     let service_id = resolve_service_id()?;
     let db_url = resolve_db_url()?;
     let label = env::var("SCARAB_ACCOUNT").unwrap_or_else(|_| "scarab".into());
-    let trainer_bin = env::var("TRAINER_BIN").unwrap_or_else(|_| "/usr/local/bin/trios-train".into());
+    let trainer_bin =
+        env::var("TRAINER_BIN").unwrap_or_else(|_| "/usr/local/bin/trios-train".into());
     let poll_interval = parse_duration_ms("POLL_INTERVAL_MS", 10_000);
     let heartbeat_interval = parse_duration_s("HEARTBEAT_INTERVAL_S", 30);
 
@@ -503,19 +504,12 @@ async fn main() -> Result<()> {
         // for fresh boots where last_heartbeat was clamped to now()).
         if last_heartbeat.elapsed() >= heartbeat_interval {
             let applied_gen = applied.as_ref().map_or(0, |s| s.generation);
-            let pid = trainer.as_ref().and_then(|c| {
-                c.id().map(|p| i32::try_from(p).unwrap_or(i32::MAX))
-            });
+            let pid = trainer
+                .as_ref()
+                .and_then(|c| c.id().map(|p| i32::try_from(p).unwrap_or(i32::MAX)));
             let snap = *stats.lock().await;
-            if let Err(e) = upsert_heartbeat(
-                &client,
-                &service_id,
-                applied_gen,
-                pid,
-                started_at,
-                snap,
-            )
-            .await
+            if let Err(e) =
+                upsert_heartbeat(&client, &service_id, applied_gen, pid, started_at, snap).await
             {
                 eprintln!("[scarab] heartbeat upsert failed: {e:#}");
             } else {
