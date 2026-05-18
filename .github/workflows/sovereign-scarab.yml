@@ -31,6 +31,12 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Belt-and-braces: also declare the package-write permission at the job
+    # level so a future workflow refactor that drops the top-level block (or
+    # narrows it to a different job) doesn't silently break GHCR push.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -73,5 +79,14 @@ jobs:
             ${{ steps.tags.outputs.image }}:v4
             ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.sha }}
             ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.ref }}
+          # Disable buildx provenance/sbom attestations. They write extra
+          # OCI artifacts under the same package and trip the GHCR
+          # `permission_denied: write_package` check on the first push of a
+          # brand-new package, even when `packages: write` is set — because
+          # the package is auto-created from the main manifest push but the
+          # attestation push races the ACL link. Disabling them lets the
+          # first push succeed; subsequent pushes succeed regardless.
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

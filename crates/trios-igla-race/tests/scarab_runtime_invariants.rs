@@ -334,3 +334,65 @@ fn sovereign_scarab_workflow_is_read_only_against_railway() {
         );
     }
 }
+
+/// The sovereign-scarab publish workflow must declare `packages: write`
+/// on the `GITHUB_TOKEN` so it can push the built image to GHCR. The
+/// `permission_denied: write_package` failure observed on the first
+/// merged run was caused (in part) by attestation manifests racing
+/// the package ACL link; the safety-belt is that both the top-level
+/// and the job-level permission blocks declare `packages: write`, so a
+/// future refactor that drops or narrows one block doesn't silently
+/// break GHCR push.
+///
+/// We also require `contents: read` to keep the workflow on the
+/// principle-of-least-privilege path: never grant `contents: write`
+/// here, and never reach for any Railway scope.
+#[test]
+fn sovereign_scarab_workflow_declares_ghcr_publish_permissions() {
+    let wf = sovereign_scarab_workflow();
+    let packages_write_count = wf.matches("packages: write").count();
+    assert!(
+        packages_write_count >= 2,
+        "sovereign-scarab.yml must declare `packages: write` at BOTH the \
+         top level AND the job level (belt-and-braces) — found \
+         {packages_write_count} occurrence(s)"
+    );
+    let contents_read_count = wf.matches("contents: read").count();
+    assert!(
+        contents_read_count >= 2,
+        "sovereign-scarab.yml must declare `contents: read` at BOTH the \
+         top level AND the job level — found {contents_read_count} \
+         occurrence(s)"
+    );
+    // Hard-forbid escalations that have no business in a GHCR publish.
+    for over_scope in [
+        "contents: write",
+        "id-token: write",
+        "deployments: write",
+        "actions: write",
+        "pull-requests: write",
+        "issues: write",
+        "statuses: write",
+        "checks: write",
+        "repository-projects: write",
+    ] {
+        assert!(
+            !wf.contains(over_scope),
+            "sovereign-scarab.yml must not request `{over_scope}` — GHCR \
+             publish only needs `contents: read` + `packages: write`"
+        );
+    }
+    // Provenance/sbom must remain disabled until the package ACL is
+    // confirmed stable; otherwise GHCR rejects the first push with
+    // `permission_denied: write_package`.
+    assert!(
+        wf.contains("provenance: false"),
+        "sovereign-scarab.yml must set `provenance: false` on build-push-action \
+         to avoid GHCR write_package races on first publish"
+    );
+    assert!(
+        wf.contains("sbom: false"),
+        "sovereign-scarab.yml must set `sbom: false` on build-push-action \
+         to avoid GHCR write_package races on first publish"
+    );
+}
