@@ -120,6 +120,7 @@ impl Strategy {
     ///   * `status == 'active'` and we have no prior generation,
     ///   * `status == 'active'` and the generation advanced,
     ///   * `status == 'active'` and any config field changed under us.
+    ///
     /// Returns `false` for `'paused'` / `'stop'` — the trainer should be
     /// stopped (handled by the caller) and the scarab keeps heart-beating.
     #[must_use]
