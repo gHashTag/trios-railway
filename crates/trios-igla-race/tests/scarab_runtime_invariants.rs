@@ -176,8 +176,7 @@ fn sovereign_scarab_workflow() -> String {
 fn scarab_dockerfile_builds_adr0042_scarab_bin() {
     let dockerfile = scarab_dockerfile();
     assert!(
-        dockerfile.contains("--bin scarab")
-            && dockerfile.contains("-p trios-igla-race"),
+        dockerfile.contains("--bin scarab") && dockerfile.contains("-p trios-igla-race"),
         "Dockerfile.scarab must build `--bin scarab -p trios-igla-race`; \
          got:\n{dockerfile}"
     );
@@ -249,10 +248,7 @@ fn sovereign_scarab_publish_workflow_exists_and_targets_scarab_dockerfile() {
     );
     // The workflow must NOT reuse the MCP Dockerfile or other legacy
     // Dockerfiles — that would publish the wrong runtime.
-    for wrong in [
-        "Dockerfile.mcp",
-        "Dockerfile.real-seed-agent",
-    ] {
+    for wrong in ["Dockerfile.mcp", "Dockerfile.real-seed-agent"] {
         assert!(
             !wf.contains(wrong),
             "sovereign-scarab.yml must not publish from `{wrong}`"
