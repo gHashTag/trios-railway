@@ -38,6 +38,17 @@ RUN cargo build --release --bin scarab -p trios-igla-race
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
+# OCI labels: GitHub uses `org.opencontainers.image.source` to link the
+# published GHCR package to the source repository on first push. Without
+# this label, pushing a brand-new package under a user namespace from a
+# workflow with `permissions: packages: write` still fails with
+# `permission_denied: write_package`, because GHCR cannot infer which
+# repo owns the package and therefore which `GITHUB_TOKEN` is allowed to
+# write to it (docs.github.com/.../working-with-the-container-registry).
+LABEL org.opencontainers.image.source="https://github.com/gHashTag/trios-railway" \
+      org.opencontainers.image.url="https://github.com/gHashTag/trios-railway" \
+      org.opencontainers.image.description="Sovereign Scarab — ADR-0042 SSOT pull-loop runtime"
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
