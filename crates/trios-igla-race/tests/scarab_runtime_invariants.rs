@@ -467,8 +467,7 @@ fn trainer_publish_workflow_anchors_ghcr_trainer_pat_credential() {
         .join(".github")
         .join("workflows")
         .join("docker-trainer.yml");
-    let wf = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let wf = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     assert!(
         wf.contains("secrets.GHCR_TRAINER_PAT"),
         "docker-trainer.yml is the canonical anchor for the GHCR_TRAINER_PAT \
