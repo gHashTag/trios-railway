@@ -58,7 +58,7 @@ jobs:
       #
       # The PAT is read from the repo secret `GHCR_TRAINER_PAT` and never
       # echoed. This change is GHCR-side only: scarab control plane stays
-      # SSOT (ADR-0042) — no Railway API/PAT/variableUpsert/redeploy.
+      # SSOT (ADR-0042) — no Railway control-plane mutations are added.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
