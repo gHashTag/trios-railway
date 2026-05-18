@@ -47,11 +47,23 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # GHCR login uses the same cross-repo PAT the trainer image publish
+      # uses (`docker-trainer.yml`), because the default `GITHUB_TOKEN` was
+      # observed to fail brand-new package creation under the user namespace
+      # `ghashtag/*` with `permission_denied: write_package` even after
+      # `packages: write` was granted and the OCI `image.source` label was
+      # added (PRs #223-#225). The trainer publish has been pushing to
+      # `ghcr.io/ghashtag/trios-trainer-igla` successfully on the same
+      # cadence using this PAT, so reusing it is the minimal unblock.
+      #
+      # The PAT is read from the repo secret `GHCR_TRAINER_PAT` and never
+      # echoed. This change is GHCR-side only: scarab control plane stays
+      # SSOT (ADR-0042) — no Railway API/PAT/variableUpsert/redeploy.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: gHashTag
+          password: ${{ secrets.GHCR_TRAINER_PAT }}
 
       - name: Compute tags
         id: tags
