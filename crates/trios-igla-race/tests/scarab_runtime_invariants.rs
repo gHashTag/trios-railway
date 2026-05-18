@@ -258,7 +258,7 @@ fn scarab_dockerfile_rust_toolchain_supports_edition2024() {
         found_rust_from = true;
         // `1.90-slim-bookworm` -> `1.90` -> (1, 90).
         let version_token = version_part
-            .split(|c: char| c == '-' || c == '@')
+            .split(['-', '@'])
             .next()
             .unwrap_or(version_part);
         let mut parts = version_token.split('.');
