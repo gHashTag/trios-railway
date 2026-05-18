@@ -229,6 +229,38 @@ fn scarab_dockerfile_runtime_invokes_scarab_binary() {
     }
 }
 
+/// `Dockerfile.scarab` must declare `org.opencontainers.image.source`
+/// pointing at the source repository. GitHub uses this OCI label to
+/// auto-link the GHCR package to the repo on first push; without it,
+/// a brand-new package under a user namespace gets rejected with
+/// `permission_denied: write_package` even when the workflow declares
+/// `permissions: packages: write` — because GHCR cannot infer which
+/// repo owns the package and therefore which `GITHUB_TOKEN` is allowed
+/// to write to it.
+///
+/// Ref: docs.github.com/en/packages/working-with-a-github-packages-registry/
+///      working-with-the-container-registry — "Adding a description to
+///      your container".
+#[test]
+fn scarab_dockerfile_declares_oci_image_source_label() {
+    let dockerfile = scarab_dockerfile();
+    assert!(
+        dockerfile.contains("org.opencontainers.image.source"),
+        "Dockerfile.scarab must declare `org.opencontainers.image.source` so \
+         GitHub auto-links the GHCR package to the source repository on first \
+         push; without it GHCR rejects with `permission_denied: write_package` \
+         on a brand-new user-namespace package."
+    );
+    // Catch typos / wrong-repo regressions: the label must point at this
+    // repo, not a fork or unrelated mirror. Match either the literal
+    // canonical URL or the case-insensitive ghashtag/trios-railway pair.
+    let lower = dockerfile.to_lowercase();
+    assert!(
+        lower.contains("github.com/ghashtag/trios-railway"),
+        "Dockerfile.scarab `image.source` must point at github.com/gHashTag/trios-railway"
+    );
+}
+
 /// `Dockerfile.scarab`'s builder stage must use a Rust base image new
 /// enough to compile the workspace's transitive deps. tokio-postgres
 /// 0.7.17 (and its transitive crates) declare `edition = "2024"`, which
