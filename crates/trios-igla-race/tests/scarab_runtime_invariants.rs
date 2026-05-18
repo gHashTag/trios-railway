@@ -428,3 +428,55 @@ fn sovereign_scarab_workflow_declares_ghcr_publish_permissions() {
          to avoid GHCR write_package races on first publish"
     );
 }
+
+/// The sovereign-scarab GHCR login step must use the same cross-repo PAT
+/// that the proven-good trainer publish workflow uses
+/// (`GHCR_TRAINER_PAT`). The default `GITHUB_TOKEN` was observed to fail
+/// brand-new package creation under the `ghashtag/*` user namespace with
+/// `permission_denied: write_package` even after `packages: write` was
+/// granted and the OCI `image.source` label was added (workflow run
+/// 26019864970, PRs #223-#225). The trainer publish has been pushing to
+/// `ghcr.io/ghashtag/trios-trainer-igla` successfully against this PAT,
+/// so reusing it is the minimal unblock. This guard locks the credential
+/// in so a future refactor doesn't silently regress back to the failing
+/// `GITHUB_TOKEN` path.
+#[test]
+fn sovereign_scarab_workflow_uses_ghcr_trainer_pat_for_login() {
+    let wf = sovereign_scarab_workflow();
+    assert!(
+        wf.contains("secrets.GHCR_TRAINER_PAT"),
+        "sovereign-scarab.yml must use `secrets.GHCR_TRAINER_PAT` for the \
+         GHCR login password (same proven-good credential as docker-trainer.yml)"
+    );
+    assert!(
+        !wf.contains("secrets.GITHUB_TOKEN"),
+        "sovereign-scarab.yml must NOT use `secrets.GITHUB_TOKEN` for GHCR \
+         login — that path was observed to fail with `permission_denied: \
+         write_package` on the user-namespace package"
+    );
+}
+
+/// The trainer publish workflow (`docker-trainer.yml`) must continue to
+/// own the `GHCR_TRAINER_PAT` credential under the same login shape we
+/// are reusing in `sovereign-scarab.yml`. If someone rotates the trainer
+/// publish off this PAT, the scarab publish should be re-audited at the
+/// same time. This is a text-level cross-workflow consistency guard.
+#[test]
+fn trainer_publish_workflow_anchors_ghcr_trainer_pat_credential() {
+    let path = repo_root()
+        .join(".github")
+        .join("workflows")
+        .join("docker-trainer.yml");
+    let wf = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    assert!(
+        wf.contains("secrets.GHCR_TRAINER_PAT"),
+        "docker-trainer.yml is the canonical anchor for the GHCR_TRAINER_PAT \
+         credential reused by sovereign-scarab.yml; if you removed the PAT \
+         here, re-audit sovereign-scarab.yml at the same time"
+    );
+    assert!(
+        wf.contains("registry: ghcr.io"),
+        "docker-trainer.yml must keep targeting ghcr.io for the credential \
+         anchor to remain valid"
+    );
+}
