@@ -12,6 +12,41 @@ name: sovereign-scarab
 # Railway API — ADR-0042).
 #
 # Anchor: phi^2 + phi^-2 = 3.
+#
+# ═══════════════════════════════════════════════════════════════════════
+#  REGRESSION GUARD — GHCR authentication (user-namespace PAT)
+# ═══════════════════════════════════════════════════════════════════════
+#  This workflow intentionally uses secrets.GHCR_TRAINER_PAT instead of
+#  secrets.GITHUB_TOKEN for GHCR login.  gHashTag is a *user* namespace
+#  (not an organisation), and the auto-generated GITHUB_TOKEN cannot
+#  write packages to a user-namespace GHCR — it always fails with
+#  `permission_denied: write_package` even when `permissions: packages:
+#  write` is set at both workflow and job level.  The cross-repo PAT
+#  stored in GHCR_TRAINER_PAT already has package-write scope and is
+#  the established working pattern (see docker-trainer.yml in this
+#  same repo, which has been pushing successfully for months).  Do NOT
+#  "simplify" this back to GITHUB_TOKEN — that change was already
+#  attempted and will break the push.
+# ═══════════════════════════════════════════════════════════════════════
+#  REGRESSION GUARD — Railway isolation
+# ═══════════════════════════════════════════════════════════════════════
+#  This workflow MUST NOT call the Railway API, GraphQL mutations, or
+#  use any Railway PAT / project token.  Specifically it must NOT
+#  invoke: variableUpsert, serviceInstanceRedeploy, serviceDelete,
+#  environmentDelete, or any other Railway mutation.  Railway
+#  deployment is intentionally an operator action (ADR-0042 SSOT
+#  pull-loop architecture).  Adding Railway steps here breaks the
+#  architectural boundary.
+# ═══════════════════════════════════════════════════════════════════════
+#  REGRESSION GUARD — Dockerfile.scarab build target
+# ═══════════════════════════════════════════════════════════════════════
+#  The build must always use file: crates/trios-igla-race/Dockerfile.scarab
+#  and must always produce the `--bin scarab` release binary from the
+#  `trios-igla-race` crate.  Do NOT switch to a generic Dockerfile,
+#  do NOT change the binary target, and do NOT remove the OCI
+#  `org.opencontainers.image.source` label from Dockerfile.scarab —
+#  that label is required for GHCR package linking.
+# ═══════════════════════════════════════════════════════════════════════
 
 on:
   push:
@@ -47,11 +82,17 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # See REGRESSION GUARD header: GHCR_TRAINER_PAT is required because
+      # gHashTag is a user namespace — GITHUB_TOKEN cannot write packages
+      # there.  The username must be the PAT owner (gHashTag), not
+      # github.actor, so the login credential matches the namespace.
+      # Established working pattern: docker-trainer.yml uses the same
+      # secret/username pair and has been pushing successfully.
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: gHashTag
+          password: ${{ secrets.GHCR_TRAINER_PAT }}
 
       - name: Compute tags
         id: tags
@@ -69,6 +110,9 @@ jobs:
             echo "ref=${REF_SAFE}"
           } >> "$GITHUB_OUTPUT"
 
+      # See REGRESSION GUARD header: must use Dockerfile.scarab from
+      # crates/trios-igla-race/ and build --bin scarab.  Do not change
+      # the file path or the build target.
       - uses: docker/build-push-action@v6
         with:
           context: .
