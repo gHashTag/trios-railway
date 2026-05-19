@@ -58,6 +58,8 @@ on:
       - "Cargo.lock"
       - ".github/workflows/sovereign-scarab.yml"
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"  # Daily at 06:00 UTC — ensures fresh image even without code changes
 
 permissions:
   contents: read
