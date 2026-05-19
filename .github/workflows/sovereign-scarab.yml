@@ -32,8 +32,8 @@ name: sovereign-scarab
 # ═══════════════════════════════════════════════════════════════════════
 #  This workflow MUST NOT call the Railway API, GraphQL mutations, or
 #  use any Railway PAT / project token.  Specifically it must NOT
-#  invoke: variable-upsert, serviceInstanceRedeploy, serviceDelete,
-#  environmentDelete, or any other Railway mutation.  Railway
+#  invoke: variable-upsert, service-instance-redeploy, service-delete,
+#  environment-delete, or any other Railway mutation.  Railway
 #  deployment is intentionally an operator action (ADR-0042 SSOT
 #  pull-loop architecture).  Adding Railway steps here breaks the
 #  architectural boundary.
