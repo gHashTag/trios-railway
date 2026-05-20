@@ -23,8 +23,9 @@ WORKDIR /build
 COPY . .
 
 # Build with GPU features enabled
-# Note: We build only trios-train binary with gpu feature
-RUN cargo build --release --features gpu --bin trios-train
+# Note: trios-train uses gpu feature; scarab and entrypoint are CPU-only
+RUN cargo build --release --features gpu --bin trios-train && \
+    cargo build --release --bin scarab --bin entrypoint
 
 # Runtime stage with CUDA 12.1 runtime
 FROM nvidia/cuda:12.1-runtime-ubuntu22.04 AS runtime
@@ -37,8 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /work
 
-# Copy built binary from builder stage
+# Copy built binaries from builder stage
 COPY --from=builder /build/target/release/trios-train /usr/local/bin/
+COPY --from=builder /build/target/release/scarab     /usr/local/bin/
+COPY --from=builder /build/target/release/entrypoint /usr/local/bin/
 
 # Copy training data (tiny_shakespeare)
 COPY --from=builder /build/data /work/data
@@ -57,5 +60,5 @@ ENV TRIOS_CTX=6
 # Verify GPU is available
 RUN nvidia-smi
 
-# Entry point
-ENTRYPOINT ["trios-train"]
+# Entry point — entrypoint dispatches to trios-train or scarab via TRIOS_TRAINER_BIN
+ENTRYPOINT ["entrypoint"]
