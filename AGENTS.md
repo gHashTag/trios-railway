@@ -37,7 +37,7 @@ It does **NOT**:
 - **INV-6 H4 invariants**: hidden sizes must be `{128, 1408, 2432, 3712}` (e·128 for e∈{1,11,19,29}); ctx lengths must be `{2, 12, 20, 30}`. See `trios-igla-race` SR-00 ring.
 - **H4_TTT**: projection-defect test-time training (1/240 weights) integrated into `train_loop.rs`. Enabled via `TRIOS_H4_TTT=1`. `ttt_lr = lr · φ⁻³`.
 - **Scarab queue worker**: `scarab.rs` consumes `experiment_queue` (priority DESC) then `strategy_queue`. Entrypoint dispatches `TRIOS_TRAINER_BIN=scarab` → no CLI args, env-driven.
-- **Muon lm_head bugfix** (ngram_train.rs): embed/ctx/head must use AdamW, not Muon. Only hidden-layer matrices (proj, attn) get Muon orthogonalization.
+- **Muon matrix-shape fix** (tjepa_train.rs): `MuonOptimizer::with_matrix_shape(rows, cols)` instead of auto-inferred `sqrt(n)×sqrt(n)`. Embeddings use `(vocab, dim)`, projection `(hidden, dim)`, head `(vocab, hidden)`. Prevents orthogonalization on wrong geometry.
 - **Railway deploy**: CLI tokens expired; use GraphQL API (`variableUpsert` + `serviceInstanceRedeploy`). All scarab services now have `TRIOS_TRAINER_BIN=scarab`.
 
 ## Ring layout
@@ -98,7 +98,8 @@ All five are in `experiment_queue` (priority 90–100).
 | # | Formula | Value | NN Hyperparameter |
 |---|---------|-------|-------------------|
 | SG #4 | `127φ/120 + 30/19` | 4.1809 | Muon NS iteration count |
-| SG #5 | `φ·11/20 + 20/30` | 0.9565 | Adaptive LR mixing coeff |
+| SG #5 | `φ·11/20 + 20/30` | **1.556** | True m_H/m_W ratio |
+| SG #5′ | `cos θ_W = m_W/m_Z` | **0.8819** | Conservative LR floor (< base_lr, prevents divergence) |
 | SG #6 | `π/(40φ²)` | 0.03 | NCA objective weight |
 | SG #7 | `6π⁵` | 1836.12 | GF16 floor period |
 | — | `sin²θ₁₃ = φ^(3/2)/(30π)` | 0.0218 | Alternative beta1 anchor |
@@ -114,9 +115,11 @@ All five are in `experiment_queue` (priority 90–100).
 - `"tjepa_train"` — multi-objective `L = NTP + 0.618·JEPA + 0.03·NCA`
 
 **T-JEPA experiments:**
-- `tjepa-sg-higgs-s42` — lr=0.000125 ✅ done (BPB 7.0172)
-- `tjepa-sg-wboson-s43` — lr=0.000804 🔄 running
-- `tjepa-sg-neutrino-s44` — lr=0.000125, muon 🔄 running
+- `tjepa-sg-higgs-s42` — lr=0.000125 ✅ done (BPB 7.0172 on synthetic)
+- `tjepa-sg-wboson-s43` — lr=0.000804 ✅ done (BPB ~7.0 on synthetic)
+- `tjepa-sg-neutrino-s44` — lr=0.000125, muon ✅ done
+- **FineWeb binary support** — `.bin` files (u16 tokens, vocab=1024) loaded via `load_fineweb_bin()`. `--vocab=1024 --train-data=*.bin --val-data=*.bin`.
+- **Val size cap** — `max_val_len = steps * (SEQ+1) * 2` prevents 62M-token eval slowdown.
 
 ### 4. Hive Automaton v1.1
 
@@ -141,7 +144,7 @@ All five are in `experiment_queue` (priority 90–100).
 | 2 | Download FineWeb corpus for meaningful BPB < 1.50 training | In progress |
 | 3 | Run T-JEPA on FineWeb with SG-derived LRs | After step 2 |
 | 4 | Add SG-class formulas to CI as `sg_formulas_check` | Next sprint |
-| 5 | Adaptive LR schedule from SG #5 `m_H/m_W` | Future |
+| 5 | Adaptive LR schedule from SG #5′ `cos θ_W` (≈0.8819) | ✅ Implemented |
 
 ## Do not
 
