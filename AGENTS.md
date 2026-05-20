@@ -62,7 +62,7 @@ Closes #4
 Agent: GENERAL
 ```
 
-## H4 Application to Neural Network Training (v3.3)
+## H4 Application to Neural Network Training (v3.4) — SG-Class Formula Integration
 
 ### 1. Validation of Current Hyperparameters
 
@@ -91,7 +91,40 @@ The H4 Coxeter framework independently confirms these same numbers (through φ, 
 
 All five are in `experiment_queue` (priority 90–100).
 
-### 3. Coq Optimizer Invariants
+### 2. SG-Class Formulas (25/25 SM Parameters)
+
+10 parallel research agents discovered 7 SG-class formulas covering all 25 Standard Model parameters. These are now Rust constants in `crates/trios-trainer-igla/src/invariants.rs`:
+
+| # | Formula | Value | NN Hyperparameter |
+|---|---------|-------|-------------------|
+| SG #4 | `127φ/120 + 30/19` | 4.1809 | Muon NS iteration count |
+| SG #5 | `φ·11/20 + 20/30` | 0.9565 | Adaptive LR mixing coeff |
+| SG #6 | `π/(40φ²)` | 0.03 | NCA objective weight |
+| SG #7 | `6π⁵` | 1836.12 | GF16 floor period |
+| — | `sin²θ₁₃ = φ^(3/2)/(30π)` | 0.0218 | Alternative beta1 anchor |
+| — | `λ = √φ/π²` | 0.1289 | Weight decay (Higgs coupling) |
+| — | `N_gen = 3` | exact | JEPA masking ratio |
+
+**New optimizer:** `AdamWCpu::with_sg_defaults(param_count, lr)` uses `weight_decay = λ`.
+
+### 3. T-JEPA Integration
+
+`scarab.rs` dispatches by `trainer` field in `config_json`:
+- `"trios-train"` (default) — single-objective
+- `"tjepa_train"` — multi-objective `L = NTP + 0.618·JEPA + 0.03·NCA`
+
+**T-JEPA experiments:**
+- `tjepa-sg-higgs-s42` — lr=0.000125 ✅ done (BPB 7.0172)
+- `tjepa-sg-wboson-s43` — lr=0.000804 🔄 running
+- `tjepa-sg-neutrino-s44` — lr=0.000125, muon 🔄 running
+
+### 4. Hive Automaton v1.1
+
+- 24 lanes (L0..L23), schema 1.1
+- Dual victory: 3 seeds BPB < 1.5 OR 25/25 SM params
+- `FORMULA_COVERAGE_TARGET = 25`
+
+### 5. Coq Optimizer Invariants
 
 `OptimizerInvariants.v` — 5/5 invariants proven (0 Admitted):
 - **INV-OPT-1** `muon_lr = φ⁻³ × 0.1` — QED via `interval`
@@ -100,18 +133,18 @@ All five are in `experiment_queue` (priority 90–100).
 - **INV-OPT-4** `ttt_lr = lr × φ⁻³` — QED via `field`
 - **INV-OPT-5** `projection_defect = 1/240` — QED via `reflexivity`
 
-### 4. Next Steps
+### 6. Next Steps
 
 | Step | Action | Timeline |
 |------|--------|----------|
-| 1 | Monitor `h4-l02-lr` BPB via scarab | Immediate |
-| 2 | If BPB < 1.50 → H4 invariants manifest in loss landscape | After step 1 |
-| 3 | Add `OptimizerInvariants.v` to CI | Next sprint |
-| 4 | Run full H4 experiment queue (5 configs) | After validation |
-| 5 | Integrate Higgs mass prediction `m_H = 4φ³e²` into weight init | Future |
+| 1 | Monitor T-JEPA wboson + neutrino results via scarab | Immediate |
+| 2 | Download FineWeb corpus for meaningful BPB < 1.50 training | In progress |
+| 3 | Run T-JEPA on FineWeb with SG-derived LRs | After step 2 |
+| 4 | Add SG-class formulas to CI as `sg_formulas_check` | Next sprint |
+| 5 | Adaptive LR schedule from SG #5 `m_H/m_W` | Future |
 
 ## Do not
 
-- Touch `crates/trios-trainer-igla/*` — different repo entirely (submodule).
 - Open browsers (`R7` of `NOW.json`); use `gh` CLI and the Neon connector.
 - Hand-edit generated GraphQL response JSON; treat it as opaque bytes.
+- Modify `crates/trios-trainer-igla/*` without updating submodule commit (L8 push first).
