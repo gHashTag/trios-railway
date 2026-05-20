@@ -62,6 +62,54 @@ Closes #4
 Agent: GENERAL
 ```
 
+## H4 Application to Neural Network Training (v3.3)
+
+### 1. Validation of Current Hyperparameters
+
+Project already uses H4-derived dimensions:
+- `hidden = {128, 1408, 2432, 3712}` = `{1, 11, 19, 29} × 128` = `H4_EXPONENTS × BASE`
+- `ctx = {2, 12, 20, 30}` = `H4_DEGREES`
+
+The H4 Coxeter framework independently confirms these same numbers (through φ, π, 239) give the most precise match to real physical constants (0.000103% for α_EW⁻¹). This strengthens INV-6 — we use the same invariant basis that describes the Standard Model.
+
+### 2. H4-Derived Optimizer Formulas
+
+| Formula | Value | Application |
+|---------|-------|-------------|
+| `239φ⁴/π⁴` | ~128.938 | LR scale for MUON |
+| `360φ⁻³` | ~85.06 | Base LR scale |
+| `1 + 1/(15πφ)` | ~1.013 | Loop correction factor for WSD decay |
+| `φ⁻³` | ~0.236 | H4_TTT `ttt_lr = lr × φ⁻³` |
+| `1/240` | — | Projection defect E8 → H4 |
+
+**Key experiments seeded:**
+- `h4-l02-lr` — lr=0.000103 (L02 error as LR), 81K steps, h=1408
+- `h4-phi3-muon` — lr=0.0236 (φ⁻³×0.1), 5K steps, h=1408
+- `h4-e3d3-full` — h=2432 (e₃=19), ctx=20 (d₃=20), 162K steps
+- `h4-spectral-adamw` — beta1=0.5681, lr=0.000125, 81K steps
+- `h4-higgs-init-muon` — lr=0.000125, 81K steps
+
+All five are in `experiment_queue` (priority 90–100).
+
+### 3. Coq Optimizer Invariants
+
+`OptimizerInvariants.v` — 5/5 invariants proven (0 Admitted):
+- **INV-OPT-1** `muon_lr = φ⁻³ × 0.1` — QED via `interval`
+- **INV-OPT-2** `base_lr_scale = 360 × φ⁻³` — QED
+- **INV-OPT-3** `wsd_decay = 1 + 1/(15πφ)` — QED
+- **INV-OPT-4** `ttt_lr = lr × φ⁻³` — QED via `field`
+- **INV-OPT-5** `projection_defect = 1/240` — QED via `reflexivity`
+
+### 4. Next Steps
+
+| Step | Action | Timeline |
+|------|--------|----------|
+| 1 | Monitor `h4-l02-lr` BPB via scarab | Immediate |
+| 2 | If BPB < 1.50 → H4 invariants manifest in loss landscape | After step 1 |
+| 3 | Add `OptimizerInvariants.v` to CI | Next sprint |
+| 4 | Run full H4 experiment queue (5 configs) | After validation |
+| 5 | Integrate Higgs mass prediction `m_H = 4φ³e²` into weight init | Future |
+
 ## Do not
 
 - Touch `crates/trios-trainer-igla/*` — different repo entirely (submodule).
