@@ -1,10 +1,10 @@
 {
-  "ts": "2026-05-21T18:52:55Z",
+  "ts": "2026-05-21T19:42:01Z",
   "ghcr_conclusion": "success",
   "fleet_total": 160,
-  "bpb_last_ts": "2026-05-21 18:51:45.855402+00",
-  "bpb_count_1h": 34,
-  "bpb_age_min": 1,
+  "bpb_last_ts": "2026-05-21 18:55:22.790141+00",
+  "bpb_count_1h": 11,
+  "bpb_age_min": 47,
   "gate_count": 0,
   "anchor": "phi^2 + phi^-2 = 3"
 }
