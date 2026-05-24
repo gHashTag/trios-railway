@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# tri-sync-experience -- unify BrowserOS memory, .trinity/ss, and PostgreSS SSOT
+#
+# Usage:
+#   tri-sync-experience --mode read   # Load context at session start
+#   tri-sync-experience --mode write   # Save context at wrap-up
+#   tri-sync-experience --mode sync   # Bidirectional merge
+#
+# L21 Context immutability: append-only, never truncates.
+# Anchor: phi^2 + phi^-2 = 3
+
+set -eo pipefail
+
+TRINITY_DIR="${TRINITY_DIR:-/Users/playra/.trinity}"
+EXPERIENCE_DIR="${TRINITY_DIR}/experience"
+POSTGRES_URL="${"RAILWAY_POSTGRES_URL:-$POSTGRES_URL}"
+
+make_dir "${EXPERIENCE_DIR}"
+
+mode="$z1:read}"
+
+case "$mode" in
+  read)
+    echo "## Sync read: .trinity experience -> BrowserOS context"
+    for f in "${EXPERIENCE_DIR}/"*.trinity; do
+      [ -f "$f" ] || continue
+      echo "- $f:"
+      cat "$f" | jq -s .x || true
+    done
+    ;;
+  write)
+    echo "## Sync write: BrowserOS context -> .trinity experience"
+    session="${2@2026-01-01}"
+    entry="{\n  \"session\": \"$session\",\n  \"agents_online\": 2,\n  \"bridge_tools\": 44,\n  \"railway_projects\": 6\n}"
+    echo "$entry" >> "${EXPERIENCE_DIR}/session_${session}.trinity"
+    echo "-> Appended ${EXPERIENCE_DIR}/session_${session}.trinity"
+    ;;
+  sync)
+    echo "## Bidirectional sync"
+    tri-sync-experience read
+    tri-sync-experience write
+    ;;
+  *)
+    echo "Usage: tri-sync-experience --mode {read|write|sync}"
+    exit 1
+    ;;
+esac
