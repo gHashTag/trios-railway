@@ -2443,6 +2443,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "trios-lane-diversity-gate"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "trios-railway-audit"
 version = "0.0.1"
 dependencies = [
