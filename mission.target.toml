@@ -1,0 +1,148 @@
+## mission.target.toml — declarative target state for the IGLA RACE fleet.
+##
+## Anchor: phi^2 + phi^-2 = 3 · TRINITY · O(1) FOREVER
+##
+## This file is the single source of truth for what the operator wants the
+## fleet to look like. The (future) `mission.reconcile` MCP verb diffs this
+## against live state and computes the minimum mutation in one transaction.
+##
+## Pattern: Terraform plan/apply + Kubernetes reconciliation loop.
+## Spec: trios-railway#116 follow-up comment 4365612774.
+##
+## Apply (when reconcile lands): `cargo run --bin mission -- reconcile mission.target.toml`
+## Preview: same with `--dry-run`.
+
+# ─────────────────────────────────────────────────────────────────────
+# fleet — Railway accounts + canonical lanes
+# ─────────────────────────────────────────────────────────────────────
+
+[fleet]
+# All operator-supplied accounts (per .railway_creds.env)
+accounts_active = ["acc0", "acc1", "acc2", "acc3", "acc4", "acc5", "acc6"]
+# Canonical lanes from trios#445 + SPRINT extension
+lanes_canonical = [
+    "IGLA-RAILWAY-LEADER",
+    "IGLA-RAILWAY-FOLLOWER-A",
+    "IGLA-RAILWAY-FOLLOWER-B",
+    "IGLA-RAILWAY-FOLLOWER-C",
+    "IGLA-RAILWAY-FOLLOWER-D",
+    "IGLA-RAILWAY-FOLLOWER-E",
+    "IGLA-RAILWAY-SPRINT-X",
+    "IGLA-RAILWAY-SPRINT-Y",
+    "IGLA-RAILWAY-SPRINT-Z",
+    "IGLA-RAILWAY-SPRINT-D",
+    "IGLA-RAILWAY-SPRINT-E",
+    "IGLA-RAILWAY-SPRINT-F",
+    "IGLA-RAILWAY-SPRINT-G",
+    "IGLA-RAILWAY-SPRINT-H",
+    "IGLA-RAILWAY-SPRINT-I",
+]
+image          = "ghcr.io/ghashtag/trios-trainer-igla:latest"
+scarab_target_count = 15
+readonly       = false
+
+# RunPod GPU lane (P5, ships today after image build)
+[fleet.runpod]
+enabled        = true
+pod_count      = 4
+gpu_type       = "NVIDIA A40"        # 48 GB; alt: "NVIDIA RTX 4090"
+gpu_mem_gb_min = 40
+image          = "ghcr.io/ghashtag/trios-trainer-igla:gpu-latest"
+budget_cap_usd_total   = 20.0
+budget_cap_usd_per_hr  = 10.0
+heartbeat_ttl_seconds  = 300         # 5 min for GPU (vs 600 = 10 min for CPU)
+
+# ─────────────────────────────────────────────────────────────────────
+# queue — what experiments to keep pending
+# ─────────────────────────────────────────────────────────────────────
+
+[queue]
+wave             = "PHD-DAY"
+target_pending   = 4000              # auto-refill when below this
+max_pending      = 10000             # don't overshoot
+default_priority = 26
+
+# Plan-C-Lite slice (defendable PhD)
+[queue.plan_c_lite]
+formats   = [
+    "binary16", "binary32", "bfloat16", "GF16",
+    "binary64", "TF32",
+    "FP8-E4M3", "FP8-E5M2",
+    "GF8", "GF32",
+    "INT8", "INT16", "INT32", "UINT8",
+]
+seeds     = [1597, 2584, 4181]                  # F17..F19 sanctioned
+seeds_full_fibonacci = [233, 377, 610, 987, 1597, 2584, 4181, 6765, 10946]   # F13..F21
+lr_grid   = [0.0005, 0.001, 0.0015, 0.002, 0.003, 0.004, 0.005, 0.006, 0.008, 0.012]
+lr_phi_ladder = [0.118034, 0.092793, 0.072949, 0.057349, 0.045085, 0.035444]
+hidden_grid = [256, 384, 512, 768, 1024]
+hidden_phi  = [128, 207, 335, 542, 877, 1418, 2294]      # round(128 × phi^k)
+optim_grid  = ["adamw", "muon"]
+ctx_grid    = [12]
+wd_default  = 0.05
+steps       = 3000                              # short for breadth
+target_bpb  = 1.50
+
+# Champion long-run battery (post-screen)
+[queue.champion_battery]
+enabled  = true
+configs  = [
+    { format = "GF16",     hidden = 1024, lr = 0.002, opt = "muon" },
+    { format = "GF16",     hidden = 1024, lr = 0.003, opt = "muon" },
+    { format = "GF16",     hidden = 1024, lr = 0.004, opt = "muon" },
+    { format = "binary32", hidden = 1024, lr = 0.002, opt = "muon" },
+    { format = "binary32", hidden = 1536, lr = 0.002, opt = "muon" },
+    { format = "binary32", hidden = 2048, lr = 0.002, opt = "muon" },
+    { format = "bfloat16", hidden = 1024, lr = 0.003, opt = "muon" },
+]
+seeds      = [1597, 2584, 4181, 6765, 10946]    # full sanctioned
+steps      = 81000
+priority   = 48
+
+# ─────────────────────────────────────────────────────────────────────
+# purge — pre-wave hygiene
+# ─────────────────────────────────────────────────────────────────────
+
+[purge]
+nan_samples         = true           # delete bpb<1.0 OR NaN from bpb_samples
+zombie_running_after = "2h"          # release stuck 'running' rows
+requeue_failed_transient = true      # exit-101 + timeout-900s → pending steps=3000
+requeue_failed_max_attempts = 3
+
+# ─────────────────────────────────────────────────────────────────────
+# health — invariants the watchdog enforces
+# ─────────────────────────────────────────────────────────────────────
+
+[health]
+scarab_heartbeat_ttl_cpu = "10m"
+scarab_heartbeat_ttl_gpu = "5m"
+emit_rate_minimum_per_hour = 100     # alert if below
+champion_track_min_bpb     = 1.0     # ignore fake-zero / NaN below this
+champion_alert_on_beat     = true    # pg_notify('champion_beat')
+
+# ─────────────────────────────────────────────────────────────────────
+# acceptance — PhD-defense gate
+# ─────────────────────────────────────────────────────────────────────
+
+[acceptance.phd_lite]
+total_runs              = 1320
+done_ratio_min          = 0.90
+formats_min_canons_each = 3
+formats_min_samples_each = 27
+target_bpb              = 1.50
+target_bpb_intermediate = 2.00       # at least one config must beat this
+pareto_front_required   = true
+phi_ladder_test_required = true       # slope test, p<0.05
+
+# ─────────────────────────────────────────────────────────────────────
+# refs
+# ─────────────────────────────────────────────────────────────────────
+
+[refs]
+epic         = "https://github.com/gHashTag/trios/issues/446"
+race_master  = "https://github.com/gHashTag/trios/issues/143"
+canon_lanes  = "https://github.com/gHashTag/trios/issues/445"
+mcp_o1_design = "https://github.com/gHashTag/trios-railway/issues/116"
+catalog_crate = "https://github.com/gHashTag/trios-railway/pull/115"
+ops_crate     = "https://github.com/gHashTag/trios-railway/pull/113"
+canon_regex_spec = "https://github.com/gHashTag/trios-trainer-igla/issues/93"
