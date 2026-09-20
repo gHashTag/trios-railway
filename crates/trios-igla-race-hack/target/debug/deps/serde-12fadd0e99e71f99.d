@@ -1,0 +1,14 @@
+/Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/deps/serde-12fadd0e99e71f99.d: /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/build/serde-2b2aafd815112231/out/private.rs
+
+/Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/deps/libserde-12fadd0e99e71f99.rlib: /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/build/serde-2b2aafd815112231/out/private.rs
+
+/Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/deps/libserde-12fadd0e99e71f99.rmeta: /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/build/serde-2b2aafd815112231/out/private.rs
+
+/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/build/serde-2b2aafd815112231/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/playra/trios-railway/crates/trios-igla-race-hack/target/debug/build/serde-2b2aafd815112231/out

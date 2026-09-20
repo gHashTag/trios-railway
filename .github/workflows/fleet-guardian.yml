@@ -1,0 +1,31 @@
+name: Fleet Guardian — Gardener + Doctor
+
+on:
+  schedule:
+    # Every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  guardian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install psycopg2
+        run: pip install psycopg2-binary
+
+      - name: Run Fleet Guardian
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RAILWAY_TOKEN_ACC1: ${{ secrets.RAILWAY_TOKEN_ACC1 }}
+          TRIOS_RAILWAY_PROJECT: ${{ secrets.TRIOS_RAILWAY_PROJECT }}
+          TRIOS_RAILWAY_ENV: ${{ secrets.TRIOS_RAILWAY_ENV }}
+        run: python3 scripts/fleet_guardian.py

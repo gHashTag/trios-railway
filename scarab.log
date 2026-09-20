@@ -1,0 +1,444 @@
+[scarab] register failed (check scarabs schema): db error
+[scarab][local-playras-MacBook-Pro.local] ready | id=00000000-0000-0000-0000-000000000000 host=unknown svc=scarab
+[scarab][local-playras-MacBook-Pro.local] fungible pool — no account filter
+[local-playras-MacBook-Pro.local] EXP-START id=70 name=default-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=63.5s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=70 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=75 name=mirror-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=65.1s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=75 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=76 name=mirror-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=73.1s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=76 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=71 name=default-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=64.9s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=71 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=72 name=default-h1024-ctx12-s44 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=44
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "44", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=44 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=44 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=44 step=1000 val_bpb=7.0043 ema_bpb=7.0018 best=7.0003 nca_h=0.966 t=72.1s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=72 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=73 name=default-h512-ctx8-s42 hidden=512 lr=0.003 steps=27000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "512", "--lr", "0.003", "--steps", "27000", "--ctx", "8", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=27000 hidden=512 lr=0.003 ctx=Some(8) optimizer=adamw neon=None
+=== trios-train seed=42 steps=27000 hidden=512 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=237568 (237.6K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0024
+seed=42 step=1000 val_bpb=7.0388 ema_bpb=7.0163 best=7.0024 nca_h=1.159 t=42.7s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=73 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=74 name=default-h828-ctx12-s43 hidden=828 lr=0.004 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "828", "--lr", "0.004", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=828 lr=0.004 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=828 lr=0.0040 attn_layers=2 ===
+train=200000 val=50000
+params=338688 (338.7K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0015
+seed=43 step=1000 val_bpb=7.0074 ema_bpb=7.0037 best=7.0015 nca_h=0.923 t=54.0s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=74 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=77 name=suggest-h512-ctx8-lr0.006-s42 hidden=512 lr=0.006 steps=27000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "512", "--lr", "0.006", "--steps", "27000", "--ctx", "8", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=27000 hidden=512 lr=0.006 ctx=Some(8) optimizer=adamw neon=None
+=== trios-train seed=42 steps=27000 hidden=512 lr=0.0060 attn_layers=2 ===
+train=200000 val=50000
+params=237568 (237.6K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0024
+seed=42 step=1000 val_bpb=7.0545 ema_bpb=7.0223 best=7.0024 nca_h=1.137 t=38.2s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=77 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=78 name=suggest-h1024-ctx16-lr0.002-s44 hidden=1024 lr=0.002 steps=81000 fmt=bf16 opt=adamw seed=44
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.002", "--steps", "81000", "--ctx", "16", "--format", "bf16", "--optimizer", "adamw", "--seed", "44", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=44 steps=81000 hidden=1024 lr=0.002 ctx=Some(16) optimizer=adamw neon=None
+=== trios-train seed=44 steps=81000 hidden=1024 lr=0.0020 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=44 step=1000 val_bpb=7.0021 ema_bpb=7.0010 best=7.0003 nca_h=0.939 t=62.7s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=78 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=79 name=default-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=57.9s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=79 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=84 name=mirror-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=59.9s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=84 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=85 name=mirror-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=58.7s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=85 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=80 name=default-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=57.9s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=80 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=81 name=default-h1024-ctx12-s44 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=44
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "44", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=44 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=44 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=44 step=1000 val_bpb=7.0043 ema_bpb=7.0018 best=7.0003 nca_h=0.966 t=57.7s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=81 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=82 name=default-h512-ctx8-s42 hidden=512 lr=0.003 steps=27000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "512", "--lr", "0.003", "--steps", "27000", "--ctx", "8", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=27000 hidden=512 lr=0.003 ctx=Some(8) optimizer=adamw neon=None
+=== trios-train seed=42 steps=27000 hidden=512 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=237568 (237.6K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0024
+seed=42 step=1000 val_bpb=7.0388 ema_bpb=7.0163 best=7.0024 nca_h=1.159 t=35.6s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=82 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=83 name=default-h828-ctx12-s43 hidden=828 lr=0.004 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "828", "--lr", "0.004", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=828 lr=0.004 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=828 lr=0.0040 attn_layers=2 ===
+train=200000 val=50000
+params=338688 (338.7K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0015
+seed=43 step=1000 val_bpb=7.0074 ema_bpb=7.0037 best=7.0015 nca_h=0.923 t=50.0s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=83 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=86 name=suggest-h512-ctx8-lr0.006-s42 hidden=512 lr=0.006 steps=27000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "512", "--lr", "0.006", "--steps", "27000", "--ctx", "8", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=27000 hidden=512 lr=0.006 ctx=Some(8) optimizer=adamw neon=None
+=== trios-train seed=42 steps=27000 hidden=512 lr=0.0060 attn_layers=2 ===
+train=200000 val=50000
+params=237568 (237.6K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0024
+seed=42 step=1000 val_bpb=7.0545 ema_bpb=7.0223 best=7.0024 nca_h=1.137 t=39.8s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=86 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=87 name=suggest-h1024-ctx16-lr0.002-s44 hidden=1024 lr=0.002 steps=81000 fmt=bf16 opt=adamw seed=44
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.002", "--steps", "81000", "--ctx", "16", "--format", "bf16", "--optimizer", "adamw", "--seed", "44", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=44 steps=81000 hidden=1024 lr=0.002 ctx=Some(16) optimizer=adamw neon=None
+=== trios-train seed=44 steps=81000 hidden=1024 lr=0.0020 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=44 step=1000 val_bpb=7.0021 ema_bpb=7.0010 best=7.0003 nca_h=0.939 t=68.0s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=87 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=93 name=mirror-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=100.6s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=93 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=94 name=mirror-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=111.1s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=94 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=88 name=default-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=111.4s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=88 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=89 name=default-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=98.6s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=89 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=93 name=mirror-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=101.0s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=93 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=94 name=mirror-h1024-ctx12-s43 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=43
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "43", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=43 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=43 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=43 step=1000 val_bpb=7.0035 ema_bpb=7.0015 best=7.0003 nca_h=0.968 t=92.1s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=94 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=87 name=suggest-h1024-ctx16-lr0.002-s44 hidden=1024 lr=0.002 steps=81000 fmt=bf16 opt=adamw seed=44
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.002", "--steps", "81000", "--ctx", "16", "--format", "bf16", "--optimizer", "adamw", "--seed", "44", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=44 steps=81000 hidden=1024 lr=0.002 ctx=Some(16) optimizer=adamw neon=None
+=== trios-train seed=44 steps=81000 hidden=1024 lr=0.0020 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0003
+seed=44 step=1000 val_bpb=7.0021 ema_bpb=7.0010 best=7.0003 nca_h=0.939 t=85.3s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )
+[local-playras-MacBook-Pro.local] EXP-DONE id=87 status=failed
+[local-playras-MacBook-Pro.local] EXP-START id=88 name=default-h1024-ctx12-s42 hidden=1024 lr=0.003 steps=81000 fmt=bf16 opt=adamw seed=42
+[trios-train] startup args=["trios-train", "--hidden", "1024", "--lr", "0.003", "--steps", "81000", "--ctx", "12", "--format", "bf16", "--optimizer", "adamw", "--seed", "42", "--train-data", "/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data", "/Users/playra/trios-railway/data/tiny_shakespeare_val.txt"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=42 steps=81000 hidden=1024 lr=0.003 ctx=Some(12) optimizer=adamw neon=None
+=== trios-train seed=42 steps=81000 hidden=1024 lr=0.0030 attn_layers=2 ===
+train=200000 val=50000
+params=401408 (401.4K) attn_d=64 attn_layers=2
+Initial val_bpb=7.0004
+seed=42 step=1000 val_bpb=7.0059 ema_bpb=7.0025 best=7.0004 nca_h=0.814 t=97.2s
+[neon_writer] connecting to Neon (TLS) …
+{"event":"panic","loc":"/Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249","msg":"panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:\n\nCould not automatically determine the process-level CryptoProvider from Rustls crate features.\nCall CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.\nSee the documentation of the CryptoProvider type for more information.\n            ","step":-1}
+PANIC: trios-train aborted at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249 (msg: panicked at /Users/playra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustls-0.23.39/src/crypto/mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            )

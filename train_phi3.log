@@ -1,0 +1,16 @@
+[trios-train] startup args=["./target/release/trios-train", "--hidden=1408", "--ctx=12", "--steps=5000", "--seed=1597", "--lr=0.0236", "--train-data=/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data=/Users/playra/trios-railway/data/tiny_shakespeare_val.txt", "--eval-every=500", "--optimizer=muon"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=1597 steps=5000 hidden=1408 lr=0.0236 ctx=Some(12) optimizer=muon neon=None
+=== P1 Muon seed=1597 steps=5000 hidden=1408 ===
+params=524288 (524.3K) attn_d=64 attn_layers=2
+Initial val_bpb=6.9995
+Muon seed=1597 step=500 val_bpb=9.4266 ema_bpb=7.9266 best=6.9995 nca_h=1.507 t=90.0s
+Muon seed=1597 step=1000 val_bpb=8.0865 ema_bpb=7.9877 best=6.9995 nca_h=1.725 t=147.5s
+Muon seed=1597 step=1500 val_bpb=8.4049 ema_bpb=8.1470 best=6.9995 nca_h=1.652 t=207.4s
+Muon seed=1597 step=2000 val_bpb=7.7333 ema_bpb=7.9890 best=6.9995 nca_h=1.633 t=297.7s
+Muon seed=1597 step=2500 val_bpb=7.4581 ema_bpb=7.7862 best=6.9995 nca_h=1.642 t=367.2s
+Muon seed=1597 step=3000 val_bpb=7.3294 ema_bpb=7.6117 best=6.9995 nca_h=1.690 t=454.0s
+Muon seed=1597 step=3500 val_bpb=7.1620 ema_bpb=7.4400 best=6.9995 nca_h=1.623 t=535.9s
+Muon seed=1597 step=4000 val_bpb=7.0657 ema_bpb=7.2970 best=6.9995 nca_h=1.609 t=588.6s
+Muon seed=1597 step=4500 val_bpb=7.0174 ema_bpb=7.1902 best=6.9995 nca_h=1.449 t=641.8s
+Muon seed=1597 step=5000 val_bpb=7.0091 ema_bpb=7.1210 best=6.9995 nca_h=1.667 t=692.6s
+DONE: seed=1597 bpb=6.9995 steps=5000 opt=muon

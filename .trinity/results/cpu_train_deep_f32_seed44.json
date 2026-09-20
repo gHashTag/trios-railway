@@ -1,0 +1,15 @@
+{
+  "delta_bpb": 0.0,
+  "dim": 128,
+  "duration_seconds": 237.563317833,
+  "experiment": "cpu-backprop-deep",
+  "final_bpb": 9.993240356445312,
+  "initial_bpb": 9.993240356445312,
+  "lr": 0.003000000026077032,
+  "model": "embed+bigram+smear+blocks+lm_head",
+  "num_blocks": 2,
+  "seed": 44,
+  "seq_len": 64,
+  "steps": 100,
+  "vocab_size": 1024
+}
