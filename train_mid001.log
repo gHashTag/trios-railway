@@ -1,0 +1,9 @@
+[trios-train] startup args=["./target/release/trios-train", "--hidden=1408", "--ctx=12", "--steps=5000", "--seed=1597", "--lr=0.001", "--train-data=/Users/playra/trios-railway/data/tiny_shakespeare.txt", "--val-data=/Users/playra/trios-railway/data/tiny_shakespeare_val.txt", "--eval-every=500", "--optimizer=muon"] cwd=Some("/Users/playra/trios-railway/crates/trios-trainer-igla")
+[trios-train] parsed seed=1597 steps=5000 hidden=1408 lr=0.001 ctx=Some(12) optimizer=muon neon=None
+=== P1 Muon seed=1597 steps=5000 hidden=1408 ===
+params=524288 (524.3K) attn_d=64 attn_layers=2
+Initial val_bpb=6.9995
+Muon seed=1597 step=500 val_bpb=7.0064 ema_bpb=7.0022 best=6.9995 nca_h=1.254 t=99.7s
+Muon seed=1597 step=1000 val_bpb=7.0246 ema_bpb=7.0107 best=6.9995 nca_h=1.286 t=205.4s
+Muon seed=1597 step=1500 val_bpb=7.0342 ema_bpb=7.0197 best=6.9995 nca_h=1.446 t=298.7s
+Muon seed=1597 step=2000 val_bpb=7.0302 ema_bpb=7.0237 best=6.9995 nca_h=1.555 t=385.2s
