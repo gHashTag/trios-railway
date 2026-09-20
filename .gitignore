@@ -11,3 +11,8 @@ data/docs_selected.jsonl
 logs/
 *.sh
 # R1 enforcement: no shell scripts in Rust-only repo
+node_modules/
+target/
+.zig-cache/
+scarab_local.log
+.env
