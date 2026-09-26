@@ -1,0 +1,23 @@
+[package]
+name        = "ledger-daemon"
+version.workspace     = true
+edition.workspace     = true
+license.workspace     = true
+authors.workspace     = true
+repository.workspace  = true
+description = "Scarabaeus Engine watchdog (Khepri-3): autoscaler, dead-worker resurrector, leak gate, anomaly alerts. Reads experiment_queue / workers / bpb_samples; writes gardener_runs and Railway redeploy calls."
+
+[[bin]]
+name = "ledger-daemon"
+path = "src/main.rs"
+
+[dependencies]
+anyhow         = "1.0"
+tokio          = { version = "1.40", features = ["full"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+chrono         = { version = "0.4", features = ["serde"] }
+serde          = { version = "1.0", features = ["derive"] }
+serde_json     = "1.0"
+tracing        = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest        = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
