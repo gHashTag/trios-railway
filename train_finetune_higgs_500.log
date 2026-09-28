@@ -1,0 +1,25 @@
+=== T-JEPA Hybrid Training ===
+dim=64 hidden=384 vocab=1024 enc_lr=0.000125 ntp_lr=0.001 seed=43 steps=500
+optimizer=AdamW jepa=true nca=true jepa_warmup=50
+L = 1*NTP + 1*JEPA + 0.25*NCA
+trial_id=tjepa-finetune-higgs-500 agent_id=local-finetune
+Champion: BPB 2.5193 | Gate-1: ≤2.22 | Gate-2: ≤2.03
+NEON_SQL: INSERT INTO igla_race_trials (trial_id, config, status, agent_id, branch) VALUES ('tjepa-finetune-higgs-500', '{"arch":"tjepa","d_model":384,"lr":0.000125,"seed":43,"optimizer":"adamw","ntp_w":1,"jepa_w":1,"nca_w":0.25}', 'running', 'local-finetune', 'main');
+[neon_writer] DSN unset or unreachable; skipping: INSERT INTO igla_race_trials (trial_id, config, status, agent_id, branch) VALUES
+FineWeb bin: magic=20240520 version=1 num_tokens=100000000
+Loaded 100000000 FineWeb tokens from ../../data/datasets/fineweb10B_sp1024/fineweb_train_000000.bin
+FineWeb bin: magic=20240520 version=1 num_tokens=62021846
+Loaded 62021846 FineWeb tokens from ../../data/datasets/fineweb10B_sp1024/fineweb_val_000000.bin
+step=  500 ntp=8.7292 jepa=0.0031 nca=0.0000 val_bpb=8.4965 best=8.4965 t=50.6s
+NEON_SQL: INSERT INTO igla_agents_heartbeat (agent_id, machine_id, branch, task, status, last_heartbeat) VALUES ('local-finetune', 'local', 'main', 'tjepa-finetune-higgs-500', 'active', NOW()) ON CONFLICT (agent_id) DO UPDATE SET status=EXCLUDED.status, last_heartbeat=EXCLUDED.last_heartbeat;
+NEON_SQL: UPDATE igla_race_trials SET bpb_latest=8.4965, steps_done=500 WHERE trial_id='tjepa-finetune-higgs-500';
+[neon_writer] DSN unset or unreachable; skipping: INSERT INTO igla_agents_heartbeat (agent_id, machine_id, branch, task, status, l
+[neon_writer] DSN unset or unreachable; skipping: UPDATE igla_race_trials SET bpb_latest=$1, steps_done=$2 WHERE trial_id=$3
+NEON_SQL: UPDATE igla_race_trials SET bpb_final=8.4965, status='complete' WHERE trial_id='tjepa-finetune-higgs-500';
+[neon_writer] DSN unset or unreachable; skipping: UPDATE igla_race_trials SET bpb_final=$1, status='complete' WHERE trial_id=$2
+
+=== Training Complete ===
+Steps=500 Time=142.3s best_val_bpb=8.4965 vs_champion=+5.9772
+BPB=8.4965
+Gate-1 FAILED: 8.4965 > 2.22
+Gate-2 FAILED: 8.4965 > 2.03

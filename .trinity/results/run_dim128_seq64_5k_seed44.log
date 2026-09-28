@@ -1,0 +1,23 @@
+FineWeb bin: path=data/datasets/fineweb10B_sp1024/fineweb_train_000000.bin magic=20240520 version=1 num_tokens=100000000
+FineWeb bin: path=data/datasets/fineweb10B_sp1024/fineweb_val_000000.bin magic=20240520 version=1 num_tokens=62021846
+=== trios CPU Training (Analytical Backprop) ===
+vocab=1024 dim=128 seq=64 steps=5000 seed=44 lr=0.003
+Dataset: 100000000 train / 62021846 val tokens
+Initial val BPB: 10.0011
+
+  step | train_loss |    val_bpb |   best_bpb |       ms
+------------------------------------------------------------
+   500 |     4.8545 |     7.2173 |     7.2173 |  38494ms
+  1000 |     4.6295 |     6.9570 |     6.9570 |  80345ms
+  1500 |     4.6390 |     6.8070 |     6.8070 | 123607ms
+  2000 |     4.6628 |     6.7304 |     6.7304 | 165988ms
+  2500 |     4.7774 |     6.6355 |     6.6355 | 207266ms
+  3000 |     5.0000 |     6.6571 |     6.6355 | 250086ms
+  3500 |     4.3782 |     6.6024 |     6.6024 | 292891ms
+  4000 |     4.1767 |     6.5725 |     6.5725 | 337990ms
+  4500 |     4.4229 |     6.5239 |     6.5239 | 382646ms
+  5000 |     4.5793 |     6.4903 |     6.4903 | 429498ms
+
+=== Training Complete ===
+Time: 433.7s | Init BPB: 10.0011 | Best BPB: 6.4903 | Delta: 3.5108
+Results: .trinity/results/cpu_train_f32_seed44.json

@@ -1,0 +1,12 @@
+=== T-JEPA Hybrid Training ===
+dim=64 hidden=384 vocab=1024 enc_lr=0.000125 ntp_lr=0.001 seed=43 steps=2000
+optimizer=AdamW jepa=true nca=true jepa_warmup=200
+L = 1*NTP + 1*JEPA + 0.25*NCA
+trial_id=tjepa-finetune-higgs-2k agent_id=local-finetune
+Champion: BPB 2.5193 | Gate-1: ≤2.22 | Gate-2: ≤2.03
+NEON_SQL: INSERT INTO igla_race_trials (trial_id, config, status, agent_id, branch) VALUES ('tjepa-finetune-higgs-2k', '{"arch":"tjepa","d_model":384,"lr":0.000125,"seed":43,"optimizer":"adamw","ntp_w":1,"jepa_w":1,"nca_w":0.25}', 'running', 'local-finetune', 'main');
+[neon_writer] DSN unset or unreachable; skipping: INSERT INTO igla_race_trials (trial_id, config, status, agent_id, branch) VALUES
+FineWeb bin: magic=20240520 version=1 num_tokens=100000000
+Loaded 100000000 FineWeb tokens from ../../data/datasets/fineweb10B_sp1024/fineweb_train_000000.bin
+FineWeb bin: magic=20240520 version=1 num_tokens=62021846
+Loaded 62021846 FineWeb tokens from ../../data/datasets/fineweb10B_sp1024/fineweb_val_000000.bin

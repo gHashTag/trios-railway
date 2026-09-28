@@ -11,3 +11,5 @@ data/docs_selected.jsonl
 logs/
 *.sh
 # R1 enforcement: no shell scripts in Rust-only repo
+.env*
+!.env.example
